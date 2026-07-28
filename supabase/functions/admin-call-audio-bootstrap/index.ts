@@ -1,17 +1,18 @@
 /**
  * admin-call-audio-bootstrap
- * Gera e valida áudios de ligação Sofia (corpo → Velip + intro “Olá, Nome!”).
+ * Gera e valida áudios de ligação Sofia (corpo → Velip + intro “Olá, Nome! Tudo bem?”).
  *
  * Auth: Authorization Bearer = SUPABASE_SERVICE_ROLE_KEY (somente interno).
  * Body: { consultant_id?: string, names?: string[], limit_per_clip?: number }
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import {
+  CALL_INTRO_CACHE_TAG,
   ensureBodyClipOnVelip,
   resolvePersonalizedCallAudio,
 } from "../_shared/voice-dialer/call-stitch.ts";
 import { velipConfigured } from "../_shared/voice-dialer/velip.ts";
-import { buildCallNameGreetTtsText } from "../_shared/tts-ptbr-anchor.ts";
+import { buildOlaTudoBemTtsText } from "../_shared/tts-ptbr-anchor.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -123,7 +124,7 @@ Deno.serve(async (req) => {
 
     const nameResults: unknown[] = [];
     for (const name of namesIn.slice(0, limitPerClip)) {
-      const introText = buildCallNameGreetTtsText(name);
+      const introText = buildOlaTudoBemTtsText(name);
       const r = await resolvePersonalizedCallAudio(admin, {
         consultantId,
         bodyClipId: clipId,
@@ -165,7 +166,7 @@ Deno.serve(async (req) => {
     .from("voice_call_renders")
     .select("id", { count: "exact", head: true })
     .eq("consultant_id", consultantId)
-    .like("model_id", "%ci_v3_ola_only%");
+    .like("model_id", `%${CALL_INTRO_CACHE_TAG}%`);
 
   return json(200, {
     ok: stitchesFail === 0 && bodiesOk === callStages.length,
@@ -175,7 +176,7 @@ Deno.serve(async (req) => {
     stitches_ok: stitchesOk,
     stitches_fail: stitchesFail,
     renders_ci_v3: renderCount ?? 0,
-    intro_template: buildCallNameGreetTtsText("Nome"),
+    intro_template: buildOlaTudoBemTtsText("Nome"),
     report,
   });
 });

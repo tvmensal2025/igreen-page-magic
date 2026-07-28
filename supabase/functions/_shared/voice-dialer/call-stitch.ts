@@ -1,7 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { uploadAudioFile } from "./velip.ts";
 import { safeFirstNameForAddress } from "../customer-display-name.ts";
-import { buildCallNameGreetTtsText } from "../tts-ptbr-anchor.ts";
+import { buildOlaTudoBemTtsText, SOFIA_STITCH_PROFILE, VOICE_SETTINGS_V3_GREET } from "../tts-ptbr-anchor.ts";
+import {
+  findSharedOlaIntroUrl,
+  upsertPublicIntro,
+} from "../ai-media-shared-intro.ts";
 
 export type AdminClient = ReturnType<typeof createClient>;
 
@@ -20,10 +24,13 @@ interface VoiceRenderRow {
   velip_audio_id: string | null;
 }
 
-const DEFAULT_VOICE = "EJV7H2baGt5ab95tOoSG";
-const DEFAULT_MODEL = "eleven_v3";
-/** Bump invalida cache voice_call_renders (intro muda). */
-const CALL_INTRO_CACHE_TAG = "ci_v3_ola_only";
+const DEFAULT_VOICE = SOFIA_STITCH_PROFILE.voiceId;
+const DEFAULT_MODEL = SOFIA_STITCH_PROFILE.modelId;
+/**
+ * Bump invalida cache voice_call_renders.
+ * v3_ola_tudobem_v2 = mesma VOICE_SETTINGS_V3_GREET do Zap/PV (speed 0.92).
+ */
+export const CALL_INTRO_CACHE_TAG = "ci_v3_ola_tudobem_v2";
 
 export function normalizeCallName(input: string): string {
   return (input || "")
@@ -72,28 +79,137 @@ export async function concatMp3Parts(parts: Uint8Array[]): Promise<Uint8Array> {
   return concatMp3Bytes(cleaned);
 }
 
+/** Settings canônicas do stitch Sofia — nunca divergir de VOICE_SETTINGS_V3_GREET. */
 function voiceSettingsForModel(modelId: string): Record<string, unknown> {
   if (modelId === "eleven_v3" || modelId.startsWith("eleven_v3")) {
-    return {
-      stability: 0.5,
-      similarity_boost: 0.75,
-      style: 0.0,
-      use_speaker_boost: true,
-      speed: 1.0,
-    };
+    return { ...VOICE_SETTINGS_V3_GREET };
   }
+  // Fallback raro (legado) — ainda alinhado em speed 0.92.
   return {
     stability: 0.9,
     similarity_boost: 1.0,
     style: 0.45,
     use_speaker_boost: true,
-    speed: 1.0,
+    speed: 0.92,
   };
 }
 
 function stitchModelKey(baseModel: string): string {
   const base = (baseModel || DEFAULT_MODEL).split(":")[0] || DEFAULT_MODEL;
   return `${base}:${CALL_INTRO_CACHE_TAG}`;
+}
+
+async function findLibraryIntroUrl(
+  admin: AdminClient,
+  consultantId: string,
+  nameNorm: string,
+): Promise<{ url: string; slotKey: string } | null> {
+  const hit = await findSharedOlaIntroUrl(admin, consultantId, nameNorm);
+  if (!hit) return null;
+  return { url: hit.url, slotKey: hit.slotKey };
+}
+
+async function downloadBytes(url: string): Promise<Uint8Array> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(45_000) });
+  if (!res.ok) throw new Error(`intro_download_${res.status}`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  if (bytes.byteLength < 256) throw new Error("intro_download_empty");
+  return bytes;
+}
+
+/**
+ * Intro canônica “Olá, Nome! Tudo bem?”.
+ * 1) Reusa ai_media_library (Zap / PV) — zero ElevenLabs
+ * 2) Senão TTS Sofia e cacheia em intro:ola:ptbr4:{nome}
+ */
+export async function resolveOlaTudoBemIntroBytes(
+  admin: AdminClient,
+  opts: {
+    consultantId: string;
+    displayName: string;
+    nameNorm: string;
+    voiceId?: string;
+    modelId?: string;
+  },
+): Promise<{ bytes: Uint8Array; fromLibrary: boolean }> {
+  const libHit = await findLibraryIntroUrl(admin, opts.consultantId, opts.nameNorm);
+  if (libHit) {
+    try {
+      const bytes = await downloadBytes(libHit.url);
+      const canonical = `intro:ola:ptbr4:${opts.nameNorm}`;
+      // Legado intro:ola:{nome} → espelha no slot canônico (sem TTS), público.
+      if (libHit.slotKey !== canonical) {
+        try {
+          await upsertPublicIntro(admin, {
+            consultantId: opts.consultantId,
+            slotKey: canonical,
+            url: libHit.url,
+            label: `Sofia intro · Olá+nome+tudo bem · ${opts.displayName}`,
+            transcript: buildOlaTudoBemTtsText(opts.displayName),
+            intentTags: ["call_intro", "wa_intro"],
+          });
+        } catch (e) {
+          console.warn("[call-stitch] mirror ptbr4 falhou", (e as Error)?.message);
+        }
+      }
+      return { bytes, fromLibrary: true };
+    } catch (e) {
+      console.warn("[call-stitch] lib intro download falhou — TTS", (e as Error)?.message);
+    }
+  }
+
+  const bytes = await synthesizeIntroMp3({
+    displayName: opts.displayName,
+    voiceId: opts.voiceId || DEFAULT_VOICE,
+    modelId: opts.modelId || DEFAULT_MODEL,
+  });
+
+  // Cacheia p/ Zap/PV/ligação reaproveitarem depois.
+  try {
+    const slot = `intro:ola:ptbr4:${opts.nameNorm}`;
+    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
+    const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    if (supabaseUrl && serviceRole) {
+      const fd = new FormData();
+      fd.append(
+        "file",
+        new Blob([bytes as BlobPart], { type: "audio/mpeg" }),
+        `intro-ola-ptbr4-${opts.nameNorm}.mp3`,
+      );
+      fd.append("scope", "admin");
+      fd.append("consultant_id", opts.consultantId);
+      fd.append("kind", "audio");
+      fd.append("slug", `intro-ola-ptbr4-${opts.nameNorm}`.slice(0, 80));
+      const up = await fetch(`${supabaseUrl}/functions/v1/upload-media`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${serviceRole}`, apikey: serviceRole },
+        body: fd,
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (up.ok) {
+        const uploaded = await up.json();
+        const url = uploaded?.url ? String(uploaded.url) : null;
+        if (url) {
+          try {
+            await upsertPublicIntro(admin, {
+              consultantId: opts.consultantId,
+              slotKey: slot,
+              url,
+              label: `Sofia intro · Olá+nome+tudo bem · pt-BR · ${opts.displayName}`,
+              transcript: buildOlaTudoBemTtsText(opts.displayName),
+              intentTags: ["call_intro", "wa_intro"],
+            });
+          } catch (e) {
+            console.warn("[call-stitch] cache intro:ola falhou", (e as Error)?.message);
+          }
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[call-stitch] cache intro:ola falhou", (e as Error)?.message);
+  }
+
+  return { bytes, fromLibrary: false };
 }
 
 export async function synthesizeIntroMp3(opts: {
@@ -103,8 +219,8 @@ export async function synthesizeIntroMp3(opts: {
 }): Promise<Uint8Array> {
   const key = (Deno.env.get("ELEVENLABS_API_KEY") || "").trim();
   if (!key) throw new Error("ELEVENLABS_API_KEY_missing");
-  // Nunca só o nome — cumprimento profissional completo (PT-BR).
-  const text = buildCallNameGreetTtsText(opts.displayName);
+  // Mesmo texto do WhatsApp / pós-venda.
+  const text = buildOlaTudoBemTtsText(opts.displayName);
   if (!text || text.length < 4) throw new Error("tts_call_intro_empty");
   const modelId = (opts.modelId || DEFAULT_MODEL).split(":")[0] || DEFAULT_MODEL;
   const voiceId = (opts.voiceId || "").trim() || DEFAULT_VOICE;
@@ -117,7 +233,7 @@ export async function synthesizeIntroMp3(opts: {
     body: JSON.stringify({
       text,
       model_id: modelId,
-      language_code: "pt",
+      language_code: SOFIA_STITCH_PROFILE.languageCode,
       voice_settings: voiceSettingsForModel(modelId),
     }),
     signal: AbortSignal.timeout(60_000),
@@ -204,13 +320,18 @@ export async function resolvePersonalizedCallAudio(
     if (!bodyRes.ok) throw new Error(`body_download_${bodyRes.status}`);
     const bodyBytes = new Uint8Array(await bodyRes.arrayBuffer());
 
-    const introBytes = await synthesizeIntroMp3({
+    const intro = await resolveOlaTudoBemIntroBytes(admin, {
+      consultantId: opts.consultantId,
       displayName: display,
+      nameNorm,
       voiceId,
       modelId: baseModel,
     });
+    if (intro.fromLibrary) {
+      console.log(`[call-stitch] intro reusado da lib nome=${nameNorm}`);
+    }
 
-    const merged = await concatMp3Parts([introBytes, bodyBytes]);
+    const merged = await concatMp3Parts([intro.bytes, bodyBytes]);
     const slug = `call-${opts.bodyClipId.slice(0, 8)}-${nameNorm}`.slice(0, 60);
     const up = await uploadAudioFile(merged, slug, "audio/mpeg");
     if (!up.ok || !up.audio_id) throw new Error(up.error || "velip_upload_failed");

@@ -2,11 +2,11 @@
  * AudioStudio — Estúdio de áudio iGreen.
  *
  * Variantes:
- *   - Mutirão (cidade, rua, horário, sorteio)
- *   - Comércio (nome do comércio, cidade, endereço, horário)
+ *   - Mutirão (cidade, rua, horário, sorteio) — com/sem vinheta
+ *   - Comércio (nome do comércio, cidade, endereço, horário) — com/sem vinheta
  *   - Texto livre (corpo fixo + nome opcional só na frente)
  *
- * Vozes ElevenLabs: Sofia, Diego, Rafael — selecionáveis no header.
+ * Vozes ElevenLabs: Sofia, Diego, Rafael — Mutirão/Comércio padrão Diego; Texto livre Sofia.
  * Modelo: sempre Eleven v3 (expressivo).
  *
  * Cada áudio gerado é salvo em `audio_library` (privado) e pode ser publicado
@@ -22,7 +22,7 @@ import {
   Volume2, Loader2, Play, Pause, Download,
   RotateCcw, Music, MapPin, Clock, Navigation, Gift,
   Store, Megaphone, History, Globe2, Search, Lock, Upload, Copy, Trash2, Send,
-  FileText, User, Phone,
+  FileText, User, Phone, ChevronDown,
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -450,6 +450,11 @@ type Kind = "mutirao" | "comercio" | "livre";
 type RefTipo = "proximo" | "em_frente";
 type SorteioTipo = "dinheiro" | "vale" | "cesta" | "custom";
 
+/** Mutirão/Comércio → Diego; Texto livre → Sofia. */
+function defaultVoiceForKind(k: Kind): VoiceId {
+  return k === "livre" ? VOICE_SOFIA : VOICE_DIEGO;
+}
+
 const FIXO_MUTIRAO = "Hoje tem mutirão de cadastramento para reduzir o valor da sua conta de luz! É um direito seu! É isso mesmo! É uma iniciativa privada com incentivo do Governo Federal, pela Lei catorze mil e trezentos. Até vinte por cento de desconto todo mês na sua conta de luz! Sem investimento! Sem taxas! É só cadastrar! Quer saber como? Compareça hoje ao mutirão";
 const FIXO_COMERCIO = "Hoje tem cadastramento para reduzir o valor da sua conta de luz! É um direito seu! É isso mesmo! É uma iniciativa privada com incentivo do Governo Federal, pela Lei catorze mil e trezentos. Até vinte por cento de desconto todo mês na sua conta de luz! Sem investimento! Sem taxas! É só cadastrar! Quer saber como? Passe hoje";
 const FIXO_FINAL = "Traga: documento pessoal, fatura de energia atualizada e celular em mãos!";
@@ -555,9 +560,12 @@ export function AudioStudio({ userId }: { userId: string }) {
     if (k === "comercio" || k === "livre" || k === "mutirao") return k;
     return "mutirao";
   });
-  const [voiceId, setVoiceId] = useState<VoiceId>(() =>
-    isKnownVoiceId(initialDraft?.voiceId) ? initialDraft.voiceId : VOICE_SOFIA,
-  );
+  const [voiceId, setVoiceId] = useState<VoiceId>(() => {
+    if (isKnownVoiceId(initialDraft?.voiceId)) return initialDraft.voiceId;
+    const k = initialDraft?.kind;
+    const kind0: Kind = k === "comercio" || k === "livre" || k === "mutirao" ? k : "mutirao";
+    return defaultVoiceForKind(kind0);
+  });
   // Regra: sempre eleven_v3 (melhor expressividade; v2 só existe no código legado).
   const [modelId] = useState<TtsModelId>(MODEL_V3);
 
@@ -597,6 +605,10 @@ export function AudioStudio({ userId }: { userId: string }) {
   const [lastPublicUrlVinheta, setLastPublicUrlVinheta] = useState<string | null>(null);
   const [playing,    setPlaying]    = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const playerSectionRef = useRef<HTMLElement | null>(null);
+
+  // Mutirão e Comércio salvam/baixam com e sem vinheta; texto livre não.
+  const withVinheta = kind === "mutirao" || kind === "comercio";
 
   // Biblioteca
   const [libTab, setLibTab] = useState<"mine" | "public" | "all">("mine");
@@ -943,7 +955,14 @@ export function AudioStudio({ userId }: { userId: string }) {
     stopAudio();
     try {
       // Dedup: roteiro EXATO já existe? reaproveita o MP3 pronto (0 token, 0 remontagem).
-      if (await tryReuseExisting(hashText(textoPreview, voiceId, modelId))) return;
+      if (await tryReuseExisting(hashText(textoPreview, voiceId, modelId))) {
+        if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+          requestAnimationFrame(() => {
+            playerSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+        }
+        return;
+      }
 
       // Gera por segmentos (cache reaproveita trechos repetidos). Fallback
       // automático pra chamada única se algo der errado.
@@ -953,9 +972,9 @@ export function AudioStudio({ userId }: { userId: string }) {
       setAudioBlob(mp3Blob);
       setAudioUrl(URL.createObjectURL(mp3Blob));
 
-      // Vinheta só no Mutirão (comércio / texto livre ficam sem).
+      // Vinheta em Mutirão e Comércio (texto livre fica sem).
       let vinhetaBlob: Blob | null = null;
-      if (kind === "mutirao") {
+      if (withVinheta) {
         vinhetaBlob = await montarComVinheta(mp3Blob);
       }
       setAudioBlobVinheta(vinhetaBlob);
@@ -968,14 +987,19 @@ export function AudioStudio({ userId }: { userId: string }) {
         setLastPublicUrlVinheta(row.audio_url_vinheta);
       }
       toast({
-        title: kind === "mutirao"
+        title: withVinheta
           ? (vinhetaBlob ? "✅ Áudio salvo com e sem vinheta!" : "✅ Áudio gerado (sem vinheta)")
           : "✅ Áudio gerado!",
-        description: kind === "mutirao" && !vinhetaBlob
+        description: withVinheta && !vinhetaBlob
           ? "Arquivo de vinheta não encontrado — apenas a versão sem vinheta foi salva."
           : undefined,
       });
       loadLibrary();
+      if (typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches) {
+        requestAnimationFrame(() => {
+          playerSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+      }
     } catch (e: any) {
       toast({ title: "Erro ao gerar áudio", description: e.message, variant: "destructive" });
     } finally {
@@ -1206,7 +1230,7 @@ export function AudioStudio({ userId }: { userId: string }) {
   const handleDownload = async () => {
     if (!audioBlob) return;
     try {
-      if (kind !== "mutirao") {
+      if (!withVinheta) {
         const slug = (kind === "livre" ? livreNomeFirst : cidade.trim().toLowerCase().replace(/\s+/g, "_")) || "audio";
         downloadBlob(audioBlob, `${kind}_${slug}.mp3`);
         toast({ title: "✅ Áudio baixado" });
@@ -1231,20 +1255,22 @@ export function AudioStudio({ userId }: { userId: string }) {
 
   const kindLabel = kind === "mutirao" ? "Mutirão" : kind === "comercio" ? "Comércio" : "Texto livre";
 
+  const hasOptionalExtras = Boolean(bairro.trim() || (kind === "mutirao" && referencia.trim()));
+
   return (
     <div
-      className="min-h-full pb-12"
+      className="min-h-full pb-20 lg:pb-12"
       style={{ fontFamily: "'Inter', system-ui, sans-serif" }}
     >
-      {/* ─── Header tipo "console" ─────────────────────────────────────── */}
-      <header className="relative overflow-hidden rounded-3xl border border-border/50 bg-card mb-6 shadow-sm">
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent pointer-events-none" />
-        <div className="absolute -top-24 -right-24 w-64 h-64 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
-        <div className="relative flex items-center gap-4 p-5 sm:p-6">
-          <div className="w-14 h-14 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
+      {/* Controles: no mobile o topbar já traz o título — sem hero duplicado */}
+      <header className="rounded-xl sm:rounded-2xl border border-border/50 bg-card mb-3 sm:mb-5 shadow-sm overflow-hidden">
+        {/* Hero só em sm+ (evita título duplicado com AppTopbar) */}
+        <div className="hidden sm:flex relative items-center gap-4 p-5 sm:p-6 border-b border-border/50">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent pointer-events-none" />
+          <div className="relative w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
             <Volume2 className="w-6 h-6 text-primary" />
           </div>
-          <div className="flex-1 min-w-0">
+          <div className="relative flex-1 min-w-0">
             <p className="text-[10px] font-bold uppercase tracking-[0.18em] text-primary mb-0.5">
               iGreen · Studio
             </p>
@@ -1254,48 +1280,53 @@ export function AudioStudio({ userId }: { userId: string }) {
             >
               Estúdio de Áudio
             </h1>
-            <p className="text-xs sm:text-sm text-muted-foreground mt-0.5">
-              Gere, ouça e distribua áudios — Mutirão salva com e sem vinheta.
+            <p className="text-sm text-muted-foreground mt-0.5">
+              Mutirão e Comércio salvam com e sem vinheta.
             </p>
           </div>
-          <div className="hidden md:flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <div className="relative hidden md:flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
             <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary">
               <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" /> Voz {voiceLabel}
             </span>
             <span className="px-2.5 py-1 rounded-full bg-muted/40 border border-border/40">
-              ElevenLabs · {modelId === MODEL_V3 ? "v3" : "Multilingual v2"}
+              ElevenLabs · v3
             </span>
           </div>
         </div>
 
-        <div className="relative border-t border-border/50 px-3 sm:px-4 pt-3 pb-3 space-y-2">
-          <div className="flex gap-2">
+        <div className="px-2.5 sm:px-4 py-2.5 sm:py-3 space-y-2">
+          <div className="flex gap-1 sm:gap-2">
             {([
-              { id: "mutirao", label: "Mutirão", icon: Megaphone },
-              { id: "comercio", label: "Comércio", icon: Store },
-              { id: "livre", label: "Texto livre", icon: FileText },
-            ] as { id: Kind; label: string; icon: typeof Megaphone }[]).map((t) => {
+              { id: "mutirao", label: "Mutirão", shortLabel: "Mutirão", icon: Megaphone },
+              { id: "comercio", label: "Comércio", shortLabel: "Comércio", icon: Store },
+              { id: "livre", label: "Texto livre", shortLabel: "Livre", icon: FileText },
+            ] as { id: Kind; label: string; shortLabel: string; icon: typeof Megaphone }[]).map((t) => {
               const Icon = t.icon;
               const active = kind === t.id;
               return (
                 <button
                   key={t.id}
                   type="button"
-                  onClick={() => setKind(t.id)}
-                  className={`flex-1 sm:flex-none sm:min-w-[140px] h-11 px-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
+                  onClick={() => {
+                    setKind(t.id);
+                    setVoiceId(defaultVoiceForKind(t.id));
+                  }}
+                  className={`flex-1 sm:flex-none sm:min-w-[132px] h-9 sm:h-11 px-1.5 sm:px-3 rounded-lg sm:rounded-xl text-[11px] sm:text-sm font-semibold flex items-center justify-center gap-1 sm:gap-2 transition-all ${
                     active
                       ? "bg-primary text-primary-foreground shadow-md shadow-primary/20"
                       : "bg-muted/30 border border-border/50 text-muted-foreground hover:text-foreground hover:border-primary/30"
                   }`}
                 >
-                  <Icon className="w-4 h-4" /> {t.label}
+                  <Icon className="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0" />
+                  <span className="sm:hidden truncate">{t.shortLabel}</span>
+                  <span className="hidden sm:inline">{t.label}</span>
                 </button>
               );
             })}
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground shrink-0">Voz</span>
-            <div className="flex gap-1.5 flex-1">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground shrink-0 w-7 sm:w-auto">Voz</span>
+            <div className="flex gap-1 sm:gap-1.5 flex-1">
               {VOICES.map((v) => {
                 const active = voiceId === v.id;
                 return (
@@ -1303,7 +1334,7 @@ export function AudioStudio({ userId }: { userId: string }) {
                     key={v.id}
                     type="button"
                     onClick={() => setVoiceId(v.id)}
-                    className={`flex-1 h-9 px-3 rounded-lg text-xs font-semibold transition-all ${
+                    className={`flex-1 h-8 sm:h-9 px-2 sm:px-3 rounded-lg text-[11px] sm:text-xs font-semibold transition-all ${
                       active
                         ? "bg-foreground text-background"
                         : "bg-muted/30 border border-border/50 text-muted-foreground hover:text-foreground"
@@ -1315,7 +1346,7 @@ export function AudioStudio({ userId }: { userId: string }) {
               })}
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground shrink-0">Modelo</span>
             <div className="flex gap-1.5 flex-1">
               <span className="flex-1 h-9 px-3 rounded-lg text-xs font-semibold inline-flex items-center justify-center bg-primary text-primary-foreground">
@@ -1323,23 +1354,22 @@ export function AudioStudio({ userId }: { userId: string }) {
               </span>
             </div>
           </div>
-          <p className="text-[10px] text-muted-foreground leading-snug px-0.5">
-            Sempre v3 (ritmo natural). Áudios novos usam eleven_v3.
-          </p>
         </div>
       </header>
 
-      {/* ─── Layout split-screen ────────────────────────────────────── */}
-      <div className="grid xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] gap-5">
+      {/* Split: 2 colunas a partir de lg (antes só xl — mobile/tablet ficavam em coluna única eterna) */}
+      <div className="grid lg:grid-cols-2 gap-3 sm:gap-5">
         {/* ═══ LADO ESQUERDO — formulário ═══ */}
-        <section className="space-y-3">
-          <SectionTitle
-            icon={Navigation}
-            label="Roteiro"
-            hint={kind === "livre" ? "Texto livre + nome opcional na frente" : "Preencha os dados do anúncio"}
-          />
+        <section className="space-y-2.5 sm:space-y-3">
+          <div className="hidden sm:block">
+            <SectionTitle
+              icon={Navigation}
+              label="Roteiro"
+              hint={kind === "livre" ? "Texto livre + nome opcional na frente" : "Preencha os dados do anúncio"}
+            />
+          </div>
 
-          <div className="bg-card rounded-2xl border border-border/50 p-4 space-y-3 shadow-sm">
+          <div className="bg-card rounded-xl sm:rounded-2xl border border-border/50 p-3 sm:p-4 space-y-2.5 sm:space-y-3 shadow-sm">
             {kind === "livre" ? (
               <>
                 <Field icon={User} label="Nome (só na frente — opcional na prévia)">
@@ -1361,11 +1391,11 @@ export function AudioStudio({ userId }: { userId: string }) {
                     className="bg-background border-border/60 text-sm min-h-36"
                   />
                 </Field>
-                <div className="flex items-center justify-between pt-2 border-t border-border/40">
-                  <div>
-                    <p className="text-xs font-semibold text-foreground">Correção automática</p>
-                    <p className="text-[10px] text-muted-foreground">Acentos e abreviações</p>
-                  </div>
+                <div className="flex items-center justify-between gap-3 pt-1.5 border-t border-border/40">
+                  <p className="text-xs font-semibold text-foreground leading-tight">
+                    Correção automática
+                    <span className="hidden sm:inline text-[10px] font-normal text-muted-foreground"> · acentos e abreviações</span>
+                  </p>
                   <Toggle on={autoCorrecao} onChange={() => setAutoCorrecao(!autoCorrecao)} />
                 </div>
               </>
@@ -1373,48 +1403,63 @@ export function AudioStudio({ userId }: { userId: string }) {
               <>
             {kind === "comercio" && (
               <Field icon={Store} label="Nome do comércio">
-                <Input value={placeName} onChange={(e) => setPlaceName(e.target.value)} placeholder="Ex: Padaria Central" className="bg-background border-border/60 h-11 text-base" />
+                <Input value={placeName} onChange={(e) => setPlaceName(e.target.value)} placeholder="Ex: Padaria Central" className="bg-background border-border/60 h-10 sm:h-11 text-base" />
               </Field>
             )}
             <Field icon={MapPin} label="Cidade">
-              <Input value={cidade} onChange={(e) => setCidade(e.target.value)} placeholder="Ex: Cabreúva" className="bg-background border-border/60 h-11 text-base" />
+              <Input value={cidade} onChange={(e) => setCidade(e.target.value)} placeholder="Ex: Cabreúva" className="bg-background border-border/60 h-10 sm:h-11 text-base" />
             </Field>
             <Field icon={Navigation} label={kind === "mutirao" ? "Rua / local" : "Endereço do comércio"}>
               <div className="flex gap-2">
-                <Input value={rua} onChange={(e) => setRua(e.target.value)} placeholder="Ex: Av. das Nações" className="bg-background border-border/60 h-11 text-base flex-1" />
-                <Input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Nº" inputMode="numeric" className="bg-background border-border/60 h-11 text-base w-20 text-center font-mono" />
+                <Input value={rua} onChange={(e) => setRua(e.target.value)} placeholder="Ex: Av. das Nações" className="bg-background border-border/60 h-10 sm:h-11 text-base flex-1" />
+                <Input value={numero} onChange={(e) => setNumero(e.target.value)} placeholder="Nº" inputMode="numeric" className="bg-background border-border/60 h-10 sm:h-11 text-base w-16 sm:w-20 text-center font-mono" />
               </div>
               {rua.trim() && (
-                <p className="text-[11px] text-primary font-medium mt-1.5">
+                <p className="text-[11px] text-primary font-medium mt-1 truncate">
                   → {autoCorrecao ? corrigirAcentos(expandirEndereco(rua)) : expandirEndereco(rua)}
                   {numero.trim() ? `, nº ${numeroEnderecoExtenso(numero)}` : ""}
                 </p>
               )}
             </Field>
-            <Field icon={MapPin} label="Bairro (opcional)">
-              <Input value={bairro} onChange={(e) => setBairro(e.target.value)} placeholder="Ex: Centro, Jardim América..." className="bg-background border-border/60 h-11 text-base" />
-            </Field>
-            {kind === "mutirao" && (
-              <Field icon={MapPin} label="Ponto de referência">
-                <div className="flex gap-2 mb-2">
-                  {(["proximo", "em_frente"] as RefTipo[]).map((v) => (
-                    <button
-                      key={v}
-                      onClick={() => setRefTipo(v)}
-                      className={`flex-1 h-10 rounded-xl text-xs font-semibold transition-all ${
-                        refTipo === v
-                          ? "bg-primary text-primary-foreground"
-                          : "bg-muted/30 border border-border/50 text-muted-foreground hover:text-foreground"
-                      }`}
-                    >
-                      {v === "proximo" ? "Próximo ao" : "Em frente ao"}
-                    </button>
-                  ))}
-                </div>
-                <Input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Ex: Mercado Municipal..." className="bg-background border-border/60 h-11 text-base" />
-              </Field>
-            )}
-            <div className="space-y-2">
+
+            {/* Bairro / referência: recolhidos no mobile para encurtar a ficha */}
+            <details
+              className="rounded-lg border border-border/40 bg-muted/10 open:bg-transparent"
+              open={hasOptionalExtras ? true : undefined}
+            >
+              <summary className="cursor-pointer list-none flex items-center justify-between gap-2 px-2.5 py-2 text-xs font-semibold text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+                <span>Bairro{kind === "mutirao" ? " e referência" : ""} (opcional)</span>
+                <ChevronDown className="w-3.5 h-3.5 shrink-0 opacity-60" />
+              </summary>
+              <div className="px-0.5 pb-1 pt-1 space-y-2.5">
+                <Field icon={MapPin} label="Bairro">
+                  <Input value={bairro} onChange={(e) => setBairro(e.target.value)} placeholder="Ex: Centro, Jardim América..." className="bg-background border-border/60 h-10 sm:h-11 text-base" />
+                </Field>
+                {kind === "mutirao" && (
+                  <Field icon={MapPin} label="Ponto de referência">
+                    <div className="flex gap-2 mb-2">
+                      {(["proximo", "em_frente"] as RefTipo[]).map((v) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setRefTipo(v)}
+                          className={`flex-1 h-9 sm:h-10 rounded-lg sm:rounded-xl text-xs font-semibold transition-all ${
+                            refTipo === v
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-muted/30 border border-border/50 text-muted-foreground hover:text-foreground"
+                          }`}
+                        >
+                          {v === "proximo" ? "Próximo ao" : "Em frente ao"}
+                        </button>
+                      ))}
+                    </div>
+                    <Input value={referencia} onChange={(e) => setReferencia(e.target.value)} placeholder="Ex: Mercado Municipal..." className="bg-background border-border/60 h-10 sm:h-11 text-base" />
+                  </Field>
+                )}
+              </div>
+            </details>
+
+            <div className="space-y-1.5">
               <div className="grid grid-cols-2 gap-2">
                 {([
                   { label: "Início", value: horaInicio, set: setHoraInicio, ph: "8" },
@@ -1426,20 +1471,20 @@ export function AudioStudio({ userId }: { userId: string }) {
                       onChange={(e) => (f.set as (v: string) => void)(e.target.value)}
                       placeholder={`${f.ph} ou ${String(f.ph).padStart(2, "0")}:00`}
                       inputMode="text"
-                      className="bg-background border-border/60 h-11 text-base font-mono text-center"
+                      className="bg-background border-border/60 h-10 sm:h-11 text-base font-mono text-center"
                     />
                   </Field>
                 ))}
               </div>
-              <p className="text-[11px] text-muted-foreground italic">
-                🔊 vai falar: "{horarioRangeFalado(horaInicio || "8", horaFim || "18")}"
+              <p className="text-[10px] sm:text-[11px] text-muted-foreground truncate">
+                Fala: {horarioRangeFalado(horaInicio || "8", horaFim || "18")}
               </p>
             </div>
-            <div className="flex items-center justify-between pt-2 border-t border-border/40">
-              <div>
-                <p className="text-xs font-semibold text-foreground">Correção automática</p>
-                <p className="text-[10px] text-muted-foreground">Acentos e abreviações</p>
-              </div>
+            <div className="flex items-center justify-between gap-3 pt-1.5 border-t border-border/40">
+              <p className="text-xs font-semibold text-foreground leading-tight">
+                Correção automática
+                <span className="hidden sm:inline text-[10px] font-normal text-muted-foreground"> · acentos e abreviações</span>
+              </p>
               <Toggle on={autoCorrecao} onChange={() => setAutoCorrecao(!autoCorrecao)} />
             </div>
               </>
@@ -1447,15 +1492,15 @@ export function AudioStudio({ userId }: { userId: string }) {
           </div>
 
           {kind === "mutirao" && (
-            <div className="bg-card rounded-2xl border border-border/50 p-4 space-y-3 shadow-sm">
+          <div className="bg-card rounded-xl sm:rounded-2xl border border-border/50 p-3 sm:p-4 space-y-3 shadow-sm">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2.5">
-                  <span className="w-9 h-9 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
-                    <Gift className="w-4 h-4 text-primary" />
+                <div className="flex items-center gap-2">
+                  <span className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg sm:rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center">
+                    <Gift className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-primary" />
                   </span>
                   <div>
                     <p className="text-sm font-semibold text-foreground">Sorteio / Incentivo</p>
-                    <p className="text-[10px] text-muted-foreground">Adicionado no final do áudio</p>
+                    <p className="text-[10px] text-muted-foreground hidden sm:block">Adicionado no final do áudio</p>
                   </div>
                 </div>
                 <Toggle on={sorteioAtivo} onChange={() => setSorteioAtivo(!sorteioAtivo)} />
@@ -1519,35 +1564,45 @@ export function AudioStudio({ userId }: { userId: string }) {
             </div>
           )}
 
-          <div className="bg-card rounded-2xl border border-border/50 p-4 shadow-sm">
-            <div className="flex items-center gap-2 mb-2.5">
-              <span className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center">
+          <details className="bg-card rounded-xl sm:rounded-2xl border border-border/50 shadow-sm group open:pb-0">
+            <summary className="cursor-pointer list-none flex items-center gap-2 p-3 sm:p-4 [&::-webkit-details-marker]:hidden">
+              <span className="w-7 h-7 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0">
                 <Volume2 className="w-3.5 h-3.5 text-primary" />
               </span>
-              <p className="text-[11px] font-bold text-foreground uppercase tracking-[0.14em]">Roteiro</p>
+              <p className="text-[11px] font-bold text-foreground uppercase tracking-[0.14em]">Prévia do roteiro</p>
               <span className="ml-auto text-[10px] text-muted-foreground tabular-nums font-mono">
                 {textoPreview.length} car.
               </span>
-            </div>
-            <p className="text-[13px] text-foreground/85 leading-relaxed italic">"{textoPreview}"</p>
-          </div>
+              <ChevronDown className="w-3.5 h-3.5 text-muted-foreground group-open:rotate-180 transition-transform" />
+            </summary>
+            <p className="px-3 sm:px-4 pb-3 sm:pb-4 text-[12px] sm:text-[13px] text-foreground/85 leading-relaxed italic line-clamp-6 sm:line-clamp-none">
+              &quot;{textoPreview}&quot;
+            </p>
+          </details>
 
-          <Button
-            onClick={handleGenerate}
-            disabled={generating}
-            className="w-full h-14 text-base font-bold rounded-2xl gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25"
-          >
-            {generating ? (
-              <><Loader2 className="w-5 h-5 animate-spin" /> Gerando áudio…</>
-            ) : (
-              <><Volume2 className="w-5 h-5" /> Gerar áudio de {kindLabel}</>
-            )}
-          </Button>
+          <div className="sticky bottom-3 z-20 lg:static lg:bottom-auto lg:z-auto">
+            <Button
+              onClick={handleGenerate}
+              disabled={generating}
+              className="w-full h-12 sm:h-14 text-sm sm:text-base font-bold rounded-xl sm:rounded-2xl gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25"
+            >
+              {generating ? (
+                <><Loader2 className="w-5 h-5 animate-spin" /> Gerando áudio…</>
+              ) : (
+                <><Volume2 className="w-5 h-5" /> Gerar áudio de {kindLabel}</>
+              )}
+            </Button>
+          </div>
         </section>
 
         {/* ═══ LADO DIREITO — player + biblioteca ═══ */}
-        <section className="space-y-3 xl:sticky xl:top-4 xl:self-start xl:max-h-[calc(100vh-2rem)] xl:overflow-y-auto xl:pr-1">
-          <SectionTitle icon={Play} label="Player" hint="Ouça, baixe e envie" />
+        <section
+          ref={playerSectionRef}
+          className="space-y-2.5 sm:space-y-3 lg:sticky lg:top-4 lg:self-start lg:max-h-[calc(100vh-2rem)] lg:overflow-y-auto lg:pr-1"
+        >
+          <div className="hidden sm:block">
+            <SectionTitle icon={Play} label="Player" hint="Ouça, baixe e envie" />
+          </div>
 
           <div className="rounded-2xl border border-border/50 bg-card shadow-sm overflow-hidden">
             {audioUrl ? (
@@ -1572,10 +1627,10 @@ export function AudioStudio({ userId }: { userId: string }) {
                     </p>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
                       Voz {voiceLabel} · modelo {modelLabel}
-                      {kind === "mutirao" ? " · prévia sem vinheta" : ""}
+                      {withVinheta ? " · prévia sem vinheta" : ""}
                     </p>
                     <div className="flex gap-1.5 mt-1.5">
-                      {kind === "mutirao" ? (
+                      {withVinheta ? (
                         <>
                           <Badge>sem vinheta</Badge>
                           {(audioBlobVinheta || lastPublicUrlVinheta) && <Badge tone="primary">com vinheta</Badge>}
@@ -1594,32 +1649,32 @@ export function AudioStudio({ userId }: { userId: string }) {
                   </button>
                 </div>
 
-                {/* DOWNLOAD UNIFICADO — sempre baixa as 2 versões */}
+                {/* DOWNLOAD UNIFICADO — Mutirão/Comércio baixam as 2 versões */}
                 <Button
                   onClick={handleDownload}
                   className="w-full h-12 font-semibold rounded-xl gap-2 bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
                   <Download className="w-4 h-4" />
-                  {kind === "mutirao" ? "Baixar áudio (com e sem vinheta)" : "Baixar áudio"}
+                  {withVinheta ? "Baixar áudio (com e sem vinheta)" : "Baixar áudio"}
                 </Button>
 
-                <div className={`grid gap-2 ${kind === "mutirao" && lastPublicUrlVinheta ? "grid-cols-2" : "grid-cols-1"}`}>
+                <div className={`grid gap-2 ${withVinheta && lastPublicUrlVinheta ? "grid-cols-2" : "grid-cols-1"}`}>
                   {lastPublicUrl ? (
                     <AudioWhatsAppPopover
                       audioUrl={lastPublicUrl}
                       label={`${kindLabel} — ${kind === "livre" ? (livreNomeFirst || "corpo") : (cidade || "cidade")}`}
                       trigger={
                         <Button variant="outline" className="h-10 text-xs gap-1.5 rounded-xl w-full">
-                          <Send className="w-3.5 h-3.5" /> {kind === "mutirao" ? "WhatsApp (sem)" : "WhatsApp"}
+                          <Send className="w-3.5 h-3.5" /> {withVinheta ? "WhatsApp (sem)" : "WhatsApp"}
                         </Button>
                       }
                     />
                   ) : (
                     <Button variant="outline" disabled className="h-10 text-xs gap-1.5 rounded-xl">
-                      <Send className="w-3.5 h-3.5" /> {kind === "mutirao" ? "WhatsApp (sem)" : "WhatsApp"}
+                      <Send className="w-3.5 h-3.5" /> {withVinheta ? "WhatsApp (sem)" : "WhatsApp"}
                     </Button>
                   )}
-                  {kind === "mutirao" && lastPublicUrlVinheta ? (
+                  {withVinheta && lastPublicUrlVinheta ? (
                     <AudioWhatsAppPopover
                       audioUrl={lastPublicUrlVinheta}
                       label={`${kindLabel} — ${cidade || "cidade"} (com vinheta)`}
@@ -1629,7 +1684,7 @@ export function AudioStudio({ userId }: { userId: string }) {
                         </Button>
                       }
                     />
-                  ) : kind === "mutirao" ? (
+                  ) : withVinheta ? (
                     <Button variant="outline" disabled className="h-10 text-xs gap-1.5 rounded-xl">
                       <Music className="w-3.5 h-3.5" /> WhatsApp (com)
                     </Button>
@@ -1676,20 +1731,23 @@ export function AudioStudio({ userId }: { userId: string }) {
                 </button>
               </div>
             ) : (
-              <div className="p-8 text-center">
-                <div className="w-16 h-16 rounded-2xl bg-muted/30 border border-border/50 flex items-center justify-center mx-auto mb-3">
-                  <Volume2 className="w-7 h-7 text-muted-foreground/50" />
+              <div className="p-4 text-center">
+                <div className="w-12 h-12 rounded-xl bg-muted/30 border border-border/50 flex items-center justify-center mx-auto mb-2">
+                  <Volume2 className="w-5 h-5 text-muted-foreground/50" />
                 </div>
                 <p className="text-sm font-semibold text-foreground">Nenhum áudio gerado ainda</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Preencha os dados ao lado e clique em <span className="text-primary font-medium">Gerar áudio</span>.
+                  Preencha os dados e toque em <span className="text-primary font-medium">Gerar áudio</span>.
                 </p>
               </div>
             )}
           </div>
 
-          <SectionTitle icon={History} label="Biblioteca" hint="Áudios prontos para reaproveitar" />
-          <div className="bg-card rounded-2xl border border-border/50 p-3 sm:p-4 shadow-sm space-y-3">
+          <div className="hidden sm:block">
+            <SectionTitle icon={History} label="Biblioteca" hint="Áudios prontos para reaproveitar" />
+          </div>
+          <div className="bg-card rounded-xl sm:rounded-2xl border border-border/50 p-3 sm:p-4 shadow-sm space-y-3">
+            <p className="sm:hidden text-[11px] font-bold uppercase tracking-wider text-muted-foreground">Biblioteca</p>
             <div className={`grid ${isSuperAdmin ? "grid-cols-3" : "grid-cols-2"} gap-1.5`}>
               <LibTabBtn active={libTab === "mine"} onClick={() => setLibTab("mine")} icon={History}>Meus</LibTabBtn>
               <LibTabBtn active={libTab === "public"} onClick={() => setLibTab("public")} icon={Globe2}>Pública</LibTabBtn>

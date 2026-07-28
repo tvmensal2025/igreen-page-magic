@@ -6,7 +6,13 @@ description: Histórico de rounds do pack steering.
 
 # Auditoria do pack steering
 
-Última atualização: **2026-07-25** (Cérebro × Grupo A na memória always da IA).
+Última atualização: **2026-07-27** (prep TTS pós-venda + pacote só imagem/áudio).
+
+## 2026-07-27 — Pós-venda: pré-gerar áudio dos agendamentos
+Tabela `pos_venda_prepared_audio` + edge `pos-venda-audio-prep` (cron :05) gera TTS (Olá nome + saudação do slot + corpo) antes do envio. Auto-progress consome se `saudacao_bucket` bater; senão TTS ao vivo. Pacote Zap = só imagem+áudio. Helpers: `_shared/pos-venda-tts.ts`, `_shared/pos-venda-audio-prep.ts`. Doc: `#pos-venda`.
+
+## 2026-07-27 — Pós-venda: áudio TTS do roteiro (não legacy.ogg)
+Bug: preview mostrava `Olá, Nome` + `Muito boa tarde` + corpo, mas o Zap recebia `media_url` estático (`legacy_*.ogg`) sem personalização — TTS só rodava se `media_url` fosse null. Correção: `channel-sender` prioriza TTS quando `forbidText` ou template com `{{nome}}`/`{{saudacao}}`; migration zera `media_url` em `pos_venda_default_media` + `stage_auto_messages` pós-venda. Doc: `#pos-venda`.
 
 ## 2026-07-25 — Cérebro na memória always da IA
 Garantir que qualquer chat saiba sem `#` manual:

@@ -81,6 +81,115 @@ export async function registerSend(supabase: any, instance: string): Promise<voi
   }
 }
 
+/** Razões soft do check_send_quota quando o canal é Whapi (sem linha em whatsapp_instances). */
+const WHAPI_QUOTA_SOFT_BYPASS = new Set([
+  "instance_not_found",
+  "empty_response",
+  "rpc_error",
+]);
+
+const DEFAULT_QUOTA_WAIT_MS = 25_000;
+
+export type AwaitOutboundQuotaOpts = {
+  /** "whapi" | "evolution" | … — Whapi usa fila própria (`awaitWhapiSendSlot`). */
+  channelKind?: string;
+  /** Teto de espera no edge (não pode travar o tick). Default 25s. */
+  maxWaitMs?: number;
+};
+
+export type AwaitOutboundQuotaResult = {
+  allowed: boolean;
+  reason?: string;
+  waitedMs: number;
+  /**
+   * Intervalo mínimo ainda ativo após espera — caller deve reagendar em
+   * segundos (não logar `failed` nem adiar 30 min). Caps duros / recovery
+   * NÃO usam softDefer.
+   */
+  softDefer?: boolean;
+  nextAllowedAt?: string | null;
+  retryInMs?: number;
+};
+
+/** Calcula quanto esperar pelo próximo slot (next_allowed_at ou min_interval_ms). */
+export function computeMinIntervalWaitMs(quota: SendQuotaResult): number {
+  if (quota.next_allowed_at) {
+    const t = new Date(quota.next_allowed_at).getTime() - Date.now();
+    if (Number.isFinite(t)) return Math.max(0, Math.ceil(t));
+  }
+  const mi = Number(quota.min_interval_ms);
+  if (Number.isFinite(mi) && mi > 0) return Math.ceil(mi);
+  return 18_000;
+}
+
+/**
+ * Quota outbound para motores (cadência etc.):
+ * - Cap/recovery/fatal → bloqueia (allowed=false, softDefer=false).
+ * - `min_interval_not_elapsed` → ESPERA o slot (até maxWaitMs) e envia;
+ *   Whapi bypassa (throttle no send). Nunca tratar intervalo como "failed"
+ *   de pessoa — evita 40 logs na mesma lead.
+ */
+export async function awaitOutboundSendQuota(
+  supabase: any,
+  instance: string,
+  opts: AwaitOutboundQuotaOpts = {},
+): Promise<AwaitOutboundQuotaResult> {
+  const maxWaitMs = Math.max(0, opts.maxWaitMs ?? DEFAULT_QUOTA_WAIT_MS);
+  const kind = String(opts.channelKind || "").toLowerCase();
+  let waitedMs = 0;
+
+  let quota = await checkSendQuota(supabase, instance);
+  if (quota.allowed) return { allowed: true, waitedMs: 0 };
+
+  if (kind === "whapi" && WHAPI_QUOTA_SOFT_BYPASS.has(String(quota.reason || ""))) {
+    return { allowed: true, waitedMs: 0 };
+  }
+
+  if (quota.reason === "min_interval_not_elapsed") {
+    // Whapi: claim_whapi_send_slot já espaça — não falhar / não adiar 30 min.
+    if (kind === "whapi") {
+      return { allowed: true, waitedMs: 0 };
+    }
+
+    const need = computeMinIntervalWaitMs(quota);
+    if (need <= maxWaitMs) {
+      if (need > 0) {
+        await new Promise((r) => setTimeout(r, need));
+        waitedMs = need;
+      }
+      quota = await checkSendQuota(supabase, instance);
+      if (quota.allowed) return { allowed: true, waitedMs };
+      if (quota.reason === "min_interval_not_elapsed") {
+        const retryInMs = Math.max(3_000, Math.min(computeMinIntervalWaitMs(quota), 60_000));
+        return {
+          allowed: false,
+          reason: "min_interval_not_elapsed",
+          waitedMs,
+          softDefer: true,
+          nextAllowedAt: quota.next_allowed_at ?? null,
+          retryInMs,
+        };
+      }
+    } else {
+      const retryInMs = Math.max(3_000, Math.min(need, 60_000));
+      return {
+        allowed: false,
+        reason: "min_interval_not_elapsed",
+        waitedMs: 0,
+        softDefer: true,
+        nextAllowedAt: quota.next_allowed_at ?? null,
+        retryInMs,
+      };
+    }
+  }
+
+  return {
+    allowed: false,
+    reason: quota.reason || "quota_blocked",
+    waitedMs,
+  };
+}
+
 /** Calcula duração de typing proporcional ao tamanho do texto (40ms/char). */
 export function typingDurationMs(text: string): number {
   const len = (text || "").length;

@@ -10,6 +10,9 @@ fileMatchPattern:
   - "src/components/whatsapp/PosVenda*"
   - "src/components/whatsapp/PendingApprovalDialog.tsx"
   - "supabase/functions/_shared/pos-venda-retentativa*"
+  - "supabase/functions/_shared/pos-venda-audio-prep*"
+  - "supabase/functions/_shared/pos-venda-tts*"
+  - "supabase/functions/_shared/pos-venda-send-window*"
 ---
 
 # Pós-venda (WA) — após aprovação iGreen
@@ -20,7 +23,8 @@ Domínio: `customers.customer_origin = igreen_sync` + kanban `stage_scope=pos_ve
 ## Edges
 | Função | Papel |
 |---|---|
-| `pos-venda-auto-progress` | Move `pos_venda_stage` + envia mídia; claim em `customer_auto_message_log` |
+| `pos-venda-auto-progress` | Move `pos_venda_stage` + envia **imagem + áudio**; claim em `customer_auto_message_log` |
+| `pos-venda-audio-prep` | Pré-gera TTS em `pos_venda_prepared_audio` (atrasados + 48h); **não envia**; roda fora da janela |
 | `pos-venda-bucket-cron` | Só `rpc('recompute_pos_venda_stages')` — sem envio |
 | `sync-igreen-customers` | Após sync chama `recompute_pos_venda_stages`; protege `pos_venda_recadastro_at` |
 
@@ -30,8 +34,9 @@ UI: `PosVendaKanban`, `PosVendaSetupWizard`, `PosVendaAutoConfigDialog`, `Pendin
 - `customers`: `pos_venda_stage`, `pos_venda_approved_at`, `pos_venda_rejected_at`, `pos_venda_recadastro_at`, `pos_venda_manual`, `pos_venda_pending_stage`, `pos_venda_reason`
 - Kanban: keys `pv_espera|pv_aprovado|pv_reprovado|pv_retentativa|pv_d30|…|pv_d210`
 - Mídia: `pos_venda_default_media`, `consultant_pos_venda_media`
+- Prep: `pos_venda_prepared_audio` (customer+stage_key UNIQUE; `saudacao_bucket` manha|tarde|noite)
 - Log idempotente: `customer_auto_message_log` (UNIQUE customer+stage_key)
-- Helper: `_shared/pos-venda-retentativa.ts` (botão `pv_retentativa_cadastro`)
+- Helper: `_shared/pos-venda-retentativa.ts` (botão `pv_retentativa_cadastro`) · `_shared/pos-venda-audio-prep.ts` · `_shared/pos-venda-tts.ts`
 
 ## Cadeados
 1. Toggle `pos_venda_auto_messages` — **não** usa `bot_global_enabled`
@@ -63,5 +68,28 @@ Sync/bucket recalcula estágio; se palpite aprovado/reprovado sem validação �
    - **Evolution:** texto numerado `*1.* Quero tentar de novo` (canal sem botão real)
 3. Clique / resposta `1` → `activatePosVendaRecadastro` (origem `whatsapp_lead`, Grupo A / cadastro); sync não re-flipa enquanto `pos_venda_recadastro_at` ativo
 
+## Áudio = stitch Sofia (corpo fixo + nome reaproveitado)
+
+Roteiro canônico em `message_text` (só texto; áudio é montado em peças):
+1. `Olá, {{nome}} Tudo bem?` → clip `intro:ola:ptbr4:{nome}` (**reusa** biblioteca **pública** `is_public`; Maria etc. — Zap/ligação/PV compartilham; helper `_shared/ai-media-shared-intro.ts`)
+2. `{{saudacao}}` → clip fixo `pv_saudacao:{manha|tarde|noite}:v1` (**público**, gera **1×**)
+3. corpo do estágio → clip fixo `pv_body:{stage}:v1` (gera **1×** por marco; por consultor)
+
+No Zap: **só imagem + áudio** (`forbidText: true`). Sem bolha de texto.
+
+**PROIBIDO** regenerar o roteiro inteiro via `pv_tts_*` / `renderPersonalizedTtsAudio` no pós-venda.
+
+### Prep antes do envio
+1. Cron `pos-venda-audio-prep` monta stitch e grava em `pos_venda_prepared_audio`.
+2. No envio: `prepared` se saudação bater; senão stitch na hora (ainda reusando peças).
+3. Precedência: `prepared` > stitch (intro+saudação+corpo) > **nunca** TTS do texto completo.
+
+**NÃO** recolocar `media_url` estático legado por cima do roteiro com `{{saudacao}}`.
+
+## Deploy (checklist)
+- Edges: `pos-venda-audio-prep`, `pos-venda-auto-progress` (bundla `_shared`)
+- Migration: `pos_venda_prepared_audio` + cron `pos-venda-audio-prep-hourly`
+- SQL já aplicado em prod via MCP; código precisa commit + push + workflow deploy
+
 ## NÃO FAÇA
-Msg sem validação manual / sem toggle · misturar `sale_stage_*` · apagar edges/toggles · massa nova sem pedido · hardcode UUID de um consultor nos seeds (usar `CROSS JOIN consultants`).
+Msg sem validação manual / sem toggle · misturar `sale_stage_*` · apagar edges/toggles · massa nova sem pedido · hardcode UUID de um consultor nos seeds (usar `CROSS JOIN consultants`) · gravar `media_url` legado por cima do roteiro com `{{saudacao}}`.

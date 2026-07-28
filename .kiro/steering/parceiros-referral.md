@@ -76,7 +76,7 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
 | Analytics | `src/components/admin/parceiros/hooks/usePartnerAnalytics.ts` |
 | qrPhrase (front) | `src/components/admin/parceiros/qrPhrase.ts` — `resolveQrMessage`, `buildDefaultQrPhrase`, `GENERIC_KEYWORD_BLOCKLIST` |
 | qrPhrase (Deno espelho) | `supabase/functions/_shared/qr-phrase.ts` — mesma lógica + `extractShortCodeMarker` |
-| Rota `/r/{licenca}/{code}` | edge `supabase/functions/qr-redirect/index.ts` (parseia path, resolve parceiro, redireciona `wa.me`) |
+| Rota `/r/{licenca}/{code}` | edge `qr-redirect` (HTTP 302 → `wa.me`). QR/link novos apontam direto pra edge; SPA `/r/...` só compatibilidade (bounce imediato). |
 | Matcher | `supabase/functions/_shared/keyword-matcher.ts` — `normalizeText`, `hasExactTokenSequence`, `matchKeyword` |
 | Webhook Whapi (inbound) | `supabase/functions/whapi-webhook/index.ts` (bloco keyword ≈ L1553–1658) |
 | Webhook Evolution | `supabase/functions/evolution-webhook/index.ts` (mesmo bloco, paridade) |

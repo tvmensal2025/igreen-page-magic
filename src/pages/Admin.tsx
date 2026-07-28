@@ -726,7 +726,7 @@ const AdminContent = () => {
 
 
           {userId && activeTab === "audio-studio" && (
-            <div className="max-w-2xl mx-auto w-full">
+            <div className="max-w-6xl mx-auto w-full">
               <AudioStudioPanel userId={userId} />
             </div>
           )}

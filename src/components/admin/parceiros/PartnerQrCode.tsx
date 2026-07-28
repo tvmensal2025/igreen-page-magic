@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
-import { Download, Upload, Trash2, ImageIcon, FileText, Lock, Unlock, Copy, ExternalLink, Check } from "lucide-react";
+import { Download, Upload, Trash2, ImageIcon, FileText, Lock, Unlock, Copy, ExternalLink, Check, Share2, Loader2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
 import {
@@ -24,6 +24,8 @@ import {
   drawFlyerPlaceholderBackground,
 } from "@/components/admin/flyerPlaceholder";
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
+import { buildPartnerPublicShortLink } from "@/lib/partnerShortLink";
+import { useToast } from "@/hooks/use-toast";
 
 interface PartnerQrCodeProps {
   open: boolean;
@@ -40,33 +42,19 @@ interface PartnerQrCodeProps {
   shortCode?: string | null;
 }
 
-/** Domínio público do portal (mesmo usado em orçamentos/propostas). */
-const PUBLIC_BASE = "https://igreen.cloud";
-
 /**
- * Monta o LINK CURTO com a MARCA do portal: `igreen.cloud/r/{ref}/{short_code}`.
- *
- * `ref` é, de preferência, o **ID iGreen do consultor** (numérico e neutro,
- * ex.: 122160) — não expõe o nome do consultor na URL. Quando o consultor não
- * tem `igreen_id` cadastrado, cai na licença (slug). O `short_code` é numérico
- * e neutro (ex.: 482917) — não expõe a keyword pessoal do parceiro.
- *
- * A rota `/r/...` no SPA redireciona pra `qr-redirect`, que resolve o consultor
- * por igreen_id (numérico) ou por licença (slug, legado), monta telefone +
- * frase (com a keyword dentro da mensagem do WhatsApp).
- *
- * Sem identificador ou sem código, devolve `null` (fallback pro wa.me direto).
+ * Link curto com marca: `igreen.cloud/r/{ref}/{code}`.
+ * No celular o `index.html` redireciona na hora pra edge → WhatsApp (sem site).
  */
 function buildShortLink(
   license?: string | null,
   shortCode?: string | null,
   consultantIgreenId?: string | null,
 ): string | null {
-  // Prioriza o ID iGreen numérico (neutro); senão, usa a licença (slug).
   const ref = (consultantIgreenId ?? "").trim() || (license ?? "").trim();
   const code = (shortCode ?? "").trim();
   if (!ref || !code) return null;
-  return `${PUBLIC_BASE}/r/${encodeURIComponent(ref)}/${encodeURIComponent(code)}`;
+  return buildPartnerPublicShortLink(ref, code);
 }
 
 /**
@@ -383,13 +371,12 @@ export function PartnerQrCode({
   // determinístico que o webhook usa para atribuir o lead a este parceiro
   // mesmo se o lead apagar/editar o resto da mensagem.
   const phrase = resolveQrMessage(qrPhrase, keyword, shortCode);
-  // Link curto com marca: igreen.cloud/r/{ref}/{short_code}, onde ref é o ID
-  // iGreen do consultor (neutro) ou a licença (fallback). Sem identificador ou
-  // código (parceiro antigo sem backfill), cai no wa.me direto como fallback —
-  // que também carrega o marcador `#R{code}` na mensagem.
+  // Link curto com marca (igreen.cloud/r/...) — bounce imediato → WhatsApp.
   const shortLink = buildShortLink(license, shortCode, consultantIgreenId);
   const url =
     shortLink ?? buildWaMeUrl(consultantPhone, keyword, qrPhrase, shortCode);
+  const { toast } = useToast();
+  const [sharingWa, setSharingWa] = useState(false);
 
   // Template selecionado (Sulfite A4 ou Banner 504×904mm).
   const [templateId, setTemplateId] = useState<TemplateId>(DEFAULT_TEMPLATE_ID);
@@ -620,6 +607,85 @@ export function PartnerQrCode({
     const imgData = canvas.toDataURL("image/png");
     pdf.addImage(imgData, "PNG", 0, 0, wmm, hmm);
     pdf.save(`flyer-${templateId}-${partnerName.toLowerCase().replace(/[^a-z0-9]/g, "-")}.pdf`);
+  };
+
+  /** Gera PNG em alta (canvas full) e abre o share do celular / fallback desktop. */
+  const handleSendWhatsApp = async () => {
+    setSharingWa(true);
+    try {
+      const canvas = await renderToCanvas();
+      if (!canvas) {
+        toast({
+          title: "Não foi possível gerar a arte",
+          description: "Tente baixar o PNG e enviar manualmente.",
+          variant: "destructive",
+        });
+        return;
+      }
+      const blob = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob((b) => resolve(b), "image/png"),
+      );
+      if (!blob) {
+        toast({
+          title: "Falha ao gerar PNG",
+          variant: "destructive",
+        });
+        return;
+      }
+      const fileName = `flyer-${templateId}-${partnerName
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")}.png`;
+      const file = new File([blob], fileName, { type: "image/png" });
+      const shareText = shortLink
+        ? `Meu link: ${shortLink}`
+        : phrase;
+
+      const nav = navigator as Navigator & {
+        canShare?: (data: ShareData) => boolean;
+      };
+      if (typeof nav.share === "function" && nav.canShare?.({ files: [file] })) {
+        await nav.share({
+          files: [file],
+          title: `Flyer — ${partnerName}`,
+          text: shareText,
+        });
+        toast({
+          title: "Pronto para enviar",
+          description: "Escolha o WhatsApp na lista de apps.",
+          duration: 2500,
+        });
+        return;
+      }
+
+      // Desktop / sem Web Share com arquivo: baixa PNG HQ + abre WhatsApp com o link.
+      const a = document.createElement("a");
+      a.download = fileName;
+      a.href = URL.createObjectURL(blob);
+      a.click();
+      URL.revokeObjectURL(a.href);
+
+      const waText = encodeURIComponent(
+        shortLink
+          ? `Olá! Segue meu material. Link: ${shortLink}`
+          : phrase,
+      );
+      window.open(`https://wa.me/?text=${waText}`, "_blank", "noopener,noreferrer");
+      toast({
+        title: "PNG baixado em alta qualidade",
+        description: "No WhatsApp, anexe a imagem que acabou de baixar.",
+        duration: 4500,
+      });
+    } catch (err) {
+      // Usuário cancelou o share nativo — não é erro.
+      if ((err as Error)?.name === "AbortError") return;
+      toast({
+        title: "Não foi possível compartilhar",
+        description: "Baixe o PNG e envie pelo WhatsApp.",
+        variant: "destructive",
+      });
+    } finally {
+      setSharingWa(false);
+    }
   };
 
   // Preview na tela (responsivo). Export PNG/PDF usa TEMPLATE_DIMS — tamanhos fixos.
@@ -934,14 +1000,27 @@ export function PartnerQrCode({
           </div>
         </div>
 
-        <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <DialogFooter className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
           <Button variant="outline" onClick={onClose}>
             Fechar
+          </Button>
+          <Button
+            variant="default"
+            onClick={handleSendWhatsApp}
+            disabled={sharingWa}
+            className="gap-2"
+          >
+            {sharingWa ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Share2 className="h-4 w-4" />
+            )}
+            Enviar no WhatsApp (alta qualidade)
           </Button>
           <Button variant="outline" onClick={handleDownload} className="gap-2">
             <Download className="h-4 w-4" /> Baixar PNG
           </Button>
-          <Button onClick={handleDownloadPDF} className="gap-2">
+          <Button onClick={handleDownloadPDF} className="gap-2" variant="outline">
             <FileText className="h-4 w-4" />
             Baixar PDF ({TEMPLATE_DIMS[templateId].pdfWmm}×{TEMPLATE_DIMS[templateId].pdfHmm}mm)
           </Button>
@@ -1006,19 +1085,9 @@ function PartnerLinkCard({
         </Button>
       </div>
       <p className="text-[10px] text-muted-foreground leading-snug">
-        Cole esse link em status, story, bio do Instagram ou em qualquer
-        mensagem.{" "}
-        {isShort ? (
-          <>
-            Ele é curto e redireciona pro WhatsApp já com a frase{" "}
-            <span className="font-medium">"{phrase}"</span>.
-          </>
-        ) : (
-          <>
-            Abre o WhatsApp já com a frase{" "}
-            <span className="font-medium">"{phrase}"</span>.
-          </>
-        )}
+        Link curto <span className="font-medium">igreen.cloud</span> — no
+        celular abre o WhatsApp na hora, já com a frase{" "}
+        <span className="font-medium">"{phrase}"</span>.
       </p>
     </div>
   );

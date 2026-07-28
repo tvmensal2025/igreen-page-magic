@@ -373,7 +373,10 @@
       ],
       "code_anchors": [
         "supabase/functions/pos-venda-auto-progress/index.ts",
+        "supabase/functions/pos-venda-audio-prep/index.ts",
         "supabase/functions/_shared/pos-venda-retentativa.ts",
+        "supabase/functions/_shared/pos-venda-audio-prep.ts",
+        "supabase/functions/_shared/pos-venda-tts.ts",
         "src/lib/posVendaSchedule.ts",
         "src/lib/posVenda/format.ts"
       ],
@@ -381,25 +384,30 @@
         "customers.pos_venda_*",
         "pos_venda_default_media",
         "consultant_pos_venda_media",
+        "pos_venda_prepared_audio",
         "customer_auto_message_log"
       ],
       "edges": [
         "pos-venda-auto-progress",
+        "pos-venda-audio-prep",
         "pos-venda-bucket-cron"
       ],
       "helpers": [
         "_shared/pos-venda-retentativa.ts",
+        "_shared/pos-venda-audio-prep.ts",
+        "_shared/pos-venda-tts.ts",
         "src/lib/posVendaSchedule.ts"
       ],
       "ai_donts": [
         "≠ esteira sale_stage_*",
         "só com pos_venda_manual=true + toggle",
         "NÃO usa bot_global_enabled (só pos_venda_auto_messages)",
-        "marcos D30…D210 + retentativa 60d"
+        "marcos D30…D210 + retentativa 60d",
+        "Zap = só imagem+áudio (forbidText); prep TTS antes do envio"
       ],
       "risk": "high",
       "doc_status": "ok",
-      "notes": "Nav docs D210 corrigidos round 5; steering canônico"
+      "notes": "Prep áudio em pos_venda_prepared_audio; saudacao_bucket do slot planejado"
     },
     {
       "id": "esteira",

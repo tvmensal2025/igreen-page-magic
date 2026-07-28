@@ -16,6 +16,21 @@
         } catch (e) { /* keep class=light do html */ }
       })();
     </script>
+    <!-- /r/{ref}/{code} → WhatsApp DIRETO (302 na edge). Antes do React/cookies. -->
+    <script>
+      (function () {
+        try {
+          var m = location.pathname.match(/^\/r\/([^\/]+)(?:\/([^\/]+))?\/?$/);
+          if (!m) return;
+          var u = new URL("https://zlzasfhcxcznaprrragl.supabase.co/functions/v1/qr-redirect");
+          u.searchParams.set("l", decodeURIComponent(m[1]));
+          if (m[2]) u.searchParams.set("c", decodeURIComponent(m[2]));
+          var msg = new URLSearchParams(location.search).get("msg");
+          if (msg) u.searchParams.set("msg", msg);
+          location.replace(u.toString());
+        } catch (e) { /* deixa o SPA tentar */ }
+      })();
+    </script>
     <!-- Anti-cache client-side: Lovable Hosting não processa public/_headers,
          então forçamos revalidação aqui. Qualquer deploy novo é detectado
          pelo navegador na próxima navegação. -->

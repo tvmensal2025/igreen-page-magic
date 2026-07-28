@@ -38,7 +38,7 @@ Cadência reusa o dialer em stages `A_CALL*`, `CALL_*`, `*_SMS` via `cadence-tic
    - Voz: status **IK / EK / CK / BK** (`_shared/voice-dialer/velip.ts:117`, `:534–547`)
    - SMS: ≥2 **UNDELIV|REJECTD|…** em 72h → upsert DNC (`voice-dialer-webhook` `:280–309`; `:384`/`:498` são auto-DNC de **voz**, não SMS)
 
-TTS: `call-stitch.ts` + `safeFirstNameForAddress`; guard também em `cadence-tick:799`.
+TTS: `call-stitch.ts` + `safeFirstNameForAddress`; intro canônica **“Olá, Nome! Tudo bem?”** (`buildOlaTudoBemTtsText`) — reusa `intro:ola:ptbr4:{nome}` / `intro:ola:{nome}` **público** (`is_public=true`, helper `_shared/ai-media-shared-intro.ts`) antes de ElevenLabs. Peças costuradas usam **sempre** `SOFIA_STITCH_PROFILE` + `VOICE_SETTINGS_V3_GREET` (mesma voz/speed) — Zap, ligação e pós-venda. Tag cache: `ci_v3_ola_tudobem_v2`. Guard também em `cadence-tick:799`.
 
 ## Crédito Velip (conta da plataforma)
 - `GetUserID` **não** retorna saldo (API v2). UI mostra “—” / oriente painel.

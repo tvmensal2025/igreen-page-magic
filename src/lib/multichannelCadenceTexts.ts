@@ -764,12 +764,12 @@ export const AVAILABILITY_BODY_KEYS: Record<AvailabilityOverrideKey, string> = {
 };
 
 export const DEFAULT_AVAILABILITY_PHRASES: Record<AvailabilityOverrideKey, string> = {
-  before_1630: "Estou disponível hoje até as 18 horas.",
-  "1630_1730": "Ainda estou disponível hoje até as 18 horas.",
+  before_1630: "Estou por aqui hoje até *as 18h*. 😊",
+  "1630_1730": "Ainda estou por aqui até *as 18h*. 😊",
   after_1730:
-    "Ainda estou disponível hoje até as 18 horas — se preferir, seguimos no próximo horário de atendimento.",
+    "Ainda atendo até *as 18h* — se preferir, a gente continua amanhã no horário de atendimento. 😊",
   after_1800:
-    "Recebi sua solicitação e deixei seu atendimento preparado. No próximo horário de atendimento, nossa equipe dará continuidade.",
+    "Já anotei seu interesse! ✅ No *próximo horário de atendimento* a gente continua de onde parou.",
 };
 
 function pickAvailabilityOverride(
@@ -1050,7 +1050,7 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
     title: "Frase — antes das 16h30",
     timing: "09:00–16:29",
     canGenerateAudio: false,
-    body: "Estou disponível hoje até as 18 horas.",
+    body: "Estou por aqui hoje até *as 18h*. 😊",
   },
   {
     key: "availability_1630_1730",
@@ -1059,7 +1059,7 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
     title: "Frase — 16h30–17h30",
     timing: "16:30–17:29",
     canGenerateAudio: false,
-    body: "Ainda estou disponível hoje até as 18 horas.",
+    body: "Ainda estou por aqui até *as 18h*. 😊",
   },
   {
     key: "availability_after_1730",
@@ -1068,7 +1068,7 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
     title: "Frase — após 17h30",
     timing: "17:30–17:59",
     canGenerateAudio: false,
-    body: "Ainda estou disponível hoje até as 18 horas — se preferir, seguimos no próximo horário de atendimento.",
+    body: "Ainda atendo até *as 18h* — se preferir, a gente continua amanhã no horário de atendimento. 😊",
   },
   {
     key: "availability_after_1800",
@@ -1077,7 +1077,7 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
     title: "Frase — após 18h / fora da janela",
     timing: "≥18:00, fim de semana",
     canGenerateAudio: false,
-    body: "Recebi sua solicitação e deixei seu atendimento preparado. No próximo horário de atendimento, nossa equipe dará continuidade.",
+    body: "Já anotei seu interesse! ✅ No *próximo horário de atendimento* a gente continua de onde parou.",
   },
 
   // ─── GRUPO A — 3 esperas: NOME → VALOR → EXPLICAÇÃO ─────────────────────

@@ -7,6 +7,7 @@ Domínio: `#pos-venda` · mapa id `pos-venda`.
 - Canal: Whapi primeiro (`resolveChannelForCustomerWithFailover`)
 - **NÃO** consulta `bot_global_enabled` — só `pos_venda_auto_messages` + `pos_venda_manual=true`
 - Idempotência: `customer_auto_message_log`
+- Pacote Zap: **imagem + áudio** (`forbidText`); áudio preferencialmente de `pos_venda_prepared_audio` (prep cron)
 
 ## Evidência prod
 1114 em `espera` · log: 18 `pv_reprovado` + poucos D* enviados

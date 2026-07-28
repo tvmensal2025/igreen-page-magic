@@ -259,16 +259,12 @@ Deno.serve(async (req) => {
       const overrideRaw = Number(lc.portal_idconsultor_override || 0);
       const overrideId = Number.isFinite(overrideRaw) && overrideRaw > 0 ? overrideRaw : 0;
       const dono = lc.consultants?.igreen_id ? Number(lc.consultants.igreen_id) : null;
-      const partnerIgreenId = lc.referral_partners?.partner_igreen_id
-        ? Number(lc.referral_partners.partner_igreen_id) : 0;
       const partnerCli = lc.referral_partners?.cli ? Number(lc.referral_partners.cli) : 0;
-      const partnerAsConsultant =
-        (Number.isFinite(partnerIgreenId) && partnerIgreenId > 0)
-          ? partnerIgreenId
-          : (Number.isFinite(partnerCli) && partnerCli > 0 ? partnerCli : 0);
+      const abonadorId =
+        (Number.isFinite(partnerCli) && partnerCli > 0) ? partnerCli : 0;
       const idconsultor = overrideId > 0
         ? overrideId
-        : (partnerAsConsultant > 0 ? partnerAsConsultant : dono);
+        : (abonadorId > 0 ? abonadorId : dono);
       const idcliente = lead.portal2_idcliente;
       if (!idconsultor || !idcliente) {
         replayResults.push({ id: lead.id, replayed: false, reason: "missing_ids" });

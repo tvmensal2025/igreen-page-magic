@@ -1,0 +1,5 @@
+# Links de parceiro/panfleto → WhatsApp direto (HTTP 302 na edge).
+# Honrado por hosts estilo Netlify/Cloudflare Pages; Lovable pode ignorar —
+# o index.html + PartnerRedirectPage já fazem o bounce.
+/r/:ref/:code  https://zlzasfhcxcznaprrragl.supabase.co/functions/v1/qr-redirect?l=:ref&c=:code  302
+/r/:ref  https://zlzasfhcxcznaprrragl.supabase.co/functions/v1/qr-redirect?l=:ref  302

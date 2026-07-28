@@ -1030,29 +1030,34 @@ async function fetchDadosFromSupabase(customerId) {
   if (!c) return null;
   const consultant = c.consultants;
   const partner = c.referral_partners;
-  // Regra de produto (2026-07-09 + override ficha):
+  // Regra de produto (consultor abona × cliente cashback):
   //   0) portal_idconsultor_override > 0 → sobrescreve tudo
-  //   1) partner_igreen_id > 0 → idconsultor = partner_igreen_id
-  //   2) cli > 0 (ativo)       → idconsultor = cli  (cli = id iGreen do consultor)
-  //   3) senão                 → idconsultor = dono da instância
-  // indcli = 0: cli/override cadastra PARA o consultor, não como indicador do dono.
+  //   1) cli > 0             → idconsultor = cli (consultor abonador)
+  //   2) senão               → idconsultor = dono da instância
+  //   indcli = partner_igreen_id quando é CLIENTE cashback (≠ idconsultor)
   const overrideRaw = Number(c.portal_idconsultor_override || 0);
   const overrideId = Number.isFinite(overrideRaw) && overrideRaw > 0 ? overrideRaw : 0;
   const donoIgreenId = consultant?.igreen_id ? Number(consultant.igreen_id) : null;
   const partnerIgreenId = partner?.partner_igreen_id ? Number(partner.partner_igreen_id) : 0;
   const partnerCli = partner?.cli ? Number(partner.cli) : 0;
-  const partnerAsConsultant =
-    (Number.isFinite(partnerIgreenId) && partnerIgreenId > 0)
-      ? partnerIgreenId
-      : (Number.isFinite(partnerCli) && partnerCli > 0 ? partnerCli : 0);
+  const abonadorId =
+    (Number.isFinite(partnerCli) && partnerCli > 0) ? partnerCli : 0;
   const igreenId = overrideId > 0
     ? overrideId
-    : (partnerAsConsultant > 0 ? partnerAsConsultant : donoIgreenId);
+    : (abonadorId > 0 ? abonadorId : donoIgreenId);
   if (!igreenId) return null;
+  const indcli =
+    Number.isFinite(partnerIgreenId) &&
+    partnerIgreenId > 0 &&
+    partnerIgreenId !== Number(igreenId)
+      ? partnerIgreenId
+      : 0;
   if (overrideId > 0) {
-    console.log(`  ✏️ [idconsultor-override] customer=${customerId} idconsultor=${overrideId} (parceiro=${partnerAsConsultant || '-'} dono=${donoIgreenId})`);
-  } else if (partnerAsConsultant > 0) {
-    console.log(`  🤝 [consultor-parceiro] customer=${customerId} idconsultor=${igreenId} (cli=${partnerCli || '-'} partner_igreen_id=${partnerIgreenId || '-'}) dono=${donoIgreenId}`);
+    console.log(`  ✏️ [idconsultor-override] customer=${customerId} idconsultor=${overrideId} (abonador=${abonadorId || '-'} dono=${donoIgreenId})`);
+  } else if (abonadorId > 0 && abonadorId !== donoIgreenId) {
+    console.log(`  🤝 [consultor-abonador] customer=${customerId} idconsultor=${igreenId} (cli=${partnerCli}) dono=${donoIgreenId}${indcli ? ` indcli=${indcli}` : ''}`);
+  } else if (indcli > 0) {
+    console.log(`  💰 [cliente-cashback] customer=${customerId} idconsultor=${igreenId} indcli=${indcli}`);
   }
 
   // ── Resolve anexos do customer (conta + doc frente + doc verso) ──────────
@@ -1228,23 +1233,22 @@ async function fetchDadosFromSupabase(customerId) {
     }
   }
 
-  return _buildDadosObject(c, consultant, partner, igreenId,
+  return _buildDadosObject(c, consultant, partner, igreenId, indcli,
     consumoMedio, distribuidora, billFile, docFile, docBackFile,
     ocrIdsol, ocrBillExtracted, billExtractionResult);
 }
 
 // Extraído pra eliminar duplicação. Quando billAlreadyExtracted=true,
 // cadastrarCliente reaproveita o idsolcontratovalidacao e pula extractReceipt.
-function _buildDadosObject(c, consultant, partner, igreenId,
+function _buildDadosObject(c, consultant, partner, igreenId, indcli,
                             consumoMedio, distribuidora,
                             billFile, docFile, docBackFile,
                             idsolcontratovalidacao, billAlreadyExtracted,
                             billExtractionResult) {
-  // indcli=0: quando cli/partner_igreen_id define o idconsultor, o parceiro
-  // É o consultor do cadastro (não indicador sob o dono).
+  // indcli = cliente cashback (partner_igreen_id); 0 quando o indicador é consultor abonador.
   return {
     idconsultor: igreenId,
-    indcli: 0,
+    indcli: indcli || 0,
     cpf: c.cpf || '',
     nome: c.doc_holder_name || c.name || '',
     dataNascimento: c.data_nascimento || '',

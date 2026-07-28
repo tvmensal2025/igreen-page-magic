@@ -65,18 +65,23 @@ Deno.serve(async (req) => {
     let codeParam = url.searchParams.get("c");
     let keywordParam = url.searchParams.get("k");
 
-    // Aceita ?l=LICENCA, path /functions/v1/qr-redirect/LICENCA, ou o link
-    // curto com marca /r/{licenca}/{code} (o segmento vira `codeParam`).
+    // Aceita ?l=LICENCA, path /functions/v1/qr-redirect/{licenca}/{code},
+    // ou o link curto com marca /r/{licenca}/{code}.
     let licenca = url.searchParams.get("l") || url.searchParams.get("licenca");
     if (!licenca) {
       const parts = url.pathname.split("/").filter(Boolean);
       const rIdx = parts.indexOf("r");
+      const qrIdx = parts.indexOf("qr-redirect");
       if (rIdx !== -1 && parts[rIdx + 1]) {
         // /r/{licenca}/{code?}
         licenca = parts[rIdx + 1] || null;
         if (!codeParam && parts[rIdx + 2]) codeParam = parts[rIdx + 2];
+      } else if (qrIdx !== -1 && parts[qrIdx + 1]) {
+        // /functions/v1/qr-redirect/{licenca}/{code?}
+        licenca = parts[qrIdx + 1] || null;
+        if (!codeParam && parts[qrIdx + 2]) codeParam = parts[qrIdx + 2];
       } else {
-        // ex: /functions/v1/qr-redirect/LICENCA
+        // legado: último segmento = licença
         licenca = parts[parts.length - 1] || null;
         if (licenca === "qr-redirect") licenca = null;
       }

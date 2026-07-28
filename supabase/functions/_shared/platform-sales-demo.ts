@@ -195,9 +195,10 @@ export type PsDemoOutbound =
 export const PS_DEMO_TTS_CONSULTANT_ID = "0c2711ad-4836-41e6-afba-edd94f698ae3";
 
 /**
- * Pós-venda canônico no Zap = imagem + áudio (sem bolha de texto).
- * O roteiro de `pos_venda_default_media.message_text` vira TTS; `stageText`
- * só entra se o pacote de mídia falhar por completo.
+ * Pós-venda canônico no Zap = imagem + áudio stitch (intro+saudação+corpo),
+ * sem bolha de texto e sem TTS do roteiro inteiro.
+ * O roteiro de `pos_venda_default_media.message_text` alimenta o stitch;
+ * `stageText` só entra se o pacote de mídia falhar por completo.
  */
 export function buildPsDemoOutbounds(
   resolved: ReturnType<typeof resolvePsDemoAction>,

@@ -7,10 +7,9 @@
  * **Property 7: Resolução de idconsultor/indcli**
  * Prioridade:
  *   0) portal_idconsultor_override > 0 → sobrescreve tudo
- *   1) partner_igreen_id > 0 → idconsultor = partner
- *   2) cli > 0 → idconsultor = cli
- *   3) senão → idconsultor = dono
- * indcli = 0 sempre (cli/override = consultor do cadastro, não indicador).
+ *   1) cli > 0 → idconsultor = cli (consultor abonador)
+ *   2) senão → idconsultor = dono
+ * indcli = partner_igreen_id quando é cliente cashback (≠ idconsultor).
  *
  * IMPORTANTE — REUSO (Requisito 12.4): este teste exercita a função JÁ existente
  * `buildPortal2Payload` (`supabase/functions/_shared/portal-worker.ts`).
@@ -97,11 +96,18 @@ function expectedIdconsultor(
 ): number {
   const ov = Number(override);
   if (Number.isFinite(ov) && ov > 0) return ov;
-  const pid = Number(partner?.partner_igreen_id);
-  if (Number.isFinite(pid) && pid > 0) return pid;
   const cli = Number(partner?.cli);
   if (Number.isFinite(cli) && cli > 0) return cli;
   return Number(donoIgreenId);
+}
+
+function expectedIndcli(
+  idconsultor: number,
+  partner: { cli: unknown; partner_igreen_id: unknown } | null,
+): number {
+  const pid = Number(partner?.partner_igreen_id);
+  if (Number.isFinite(pid) && pid > 0 && pid !== idconsultor) return pid;
+  return 0;
 }
 
 describe("Property 7 — resolução de idconsultor/indcli", () => {
@@ -113,14 +119,14 @@ describe("Property 7 — resolução de idconsultor/indcli", () => {
     },
     { numRuns: 200 },
   )(
-    "override > partner_igreen_id > cli > dono; indcli = 0",
+    "override > cli(abonador) > dono; indcli = partner_igreen_id (cliente)",
     async ({ donoIgreenId, partner, override }) => {
       const supabase = makeSupabase(makeCustomerRow({ donoIgreenId, partner, override }));
       const payload = await buildPortal2Payload(supabase, "cust-1");
       expect(payload).not.toBeNull();
       const idEsperado = expectedIdconsultor(donoIgreenId, partner, override);
       expect(payload!.dados.idconsultor).toBe(idEsperado);
-      expect(payload!.dados.indcli).toBe(0);
+      expect(payload!.dados.indcli).toBe(expectedIndcli(idEsperado, partner));
       expect(typeof payload!.dados.idconsultor).toBe("number");
       expect(payload!.dados.idconsultor as number).toBeGreaterThan(0);
     },
@@ -135,7 +141,7 @@ describe("Property 7 — casos canônicos", () => {
     expect(payload!.dados.indcli).toBe(0);
   });
 
-  it("caso 2: só cli ativo → idconsultor=cli, indcli=0", async () => {
+  it("caso 2: só cli ativo (consultor abona) → idconsultor=cli, indcli=0", async () => {
     const supabase = makeSupabase(
       makeCustomerRow({ donoIgreenId: 1000, partner: { partner_igreen_id: null, cli: "55" } }),
     );
@@ -144,22 +150,22 @@ describe("Property 7 — casos canônicos", () => {
     expect(payload!.dados.indcli).toBe(0);
   });
 
-  it("caso 3: partner_igreen_id → idconsultor=parceiro, indcli=0", async () => {
+  it("caso 3: só partner_igreen_id (cliente cashback) → idconsultor=dono, indcli=cliente", async () => {
     const supabase = makeSupabase(
       makeCustomerRow({ donoIgreenId: 1000, partner: { partner_igreen_id: "2500", cli: null } }),
     );
     const payload = await buildPortal2Payload(supabase, "cust-1");
-    expect(payload!.dados.idconsultor).toBe(2500);
-    expect(payload!.dados.indcli).toBe(0);
+    expect(payload!.dados.idconsultor).toBe(1000);
+    expect(payload!.dados.indcli).toBe(2500);
   });
 
-  it("caso 4: partner_igreen_id + cli → prioriza partner_igreen_id", async () => {
+  it("caso 4: cli + partner_igreen_id → abonador no id, cliente no indcli", async () => {
     const supabase = makeSupabase(
       makeCustomerRow({ donoIgreenId: 1000, partner: { partner_igreen_id: 2500, cli: 77 } }),
     );
     const payload = await buildPortal2Payload(supabase, "cust-1");
-    expect(payload!.dados.idconsultor).toBe(2500);
-    expect(payload!.dados.indcli).toBe(0);
+    expect(payload!.dados.idconsultor).toBe(77);
+    expect(payload!.dados.indcli).toBe(2500);
   });
 
   it("override da ficha sobrescreve parceiro e dono", async () => {
@@ -172,7 +178,7 @@ describe("Property 7 — casos canônicos", () => {
     );
     const payload = await buildPortal2Payload(supabase, "cust-1");
     expect(payload!.dados.idconsultor).toBe(9999);
-    expect(payload!.dados.indcli).toBe(0);
+    expect(payload!.dados.indcli).toBe(2500);
   });
 
   it("override vazio/0 não altera a regra", async () => {
@@ -185,5 +191,17 @@ describe("Property 7 — casos canônicos", () => {
     );
     const payload = await buildPortal2Payload(supabase, "cust-1");
     expect(payload!.dados.idconsultor).toBe(55);
+  });
+
+  it("Abel (consultor): cli=137238, sem cliente → idconsultor=Abel", async () => {
+    const supabase = makeSupabase(
+      makeCustomerRow({
+        donoIgreenId: 124170,
+        partner: { partner_igreen_id: null, cli: "137238" },
+      }),
+    );
+    const payload = await buildPortal2Payload(supabase, "cust-1");
+    expect(payload!.dados.idconsultor).toBe(137238);
+    expect(payload!.dados.indcli).toBe(0);
   });
 });

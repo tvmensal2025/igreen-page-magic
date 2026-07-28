@@ -15,7 +15,7 @@ import {
   velipConfigured,
   velipWebhookAuthConfigured,
 } from "../_shared/voice-dialer/velip.ts";
-import { resolvePersonalizedCallAudio, firstNameFrom, normalizeCallName, ensureBodyClipOnVelip } from "../_shared/voice-dialer/call-stitch.ts";
+import { resolvePersonalizedCallAudio, firstNameFrom, normalizeCallName, ensureBodyClipOnVelip, CALL_INTRO_CACHE_TAG } from "../_shared/voice-dialer/call-stitch.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
 import { onCallAnsweredPauseCadence } from "../_shared/cadence-hooks.ts";
 import { customerIdFromCadenceVoiceLog } from "../_shared/voice-dialer/cadence-log.ts";
@@ -250,7 +250,7 @@ Deno.serve(async (req) => {
       const baseModel =
         String((clipMeta as { model_id?: string | null } | null)?.model_id || "eleven_v3")
           .split(":")[0] || "eleven_v3";
-      const modelId = `${baseModel}:ci_v2_tudobem`;
+      const modelId = `${baseModel}:${CALL_INTRO_CACHE_TAG}`;
 
       const { data: cachedRenders } = await admin
         .from("voice_call_renders")

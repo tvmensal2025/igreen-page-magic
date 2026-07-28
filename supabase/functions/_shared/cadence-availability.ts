@@ -28,12 +28,12 @@ export const AVAILABILITY_BODY_KEYS: Record<AvailabilityOverrideKey, string> = {
 };
 
 export const DEFAULT_AVAILABILITY_PHRASES: Record<AvailabilityOverrideKey, string> = {
-  before_1630: "Estou disponível hoje até as 18 horas.",
-  "1630_1730": "Ainda estou disponível hoje até as 18 horas.",
+  before_1630: "Estou por aqui hoje até *as 18h*. 😊",
+  "1630_1730": "Ainda estou por aqui até *as 18h*. 😊",
   after_1730:
-    "Ainda estou disponível hoje até as 18 horas — se preferir, seguimos no próximo horário de atendimento.",
+    "Ainda atendo até *as 18h* — se preferir, a gente continua amanhã no horário de atendimento. 😊",
   after_1800:
-    "Recebi sua solicitação e deixei seu atendimento preparado. No próximo horário de atendimento, nossa equipe dará continuidade.",
+    "Já anotei seu interesse! ✅ No *próximo horário de atendimento* a gente continua de onde parou.",
 };
 
 const REMOTE_LIBRARY_SLOT = "multichannel_cadence_v2";

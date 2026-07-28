@@ -8,6 +8,25 @@ export const SOFIA_MODEL_V3 = "eleven_v3";
 /** Só o nome: v2 aceita previous_text/next_text (v3 rejeita com 400). */
 export const SOFIA_MODEL_NAME_ONLY = "eleven_multilingual_v2";
 
+/**
+ * Perfil ÚNICO para peças que serão costuradas (intro + saudação + corpo).
+ * Zap A2 Olá, ligação PSTN intro, pós-venda — MESMA voz/modelo/settings
+ * senão o áudio final fica estranho ao juntar.
+ */
+export const SOFIA_STITCH_PROFILE = {
+  voiceId: SOFIA_VOICE,
+  modelId: SOFIA_MODEL_V3,
+  languageCode: "pt" as const,
+} as const;
+
+export const VOICE_SETTINGS_V3_GREET = {
+  stability: 0.72,
+  similarity_boost: 0.8,
+  style: 0.0,
+  use_speaker_boost: true,
+  speed: 0.92,
+} as const;
+
 function normalizeSpaces(text: string): string {
   return (text || "").replace(/\s+/g, " ").trim();
 }
@@ -71,23 +90,12 @@ export function buildEntaoNomeTtsText(display: string): string {
 }
 
 /**
- * Ligação GRAVADA — só cumprimento + nome (sem “Tudo bem?”).
- * Não é conversa ao vivo; o corpo já manda ir ao WhatsApp.
+ * Ligação gravada — mesmo texto do Zap/PV: “Olá, Nome! Tudo bem?”.
+ * @deprecated Preferir buildOlaTudoBemTtsText (alias).
  */
 export function buildCallNameGreetTtsText(display: string): string {
-  const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
-  if (!nome) return "";
-  return `Olá, ${nome}!`;
+  return buildOlaTudoBemTtsText(display);
 }
-
-
-export const VOICE_SETTINGS_V3_GREET = {
-  stability: 0.72,
-  similarity_boost: 0.8,
-  style: 0.0,
-  use_speaker_boost: true,
-  speed: 0.92,
-} as const;
 
 /**
  * Nome isolado: stability mais baixa dá entonação natural de chamada;

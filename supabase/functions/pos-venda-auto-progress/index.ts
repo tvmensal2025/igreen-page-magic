@@ -37,7 +37,8 @@ import {
   PV_RETENTATIVA_DAYS,
 } from "../_shared/pos-venda-retentativa.ts";
 import { applyOutboundTemplateVars } from "../_shared/outbound-template-vars.ts";
-
+import { getPreparedPosVendaAudio } from "../_shared/pos-venda-audio-prep.ts";
+import { saudacaoBucketBRT } from "../_shared/pos-venda-tts.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -139,7 +140,11 @@ async function processCustomer(
   if (existingLog) {
     const st = String(existingLog.status || "");
     const prevPreview = String(existingLog.message_preview || "");
-    skipImageOnRetry = /\[img:ok/.test(prevPreview);
+    // partial:audio* = imagem já foi (mesmo sem tag no preview). Nunca reenviar foto.
+    skipImageOnRetry =
+      /\[img:ok/.test(prevPreview) ||
+      st.startsWith("partial:audio") ||
+      (st === "failed" && /\[img:ok/.test(prevPreview));
     // partial:audio* / failed → retenta. status=sent NUNCA retenta (não duplica).
     const retriablePartial =
       st.startsWith("partial:") ||
@@ -270,10 +275,49 @@ async function processCustomer(
   const dealOrigin =
     targetStage === "reprovado" || targetStage === "retentativa" ? "reprovado" : "aprovado";
 
+  // Template cru (com {{nome}}/{{saudacao}}) p/ stitch — nunca TTS do texto inteiro.
+  let rawTemplate = "";
+  if (consultantHasContent && stageData) {
+    const { data: firstMsg } = await supabase
+      .from("stage_auto_messages")
+      .select("message_text")
+      .eq("stage_id", stageData.id)
+      .order("position", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    rawTemplate = String(firstMsg?.message_text || stageData.auto_message_text || "");
+  } else if (def?.message_text) {
+    rawTemplate = String(def.message_text);
+  }
+
   const packOpts = {
     ...(skipImageOnRetry ? { skipImage: true } : {}),
     forbidText: true,
+    preparedAudioUrl: await getPreparedPosVendaAudio(
+      supabase,
+      customer.id,
+      stageKey,
+      new Date(),
+    ),
+    posVendaStitch: rawTemplate
+      ? {
+        stage: targetStage,
+        rawTemplate,
+        customerName: customer.name || "",
+        nameSource: (customer as any).name_source ?? null,
+      }
+      : null,
   };
+
+  // Observabilidade: bucket atual vs prepared (só log).
+  if (packOpts.preparedAudioUrl) {
+    console.log(JSON.stringify({
+      event: "pos_venda_using_prepared_audio",
+      customer_id: customer.id,
+      stage_key: stageKey,
+      saudacao_bucket: saudacaoBucketBRT(),
+    }));
+  }
 
   let result: SendResult;
   if (consultantHasContent) {
@@ -368,10 +412,25 @@ async function processCustomer(
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
+  // Body opcional (ops): customer_ids + force_outside_window (só com cron auth).
+  let onlyCustomerIds: Set<string> | null = null;
+  let forceOutsideWindow = false;
+  try {
+    const body = await req.json().catch(() => null);
+    const raw = Array.isArray(body?.customer_ids) ? body.customer_ids : [];
+    const ids = raw.map((x: unknown) => String(x || "").trim()).filter(Boolean);
+    if (ids.length > 0) onlyCustomerIds = new Set(ids);
+    forceOutsideWindow = body?.force_outside_window === true && !!onlyCustomerIds?.size;
+  } catch {
+    onlyCustomerIds = null;
+    forceOutsideWindow = false;
+  }
+
   // Janela pós-venda: seg–sáb 08:00–20:00 BRT. Fora disso (ex.: domingo após
   // 20:00 → segunda 08:00) o cron só volta a enviar no próximo slot — o hub
   // já mostra o agendamento clampado.
-  if (!isPosVendaSendWindow()) {
+  // Exceção ops: force_outside_window + customer_ids (áudio-only / catch-up).
+  if (!isPosVendaSendWindow() && !forceOutsideWindow) {
     const next = nextPosVendaSendSlot();
     logPosVendaWindowSkip("pos-venda-auto-progress", { next_slot: next.toISOString() });
     return new Response(JSON.stringify({
@@ -390,21 +449,15 @@ Deno.serve(async (req) => {
     // deno-lint-ignore no-explicit-any
     const cronAuth = await assertCronAuth(req, supabase as any);
     if (!cronAuth.ok) return cronAuthUnauthorized(cronAuth.reason, corsHeaders);
+    if (forceOutsideWindow && cronAuth.reason === "legacy_unconfigured") {
+      return cronAuthUnauthorized("missing", corsHeaders);
+    }
     if (!(await isAutomationEnabled(supabase, "pos_venda_auto_messages"))) {
       await logSkipped(supabase, "pos_venda_auto_messages");
       return new Response(JSON.stringify({ skipped: "automation_disabled", key: "pos_venda_auto_messages" }), { status: 200, headers: { "Content-Type": "application/json" } });
     }
 
-    // Filtro opcional (ops): só processa estes customer_ids — evita reprocessar massa.
-    let onlyCustomerIds: Set<string> | null = null;
-    try {
-      const body = await req.json().catch(() => null);
-      const raw = Array.isArray(body?.customer_ids) ? body.customer_ids : [];
-      const ids = raw.map((x: unknown) => String(x || "").trim()).filter(Boolean);
-      if (ids.length > 0) onlyCustomerIds = new Set(ids);
-    } catch {
-      onlyCustomerIds = null;
-    }
+    // (customer_ids já resolvido acima)
 
 
     const { data: settingsRows } = await supabase.from("settings").select("key, value");
@@ -483,12 +536,16 @@ Deno.serve(async (req) => {
       }
     };
 
+    // Ordem fixa da rodada: 1) todos os aprovado pendentes → 2) D30 → D60 → …
+    // (mais cedo primeiro), para o BATCH_LIMIT não “pular” quem ainda não
+    // recebeu o marco inicial / o D* mais próximo.
     const { data: approvedCustomers } = await supabase
       .from("customers")
-      .select("id, name, name_source, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, status, andamento_igreen")
+      .select("id, name, name_source, phone_whatsapp, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, status, andamento_igreen, pos_venda_approved_at")
       .eq("customer_origin", "igreen_sync")
       .eq("pos_venda_stage", "aprovado")
-      .eq("pos_venda_manual", true);
+      .eq("pos_venda_manual", true)
+      .order("pos_venda_approved_at", { ascending: true, nullsFirst: false });
 
     for (const c of approvedCustomers || []) {
       await runOne(c, "aprovado");
@@ -510,13 +567,29 @@ Deno.serve(async (req) => {
       .in("pos_venda_stage", ["aprovado", "d30", "d60", "d90", "d120", "d150", "d180", "d210"])
       .not("pos_venda_approved_at", "is", null);
 
+    const progressionJobs: { c: any; target: string; days: number }[] = [];
     for (const c of approvedTrack || []) {
       const ref = c.pos_venda_approved_at ? new Date(c.pos_venda_approved_at).getTime() : now;
       const days = Math.floor((now - ref) / (1000 * 60 * 60 * 24));
       const targetKey = findBucket(days);
       if (!targetKey) continue;
       const target = targetKey.replace("pv_", "");
-      await runOne(c, target);
+      progressionJobs.push({ c, target, days });
+    }
+    // D30 antes de D60…D210; dentro do mesmo marco, aprovação mais antiga primeiro.
+    const stageRank: Record<string, number> = {
+      d30: 30, d60: 60, d90: 90, d120: 120, d150: 150, d180: 180, d210: 210,
+    };
+    progressionJobs.sort((a, b) => {
+      const ra = stageRank[a.target] ?? 999;
+      const rb = stageRank[b.target] ?? 999;
+      if (ra !== rb) return ra - rb;
+      const ta = a.c.pos_venda_approved_at ? new Date(a.c.pos_venda_approved_at).getTime() : 0;
+      const tb = b.c.pos_venda_approved_at ? new Date(b.c.pos_venda_approved_at).getTime() : 0;
+      return ta - tb;
+    });
+    for (const job of progressionJobs) {
+      await runOne(job.c, job.target);
     }
 
 

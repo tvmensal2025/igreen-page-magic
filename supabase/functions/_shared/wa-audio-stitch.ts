@@ -4,6 +4,10 @@
  */
 
 import {
+  findSharedIntroUrl,
+  olaIntroSlotCandidates,
+} from "./ai-media-shared-intro.ts";
+import {
   concatMp3Parts,
   firstNameFrom,
   normalizeCallName,
@@ -240,35 +244,23 @@ async function findActiveUrl(
 
 /**
  * Busca URL em cache respeitando a ordem dos candidatos.
- * Por candidato: ativo → inativo. Assim o lote Sofia (mesmo inativo)
- * ganha de um ptbr2 TTS ativo gerado depois.
+ * Por candidato: ativo próprio → ativo público → inativo próprio → inativo público.
+ * Assim intros Olá de outro consultor (is_public) evitam TTS duplicado.
  */
 async function findCachedMediaUrl(
   admin: any,
   consultantId: string,
   slotCandidates: string[],
 ): Promise<{ url: string; slotKey: string } | null> {
-  const seen = new Set<string>();
-  for (const slotKey of slotCandidates) {
-    if (seen.has(slotKey)) continue;
-    seen.add(slotKey);
-    if (isForbiddenNomeIntroSlot(slotKey)) continue;
-    const activeUrl = await findActiveUrl(admin, consultantId, slotKey);
-    if (activeUrl) return { url: activeUrl, slotKey };
-    const { data } = await admin
-      .from("ai_media_library")
-      .select("url")
-      .eq("consultant_id", consultantId)
-      .eq("slot_key", slotKey)
-      .eq("active", false)
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
-    if (data?.url && !isForbiddenNomeIntroSlot(slotKey)) {
-      return { url: String(data.url), slotKey };
-    }
-  }
-  return null;
+  const filtered = slotCandidates.filter(
+    (s) => s && !isForbiddenNomeIntroSlot(s),
+  );
+  const hit = await findSharedIntroUrl(admin, {
+    consultantId,
+    slotCandidates: filtered,
+  });
+  if (!hit) return null;
+  return { url: hit.url, slotKey: hit.slotKey };
 }
 
 /**
@@ -287,8 +279,7 @@ export function buildIntroSlotCandidates(
   nameNorm: string,
 ): string[] {
   if (kind === "ola") {
-    // ptbr4 = “Olá, Nome! Tudo bem?” (igual ligação). ptbr3 = legado sem “tudo bem”.
-    return [`intro:ola:ptbr4:${nameNorm}`];
+    return olaIntroSlotCandidates(nameNorm);
   }
   if (kind === "nome_nao_segredo") {
     return [`intro:nome_nao_segredo:v1:${nameNorm}`];
@@ -515,6 +506,10 @@ async function upsertActiveMedia(
     .eq("consultant_id", consultantId)
     .eq("slot_key", slotKey)
     .eq("active", true);
+
+  const sharedPublic =
+    slotKey.startsWith("intro:ola:") || slotKey.startsWith("pv_saudacao:");
+
   const row: Record<string, unknown> = {
     consultant_id: consultantId,
     slot_key: slotKey,
@@ -524,12 +519,18 @@ async function upsertActiveMedia(
     active: true,
     send_order: 0,
     is_draft: false,
-    is_public: false,
+    is_public: sharedPublic,
     delay_before_ms: 0,
     priority: 10,
   };
   if (textContent != null && String(textContent).trim()) {
     row.text_content = String(textContent).trim().slice(0, 8000);
+  }
+  if (sharedPublic) {
+    row.intent_tags = ["wa_intro", "call_intro"];
+    if (textContent != null && String(textContent).trim()) {
+      row.transcript = String(textContent).trim().slice(0, 500);
+    }
   }
   await admin.from("ai_media_library").insert(row);
 }

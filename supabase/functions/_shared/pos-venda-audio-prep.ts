@@ -5,11 +5,10 @@
 import { applyOutboundTemplateVars } from "./outbound-template-vars.ts";
 import { clampToPosVendaSendWindow } from "./pos-venda-send-window.ts";
 import {
-  renderPersonalizedTtsAudio,
   saudacaoBucketBRT,
-  textForTts,
   type SaudacaoBucket,
 } from "./pos-venda-tts.ts";
+import { renderPosVendaStitchedAudio } from "./pos-venda-audio-stitch.ts";
 
 const MS_DAY = 24 * 60 * 60 * 1000;
 const HORIZON_MS = 48 * 60 * 60 * 1000;
@@ -222,17 +221,21 @@ export async function runPosVendaAudioPrepTick(
       phone: item.phone,
       now: item.plannedSendAt,
     });
-    const spoken = textForTts(spokenPersonalized);
-    if (spoken.length < 8) {
+    if (String(spokenPersonalized || "").trim().length < 8) {
       result.skipped_no_text++;
       continue;
     }
 
-    const url = await renderPersonalizedTtsAudio(
-      supabase,
-      item.consultantId,
-      spokenPersonalized,
-    );
+    // Stitch: intro nome (reuso) + saudação fixa + corpo fixo — sem TTS do roteiro inteiro.
+    const stitched = await renderPosVendaStitchedAudio(supabase, {
+      consultantId: item.consultantId,
+      customerName: item.customerName,
+      nameSource: item.nameSource,
+      stage: item.stage,
+      rawTemplate,
+      now: item.plannedSendAt,
+    });
+    const url = stitched.ok ? stitched.url : null;
     if (!url) {
       result.failed++;
       continue;
@@ -244,7 +247,7 @@ export async function runPosVendaAudioPrepTick(
         consultant_id: item.consultantId,
         stage_key: item.stageKey,
         audio_url: url,
-        spoken_text: spoken.slice(0, 4000),
+        spoken_text: String(spokenPersonalized).slice(0, 4000),
         saudacao_bucket: item.saudacaoBucket,
         planned_send_at: item.plannedSendAt.toISOString(),
         prepared_at: new Date().toISOString(),

@@ -10,12 +10,25 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { X, AlertTriangle, Trash2, Sparkles, Loader2, RefreshCw } from "lucide-react";
+import { X, AlertTriangle, Trash2, Sparkles, Loader2, RefreshCw, HelpCircle } from "lucide-react";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
 import { buildDefaultQrPhrase, isGenericKeyword } from "./qrPhrase";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+
+/** Trata "0"/vazio como ausente — evita gravar CLI inválido do dono. */
+function tidyOwnerCli(raw?: string | null): string {
+  const digits = String(raw ?? "").replace(/\D/g, "");
+  if (!digits || digits === "0") return "";
+  return digits;
+}
 
 interface PartnerFormProps {
   open: boolean;
@@ -70,7 +83,9 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   useEffect(() => {
     if (partner) {
       setNome(partner.nome);
-      setCli(partner.cli || ownerIgreenId || "");
+      // CLI = consultor abonador deste indicador.
+      // "0"/vazio legado → cai no ID do dono logado (padrão).
+      setCli(tidyOwnerCli(partner.cli) || ownerIgreenId || "");
       setKeywords(partner.keywords || []);
       setQrPhrase(partner.qr_phrase || "");
       setPartnerIgreenId(partner.partner_igreen_id || "");
@@ -128,10 +143,11 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       setQrPhrase(text);
       setAiExample(text);
       // Auto-save se for edição (parceiro já existe e tem nome/CLI válidos).
-      if (partner && nome.trim() && cli.trim()) {
+      const abonadorCli = tidyOwnerCli(cli) || ownerIgreenId;
+      if (partner && nome.trim() && abonadorCli) {
         onSave({
           nome: nome.trim(),
-          cli: cli.trim() || null,
+          cli: abonadorCli,
           keywords,
           qr_phrase: text,
           partner_igreen_id: partnerIgreenId.trim() || null,
@@ -158,7 +174,9 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const handleSubmit = () => {
     const newErrors: { nome?: string; cli?: string; keywords?: string } = {};
     if (!nome.trim()) newErrors.nome = "Nome é obrigatório";
-    if (!cli.trim()) newErrors.cli = "Meu ID iGreen é obrigatório";
+    // CLI = consultor abonador (seu ID, ou o ID de outro consultor indicador).
+    const abonadorCli = tidyOwnerCli(cli) || ownerIgreenId;
+    if (!abonadorCli) newErrors.cli = "ID iGreen do consultor/abonador é obrigatório";
 
     // Consome o que está digitado no input mesmo se o usuário esqueceu de
     // pressionar Enter — evita criar parceiro "sem keyword" por engano.
@@ -193,10 +211,11 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       setKeywords(finalKeywords);
       setKeywordInput("");
     }
+    if (abonadorCli !== cli) setCli(abonadorCli);
 
     onSave({
       nome: nome.trim(),
-      cli: cli.trim() || null,
+      cli: abonadorCli,
       keywords: finalKeywords,
       qr_phrase: qrPhrase.trim() || null,
       partner_igreen_id: partnerIgreenId.trim() || null,
@@ -273,32 +292,91 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="partner-cli" className="text-xs">
-                  Meu ID iGreen / CLI *
-                </Label>
-                <Input
-                  id="partner-cli"
-                  value={cli}
-                  onChange={(e) => {
-                    setCli(e.target.value);
-                    if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
-                  }}
-                  readOnly={!!ownerIgreenId}
-                  placeholder="Seu ID iGreen (abonador)"
-                  className="h-9 read-only:bg-muted/50 read-only:text-muted-foreground"
-                />
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="partner-cli" className="text-xs">
+                    ID iGreen do consultor / abonador *
+                  </Label>
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex text-muted-foreground hover:text-foreground"
+                          aria-label="Ajuda: ID do consultor abonador"
+                        >
+                          <HelpCircle className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[280px] text-xs leading-snug">
+                        Quem abona o cadastro. Padrão = o seu ID. Se o indicador
+                        for consultor (ex.: Abel), coloque o ID dele aqui — ele
+                        abona no lugar do seu. Não use o campo de cliente.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <div className="flex gap-1.5">
+                  <Input
+                    id="partner-cli"
+                    value={cli}
+                    onChange={(e) => {
+                      setCli(e.target.value);
+                      if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
+                    }}
+                    placeholder="ID do consultor que abona"
+                    className="h-9"
+                  />
+                  {ownerIgreenId && tidyOwnerCli(cli) !== ownerIgreenId && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0 px-2 text-[11px]"
+                      title={`Voltar para o meu ID (${ownerIgreenId})`}
+                      onClick={() => setCli(ownerIgreenId)}
+                    >
+                      Meu ID
+                    </Button>
+                  )}
+                </div>
                 {errors.cli && <p className="text-[11px] text-destructive">{errors.cli}</p>}
+                {ownerIgreenId && tidyOwnerCli(cli) && tidyOwnerCli(cli) !== ownerIgreenId && (
+                  <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                    Consultor abonando no lugar do seu ID ({ownerIgreenId}).
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1">
-                <Label htmlFor="partner-igreen-id" className="text-xs">
-                  ID iGreen do parceiro <span className="text-muted-foreground">(opcional)</span>
-                </Label>
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="partner-igreen-id" className="text-xs">
+                    ID iGreen do cliente{" "}
+                    <span className="text-muted-foreground">(cashback)</span>
+                  </Label>
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex text-muted-foreground hover:text-foreground"
+                          aria-label="Ajuda: ID iGreen do cliente"
+                        >
+                          <HelpCircle className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[280px] text-xs leading-snug">
+                        Só para cliente indicador (não consultor). É quem recebe
+                        o cashback (&amp;cli= no link). Se for consultor, deixe
+                        vazio e use o campo de abonador acima.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
                 <Input
                   id="partner-igreen-id"
                   value={partnerIgreenId}
                   onChange={(e) => setPartnerIgreenId(e.target.value)}
-                  placeholder="ID do parceiro, se ele também tiver"
+                  placeholder="Só se for cliente (não consultor)"
                   className="h-9"
                 />
               </div>

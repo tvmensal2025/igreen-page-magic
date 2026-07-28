@@ -165,14 +165,13 @@ export async function buildPortal2Payload(supabase: any, customerId: string): Pr
   const consultant = c.consultants as any;
   const partner = c.referral_partners as any;
 
-  // ─── Resolução de idconsultor + indcli (dono / parceiro / override) ───
-  // Regra de produto (2026-07-09 + override ficha):
+  // ─── Resolução de idconsultor + indcli ───
+  // Regra de produto (consultor abona × cliente cashback):
   //   0) portal_idconsultor_override > 0 → sobrescreve tudo (ficha manual)
-  //   1) partner_igreen_id > 0  → cadastra NO consultor parceiro (id próprio)
-  //   2) cli > 0 (ativo)        → cadastra NO consultor do cli (cli = id iGreen)
-  //   3) sem parceiro / sem cli → cadastra no dono da instância
-  // indcli fica 0: quando o cli/override define o consultor, ele É o dono
-  // do cadastro, não um indicador sob outro.
+  //   1) cli > 0                        → idconsultor = cli (consultor abonador)
+  //   2) senão                          → idconsultor = dono da instância
+  //   indcli = partner_igreen_id quando é CLIENTE cashback (≠ idconsultor)
+  // Nunca usar partner_igreen_id como idconsultor — isso é campo de cliente.
   const overrideRaw = Number((c as any).portal_idconsultor_override || 0);
   const overrideId = Number.isFinite(overrideRaw) && overrideRaw > 0 ? overrideRaw : 0;
   const donoIgreenId = consultant?.igreen_id ? Number(consultant.igreen_id) : null;
@@ -180,22 +179,27 @@ export async function buildPortal2Payload(supabase: any, customerId: string): Pr
     ? Number(partner.partner_igreen_id)
     : 0;
   const partnerCli = partner?.cli ? Number(partner.cli) : 0;
-  const partnerAsConsultant =
-    (Number.isFinite(partnerIgreenId) && partnerIgreenId > 0)
-      ? partnerIgreenId
-      : (Number.isFinite(partnerCli) && partnerCli > 0 ? partnerCli : 0);
+  const abonadorId =
+    Number.isFinite(partnerCli) && partnerCli > 0 ? partnerCli : 0;
   const igreenId = overrideId > 0
     ? overrideId
-    : (partnerAsConsultant > 0 ? partnerAsConsultant : donoIgreenId);
+    : (abonadorId > 0 ? abonadorId : donoIgreenId);
   if (!igreenId) {
     console.warn(`[portal-worker] customer=${customerId} sem igreen_id do consultor`);
     return null;
   }
-  const indcli = 0;
+  const indcli =
+    Number.isFinite(partnerIgreenId) &&
+    partnerIgreenId > 0 &&
+    partnerIgreenId !== Number(igreenId)
+      ? partnerIgreenId
+      : 0;
   if (overrideId > 0) {
-    console.log(`[portal-worker] customer=${customerId} idconsultor OVERRIDE ficha=${overrideId} (parceiro=${partnerAsConsultant || "-"} dono=${donoIgreenId})`);
-  } else if (partnerAsConsultant > 0) {
-    console.log(`[portal-worker] customer=${customerId} cadastro via consultor parceiro id=${igreenId} (cli=${partnerCli || "-"} partner_igreen_id=${partnerIgreenId || "-"}) dono=${donoIgreenId}`);
+    console.log(`[portal-worker] customer=${customerId} idconsultor OVERRIDE ficha=${overrideId} (abonador=${abonadorId || "-"} dono=${donoIgreenId})`);
+  } else if (abonadorId > 0 && abonadorId !== donoIgreenId) {
+    console.log(`[portal-worker] customer=${customerId} cadastro via consultor abonador id=${igreenId} (cli=${partnerCli}) dono=${donoIgreenId}${indcli ? ` indcli=${indcli}` : ""}`);
+  } else if (indcli > 0) {
+    console.log(`[portal-worker] customer=${customerId} cadastro dono=${igreenId} + cliente cashback indcli=${indcli}`);
   }
 
   const consumoAtual = Number(c.media_consumo || 0);

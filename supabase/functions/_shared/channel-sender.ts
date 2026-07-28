@@ -5,6 +5,11 @@
 import { checkSendQuota, registerSend } from "./anti-ban.ts";
 import { getAdapter, type ChannelAdapter, type SendContext } from "./channels/index.ts";
 import { applyOutboundTemplateVars } from "./outbound-template-vars.ts";
+import {
+  renderPersonalizedTtsAudio,
+  templateNeedsPersonalizedTts,
+} from "./pos-venda-tts.ts";
+import { renderPosVendaStitchedAudio } from "./pos-venda-audio-stitch.ts";
 
 export interface ChannelEnv {
   evolutionUrl: string | undefined;
@@ -451,143 +456,6 @@ async function renderVoiceTemplate(
   }
 }
 
-const SOFIA_VOICE_ID = "EJV7H2baGt5ab95tOoSG";
-
-function textForTts(raw: string): string {
-  return String(raw || "")
-    .replace(/\*+/g, "")
-    .replace(/\n{2,}/g, ". ")
-    .replace(/\n/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-async function sha16(input: string): Promise<string> {
-  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
-  return Array.from(new Uint8Array(buf))
-    .slice(0, 8)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-/**
- * TTS ElevenLabs (Opus) do texto já personalizado ({{nome}}/{{saudacao}}).
- * Cache em ai_media_library por hash do texto — evita re-gerar no retry.
- */
-async function renderPersonalizedTtsAudio(
-  supabase: any,
-  consultantId: string,
-  personalizedText: string,
-): Promise<string | null> {
-  const spoken = textForTts(personalizedText);
-  if (spoken.length < 8) return null;
-
-  const key = Deno.env.get("ELEVENLABS_API_KEY") || "";
-  if (!key) {
-    console.warn("[channel-sender] ELEVENLABS_API_KEY ausente — sem TTS personalizado");
-    return null;
-  }
-
-  const hash = await sha16(spoken);
-  const slotKey = `pv_tts_${hash}`;
-
-  try {
-    const { data: cached } = await supabase
-      .from("ai_media_library")
-      .select("url")
-      .eq("consultant_id", consultantId)
-      .eq("slot_key", slotKey)
-      .eq("active", true)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (cached?.url) return String(cached.url);
-  } catch {
-    /* cache miss ok */
-  }
-
-  try {
-    const elRes = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${SOFIA_VOICE_ID}?output_format=opus_48000_64`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "xi-api-key": key,
-          Accept: "audio/ogg",
-        },
-        body: JSON.stringify({
-          text: spoken,
-          model_id: "eleven_v3",
-          language_code: "pt",
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.75,
-            style: 0.0,
-            use_speaker_boost: true,
-            speed: 1.0,
-          },
-        }),
-        signal: AbortSignal.timeout(90_000),
-      },
-    );
-    if (!elRes.ok) {
-      const err = await elRes.text().catch(() => "");
-      console.error("[channel-sender] elevenlabs TTS falhou", elRes.status, err.slice(0, 160));
-      return null;
-    }
-    const bytes = new Uint8Array(await elRes.arrayBuffer());
-    if (bytes.byteLength < 256) return null;
-
-    const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
-    const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-    if (!supabaseUrl || !serviceRole) return null;
-
-    const fd = new FormData();
-    fd.append("file", new Blob([bytes as BlobPart], { type: "audio/ogg" }), `${slotKey}.ogg`);
-    fd.append("scope", "admin");
-    fd.append("consultant_id", consultantId);
-    fd.append("kind", "audio");
-    fd.append("slug", slotKey.slice(0, 80));
-    const uploadRes = await fetch(`${supabaseUrl}/functions/v1/upload-media`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${serviceRole}`, apikey: serviceRole },
-      body: fd,
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (!uploadRes.ok) {
-      console.error("[channel-sender] upload TTS falhou", uploadRes.status);
-      return null;
-    }
-    const uploaded = await uploadRes.json();
-    const url = uploaded?.url ? String(uploaded.url) : null;
-    if (!url) return null;
-
-    try {
-      await supabase.from("ai_media_library").insert({
-        consultant_id: consultantId,
-        slot_key: slotKey,
-        url,
-        kind: "audio",
-        label: `pv_tts_${hash}`,
-        transcript: spoken.slice(0, 500),
-        active: true,
-        is_public: false,
-        is_draft: false,
-        step_tags: [],
-        intent_tags: ["pos_venda_tts"],
-        priority: 0,
-      });
-    } catch {
-      /* cache write best-effort */
-    }
-    return url;
-  } catch (e) {
-    console.error("[channel-sender] TTS exception", (e as Error)?.message);
-    return null;
-  }
-}
-
 interface MsgConfig {
   message_type: string;
   message_text: string | null;
@@ -601,6 +469,18 @@ export interface SendPackOpts {
   skipImage?: boolean;
   /** Pós-venda: nunca manda bolha de texto no Zap (só imagem + áudio). */
   forbidText?: boolean;
+  /** Áudio pré-gerado (pos_venda_prepared_audio) — pula TTS se saudação bater. */
+  preparedAudioUrl?: string | null;
+  /**
+   * Pós-venda stitch Sofia: intro nome (reuso) + saudação fixa + corpo fixo.
+   * Nunca regenera o roteiro inteiro.
+   */
+  posVendaStitch?: {
+    stage: string;
+    rawTemplate: string;
+    customerName?: string | null;
+    nameSource?: string | null;
+  } | null;
 }
 
 export interface SendResult {
@@ -646,7 +526,10 @@ async function sendSingleMessage(
   nameSource?: string | null,
   packOpts?: SendPackOpts,
 ): Promise<SendResult> {
-  const messageText = applyOutboundTemplateVars(msg.message_text || "", {
+  const rawTemplate = msg.message_text || "";
+  const needsPersonalizedTts =
+    packOpts?.forbidText === true || templateNeedsPersonalizedTts(rawTemplate);
+  const messageText = applyOutboundTemplateVars(rawTemplate, {
     customerName,
     nameSource,
     phone,
@@ -677,13 +560,54 @@ async function sendSingleMessage(
   }
 
   let audioUrl = msg.media_url;
-  // Precedência: áudio aprovado (media_url no MinIO) SEMPRE ganha.
-  // TTS/voice_template só entra quando não há áudio salvo — evita regenerar
-  // texto antigo por cima do áudio atualizado que o consultor aprovou.
-  if (msgType === "audio" && !audioUrl && msg.voice_template_id) {
+  // Precedência: prepared > stitch (intro+saudação+corpo fixo) > TTS legado
+  // (só se NÃO for pacote pós-venda) > media_url estático.
+  if (msgType === "audio" && packOpts?.preparedAudioUrl) {
+    audioUrl = packOpts.preparedAudioUrl;
+  } else if (msgType === "audio" && packOpts?.posVendaStitch?.rawTemplate) {
+    const st = packOpts.posVendaStitch;
+    const stitched = await renderPosVendaStitchedAudio(supabase, {
+      consultantId: sendCtx.consultantId,
+      customerName: st.customerName ?? customerName,
+      nameSource: st.nameSource ?? nameSource,
+      stage: st.stage,
+      rawTemplate: st.rawTemplate,
+    });
+    if (stitched.ok && stitched.url) {
+      audioUrl = stitched.url;
+    } else {
+      console.warn(
+        "[channel-sender] PV stitch falhou — sem fallback de roteiro inteiro",
+        stitched.error,
+        stitched.generated,
+      );
+    }
+  } else if (msgType === "audio" && needsPersonalizedTts && messageText && !packOpts?.forbidText) {
+    // Legado fora do pós-venda. Pós-venda (forbidText) NÃO regenera roteiro inteiro.
+    const ttsUrl = await renderPersonalizedTtsAudio(
+      supabase,
+      sendCtx.consultantId,
+      messageText,
+    );
+    if (ttsUrl) {
+      audioUrl = ttsUrl;
+    } else {
+      console.warn(
+        "[channel-sender] TTS personalizado falhou — fallback media_url/voice_template",
+      );
+      if (!audioUrl && msg.voice_template_id) {
+        const rendered = await renderVoiceTemplate(
+          supabase,
+          msg.voice_template_id,
+          customerName || "",
+        );
+        if (rendered) audioUrl = rendered;
+      }
+    }
+  } else if (msgType === "audio" && !audioUrl && msg.voice_template_id) {
     const rendered = await renderVoiceTemplate(supabase, msg.voice_template_id, customerName || "");
     if (rendered) audioUrl = rendered;
-  } else if (msgType === "audio" && !audioUrl && messageText) {
+  } else if (msgType === "audio" && !audioUrl && messageText && !packOpts?.forbidText) {
     const ttsUrl = await renderPersonalizedTtsAudio(
       supabase,
       sendCtx.consultantId,

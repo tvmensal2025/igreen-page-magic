@@ -38,11 +38,20 @@ import {
   RevokeNeverContactDialog,
 } from "@/components/leads/NeverContactDialogs";
 import { takeoverByPhoneDetailed, undoTakeoverByPhone } from "@/lib/whatsapp/auto-takeover";
+import { useIsLgDown } from "@/hooks/use-mobile";
+
+/** Rótulo do chip de fluxo: no mobile, letra + nome truncado. */
+function flowChipLabel(name: string, variant: string, compact: boolean) {
+  if (!compact) return name;
+  const short = name.length > 12 ? `${name.slice(0, 11)}…` : name;
+  return `${variant} · ${short}`;
+}
 
 interface Props { consultantId: string; onOpenChat?: (phone: string) => void; instanceName?: string | null; isWhapi?: boolean; }
 
 export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, isWhapi = false }: Props) {
   const navigate = useNavigate();
+  const isLgDown = useIsLgDown();
   // Sub-aba: "cockpit" (captação manual de um lead) | "captados" (leads
   // multicanal: Meta/TikTok/landing/pesquisa B2B + disparo em massa).
   const [view, setView] = useState<"cockpit" | "captados">("cockpit");
@@ -519,102 +528,107 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
             </div>
           ) : (
             <>
-              {/* Sub-header Cockpit: duas linhas no mobile para não espremer ações */}
+              {/* Sub-header Cockpit: 3 linhas no mobile (identidade → status → fluxo) */}
               <div className="px-3 py-2 border-b border-border bg-card/40 flex flex-col gap-2 shrink-0">
+                {/* Linha 1 — identidade + ações */}
                 <div className="flex items-center gap-2 min-w-0">
-                <Button size="icon" variant="ghost" className="lg:hidden h-9 w-9 shrink-0" onClick={() => setSelectedId(null)} title="Voltar">
-                  <ChevronLeft className="w-4 h-4" />
-                </Button>
-                <ProgressRing
-                  progress={fichaMode === "club" ? session.clubProgress : session.progress}
-                  filled={fichaMode === "club" ? session.clubFilledCount : session.filledCount}
-                  total={fichaMode === "club" ? session.clubTotalFields : session.totalFields}
-                />
-                <div className="min-w-0 flex-1">
-                  <span className="text-sm font-semibold leading-tight truncate block">{customerName || phone || "—"}</span>
-                  <span className="text-[11px] text-muted-foreground">
-                    {fichaMode === "club"
-                      ? (session.clubIsComplete
-                        ? "Club pronto"
-                        : `${session.clubFilledCount} de ${session.clubTotalFields} campos Club`)
-                      : (session.isComplete
-                        ? "Pronto para cadastrar"
-                        : `${session.filledCount} de ${session.totalFields} campos`)}
-                  </span>
-                </div>
-                <Button
-                  size="sm"
-                  variant={botActive ? "default" : "outline"}
-                  className={`gap-1 h-9 px-2.5 text-[11px] shrink-0 ${botActive ? "" : "text-muted-foreground"}`}
-                  onClick={() => void toggleBot()}
-                  disabled={togglingBot || (!botActive && doNotContact)}
-                  title={botActive ? "Desligar IA neste lead" : "Ligar IA neste lead"}
-                >
-                  <Bot className="w-3.5 h-3.5" />
-                  {botActive ? "IA ON" : "IA OFF"}
-                </Button>
-                {doNotContact ? (
+                  <Button size="icon" variant="ghost" className="lg:hidden h-9 w-9 shrink-0" onClick={() => setSelectedId(null)} title="Voltar">
+                    <ChevronLeft className="w-4 h-4" />
+                  </Button>
+                  <ProgressRing
+                    progress={fichaMode === "club" ? session.clubProgress : session.progress}
+                    filled={fichaMode === "club" ? session.clubFilledCount : session.filledCount}
+                    total={fichaMode === "club" ? session.clubTotalFields : session.totalFields}
+                    size={isLgDown ? 40 : 56}
+                    stroke={isLgDown ? 4 : 5}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-sm font-semibold leading-tight truncate block">{customerName || phone || "—"}</span>
+                    <span className={`text-[11px] text-muted-foreground ${nextMissingLabel ? "hidden lg:inline" : ""}`}>
+                      {fichaMode === "club"
+                        ? (session.clubIsComplete
+                          ? "Club pronto"
+                          : `${session.clubFilledCount} de ${session.clubTotalFields} campos Club`)
+                        : (session.isComplete
+                          ? "Pronto para cadastrar"
+                          : `${session.filledCount} de ${session.totalFields} campos`)}
+                    </span>
+                  </div>
                   <Button
                     size="sm"
-                    variant="outline"
-                    className="gap-1 h-9 px-2.5 text-[11px] shrink-0 border-destructive/40 text-destructive"
-                    onClick={() => setRevokeContactOpen(true)}
-                    title="Revogar bloqueio"
+                    variant={botActive ? "default" : "outline"}
+                    className={`gap-1 h-9 px-2.5 text-[11px] shrink-0 ${botActive ? "" : "text-muted-foreground"}`}
+                    onClick={() => void toggleBot()}
+                    disabled={togglingBot || (!botActive && doNotContact)}
+                    title={botActive ? "Desligar IA neste lead" : "Ligar IA neste lead"}
                   >
-                    <RotateCcw className="w-3 h-3" />
-                    <span className="hidden sm:inline">Revogar</span>
+                    <Bot className="w-3.5 h-3.5" />
+                    {botActive ? "IA ON" : "IA OFF"}
                   </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="gap-1 h-9 px-2 text-[11px] shrink-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => setNeverContactOpen(true)}
-                    title="Nunca mais contatar"
-                  >
-                    <Ban className="w-3.5 h-3.5" />
+                  {doNotContact ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="gap-1 h-9 px-2.5 text-[11px] shrink-0 border-destructive/40 text-destructive"
+                      onClick={() => setRevokeContactOpen(true)}
+                      title="Revogar bloqueio"
+                    >
+                      <RotateCcw className="w-3 h-3" />
+                      <span className="hidden sm:inline">Revogar</span>
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="gap-1 h-9 px-2 text-[11px] shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => setNeverContactOpen(true)}
+                      title="Nunca mais contatar"
+                    >
+                      <Ban className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                  <Button size="sm" variant="default" className="gap-1.5 h-9 px-3 shrink-0 lg:hidden" onClick={() => setFichaOpen(true)} title="Abrir ficha de cadastro">
+                    <ClipboardCheck className="w-3.5 h-3.5" />
+                    <span className="hidden md:inline">Ficha</span>
                   </Button>
-                )}
-                <Button size="sm" variant="default" className="gap-1.5 h-9 px-3 shrink-0 lg:hidden" onClick={() => setFichaOpen(true)} title="Abrir ficha de cadastro">
-                  <ClipboardCheck className="w-3.5 h-3.5" />
-                  <span className="hidden md:inline">Ficha</span>
-                </Button>
-                {phone && onOpenChat && (
-                  <Button size="sm" variant="outline" className="gap-1 h-9 px-2.5 text-[11px] shrink-0" onClick={() => onOpenChat(phone)}>
-                    <MessageCircle className="w-3 h-3" />
-                    <span className="hidden lg:inline">Abrir conversa</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </Button>
-                )}
+                  {phone && onOpenChat && (
+                    <Button size="sm" variant="outline" className="gap-1 h-9 px-2.5 text-[11px] shrink-0" onClick={() => onOpenChat(phone)}>
+                      <MessageCircle className="w-3 h-3" />
+                      <span className="hidden lg:inline">Abrir conversa</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </Button>
+                  )}
                 </div>
+
+                {/* Linha 2 — só status operacional */}
                 <div className="flex items-center gap-2 overflow-x-auto scrollbar-none -mx-1 px-1 pb-0.5">
-                <WhatsAppStatusPill connected={connected} />
-                <AttendanceStatusBar
-                  state={attendance.uiState}
-                  protocol={attendance.protocol}
-                  rating={attendance.rating}
-                  starting={attendance.starting}
-                  ending={attendance.ending}
-                  onStart={() => void attendance.startAttendance()}
+                  <WhatsAppStatusPill connected={connected} />
+                  <AttendanceStatusBar
+                    state={attendance.uiState}
+                    protocol={attendance.protocol}
+                    rating={attendance.rating}
+                    starting={attendance.starting}
+                    ending={attendance.ending}
+                    onStart={() => void attendance.startAttendance()}
+                    onRequestEnd={() => setEndAttendanceDialogOpen(true)}
+                    onRestart={() => void attendance.restartAttendance()}
+                    compact
+                  />
+                </div>
 
-
-                  onRequestEnd={() => setEndAttendanceDialogOpen(true)}
-                  onRestart={() => void attendance.restartAttendance()}
-                  compact
-                />
-                {/* Atalho de fluxos reais do consultor (variante + nome) */}
-                <div className="flex items-center gap-0.5 rounded-md border border-border/60 p-0.5 bg-background/40 shrink-0 max-w-full overflow-x-auto">
+                {/* Linha 3 — seletor de fluxo (full width) */}
+                <div className="flex items-center gap-0.5 rounded-md border border-border/60 p-0.5 bg-background/40 w-full max-w-full overflow-x-auto scrollbar-none">
                   {(flowOptions.length > 0 ? flowOptions : [{ variant: "A", name: "CEMIG" }]).map((f) => (
                     <button
                       key={f.variant}
+                      type="button"
                       onClick={() => changeVariant(f.variant as "A" | "B" | "C" | "D" | "E" | "M")}
-                      className={`px-2.5 py-1 text-[11px] font-semibold rounded-sm transition whitespace-nowrap min-h-[32px] ${variant === f.variant ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/40"}`}
+                      className={`px-2.5 py-1 text-[11px] font-semibold rounded-sm transition whitespace-nowrap min-h-[32px] shrink-0 ${variant === f.variant ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted/40"}`}
                       title={`Usar ${f.name}`}
                     >
-                      {f.name}
+                      {flowChipLabel(f.name, f.variant, isLgDown)}
                     </button>
                   ))}
-                </div>
                 </div>
               </div>
 

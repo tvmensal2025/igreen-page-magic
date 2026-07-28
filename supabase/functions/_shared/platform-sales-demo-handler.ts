@@ -1,6 +1,6 @@
 /**
  * Handler inbound — demo pós-venda para alvos platform_sales.
- * Clique 1–8: mesmo pacote do pós-venda real (imagem + áudio TTS), sem bolha de texto.
+ * Clique 1–8: mesmo pacote do pós-venda real (imagem + áudio stitch), sem bolha de texto.
  * Retorna handled=true → webhook deve return cedo (não vira lead).
  */
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
@@ -14,7 +14,7 @@ import {
   psDemoPhoneDigits,
   resolvePsDemoAction,
 } from "./platform-sales-demo.ts";
-import { renderPersonalizedTtsAudio } from "./pos-venda-tts.ts";
+import { renderPosVendaStitchedAudio } from "./pos-venda-audio-stitch.ts";
 
 export type PsDemoSender = {
   sendText: (jid: string, text: string) => Promise<boolean>;
@@ -121,7 +121,7 @@ async function findActiveDemoTarget(
   return null;
 }
 
-/** Resolve imagem + áudio TTS a partir de pos_venda_default_media (paridade pós-venda). */
+/** Resolve imagem + áudio stitch (paridade pós-venda — sem TTS do roteiro inteiro). */
 async function resolveStageMediaPack(
   supabase: SupabaseClient,
   stage: string,
@@ -138,21 +138,23 @@ async function resolveStageMediaPack(
     .eq("stage", stage)
     .maybeSingle();
 
-  const stageText = composePsDemoClientMessage(String(media?.message_text || ""), {
+  const rawTemplate = String(media?.message_text || "");
+  const stageText = composePsDemoClientMessage(rawTemplate, {
     customerName: consultantName,
   });
   const imageUrl = String(media?.image_url || "").trim() || null;
   let audioUrl = String(media?.media_url || "").trim() || null;
 
   const msgType = String(media?.message_type || "audio");
-  // Roteiro com {{nome}}/{{saudacao}} → TTS (media_url estático foi limpo de propósito).
-  if (msgType === "audio" && stageText) {
-    const ttsUrl = await renderPersonalizedTtsAudio(
-      supabase,
-      PS_DEMO_TTS_CONSULTANT_ID,
-      stageText,
-    );
-    if (ttsUrl) audioUrl = ttsUrl;
+  if (msgType === "audio" && rawTemplate) {
+    const stitched = await renderPosVendaStitchedAudio(supabase, {
+      consultantId: PS_DEMO_TTS_CONSULTANT_ID,
+      customerName: consultantName,
+      nameSource: "manual",
+      stage,
+      rawTemplate,
+    });
+    if (stitched.ok && stitched.url) audioUrl = stitched.url;
   }
 
   const mediaPackOk = !!(imageUrl || audioUrl);

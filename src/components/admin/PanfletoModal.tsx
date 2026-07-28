@@ -202,8 +202,7 @@ export function PanfletoModal({
 
   const redirectUrl = useMemo(() => {
     if (shareUrl) return shareUrl;
-    // Link curto, no domínio próprio. Resolvido em runtime por PartnerRedirectPage
-    // (rota /r/:licenca), que chama qr-redirect?json=1 e redireciona pro wa.me.
+    // Link curto com marca. index.html redireciona na hora → WhatsApp.
     const base = `https://igreen.cloud/r/${encodeURIComponent(licenca)}`;
     const trimmed = phrase.trim();
     if (!trimmed) return base;

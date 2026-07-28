@@ -11,6 +11,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { buildCors } from "../_shared/cors.ts";
 import { resolveCaller } from "../_shared/caller-auth.ts";
 import {
+  CALL_INTRO_CACHE_TAG,
   ensureBodyClipOnVelip,
   firstNameFrom,
   normalizeCallName,
@@ -173,7 +174,7 @@ Deno.serve(async (req) => {
     const baseModel =
       String((clipRaw as { model_id?: string | null } | null)?.model_id || "eleven_v3")
         .split(":")[0] || "eleven_v3";
-    const modelId = `${baseModel}:ci_v2_tudobem`;
+    const modelId = `${baseModel}:${CALL_INTRO_CACHE_TAG}`;
 
     const { data: cachedRenders } = await admin
       .from("voice_call_renders")

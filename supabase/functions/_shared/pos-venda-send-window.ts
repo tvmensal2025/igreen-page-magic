@@ -82,6 +82,13 @@ export function nextPosVendaSendSlot(now: Date = new Date()): Date {
   return now;
 }
 
+/** Se `raw` cai fora da janela, empurra para o próximo slot; senão mantém. */
+export function clampToPosVendaSendWindow(raw: Date, now: Date = new Date()): Date {
+  const candidate = raw.getTime() < now.getTime() ? now : raw;
+  if (isPosVendaSendWindow(candidate)) return candidate;
+  return nextPosVendaSendSlot(candidate);
+}
+
 export function formatPosVendaSendSlotBR(at: Date): string {
   return new Intl.DateTimeFormat("pt-BR", {
     timeZone: TZ,

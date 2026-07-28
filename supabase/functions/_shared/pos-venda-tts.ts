@@ -75,20 +75,18 @@ export async function renderPersonalizedTtsAudio(
     /* cache miss ok */
   }
 
-  try {
-    const elRes = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${SOFIA_VOICE_ID}?output_format=opus_48000_64`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "xi-api-key": key,
-          Accept: "audio/ogg",
-        },
-        body: JSON.stringify({
+  // Sofia canônica = eleven_v3 + SOFIA_VOICE_ID (a mesma voz do restante do produto).
+  // Fallback só multilingual_v2 com a MESMA voice id — nunca Flash (timbre diferente).
+  const models = ["eleven_v3", "eleven_multilingual_v2"] as const;
+  let bytes: Uint8Array | null = null;
+  let lastErr = "";
+
+  for (const modelId of models) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        const body: Record<string, unknown> = {
           text: spoken,
-          model_id: "eleven_v3",
-          language_code: "pt",
+          model_id: modelId,
           voice_settings: {
             stability: 0.5,
             similarity_boost: 0.75,
@@ -96,38 +94,93 @@ export async function renderPersonalizedTtsAudio(
             use_speaker_boost: true,
             speed: 1.0,
           },
-        }),
-        signal: AbortSignal.timeout(90_000),
-      },
-    );
-    if (!elRes.ok) {
-      const err = await elRes.text().catch(() => "");
-      console.error("[pos-venda-tts] elevenlabs falhou", elRes.status, err.slice(0, 160));
-      return null;
-    }
-    const bytes = new Uint8Array(await elRes.arrayBuffer());
-    if (bytes.byteLength < 256) return null;
+        };
+        if (modelId === "eleven_v3") body.language_code = "pt";
 
+        const elRes = await fetch(
+          `https://api.elevenlabs.io/v1/text-to-speech/${SOFIA_VOICE_ID}?output_format=opus_48000_64`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "xi-api-key": key,
+              Accept: "audio/ogg",
+            },
+            body: JSON.stringify(body),
+            signal: AbortSignal.timeout(90_000),
+          },
+        );
+        if (elRes.ok) {
+          const buf = new Uint8Array(await elRes.arrayBuffer());
+          if (buf.byteLength >= 256) {
+            bytes = buf;
+            break;
+          }
+          lastErr = `${modelId}:empty`;
+          console.warn("[pos-venda-tts] elevenlabs áudio vazio", modelId, attempt);
+        } else {
+          const err = await elRes.text().catch(() => "");
+          lastErr = `${modelId}:${elRes.status}`;
+          console.error(
+            "[pos-venda-tts] elevenlabs falhou",
+            modelId,
+            elRes.status,
+            `attempt=${attempt}`,
+            err.slice(0, 200),
+          );
+          if (elRes.status === 401 || elRes.status === 403) {
+            console.error("[pos-venda-tts] chave/plano bloqueado — abort");
+            return null;
+          }
+          if (elRes.status === 429 || elRes.status >= 500) {
+            await new Promise((r) => setTimeout(r, 800 * attempt));
+            continue;
+          }
+          break;
+        }
+      } catch (e) {
+        lastErr = `${modelId}:exc:${(e as Error)?.message || "err"}`;
+        console.error(
+          "[pos-venda-tts] exception",
+          modelId,
+          `attempt=${attempt}`,
+          (e as Error)?.message,
+        );
+        await new Promise((r) => setTimeout(r, 600 * attempt));
+      }
+    }
+    if (bytes) break;
+  }
+
+  if (!bytes) {
+    console.error("[pos-venda-tts] Sofia falhou", lastErr, `chars=${spoken.length}`);
+    return null;
+  }
+
+  try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
     const serviceRole = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
     if (!supabaseUrl || !serviceRole) return null;
 
-    const fd = new FormData();
-    fd.append("file", new Blob([bytes as BlobPart], { type: "audio/ogg" }), `${slotKey}.ogg`);
-    fd.append("scope", "admin");
-    fd.append("consultant_id", consultantId);
-    fd.append("kind", "audio");
-    fd.append("slug", slotKey.slice(0, 80));
-    const uploadRes = await fetch(`${supabaseUrl}/functions/v1/upload-media`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${serviceRole}`, apikey: serviceRole },
-      body: fd,
-      signal: AbortSignal.timeout(60_000),
-    });
-    if (!uploadRes.ok) {
-      console.error("[pos-venda-tts] upload falhou", uploadRes.status);
-      return null;
+    let uploadRes: Response | null = null;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const fd = new FormData();
+      fd.append("file", new Blob([bytes as BlobPart], { type: "audio/ogg" }), `${slotKey}.ogg`);
+      fd.append("scope", "admin");
+      fd.append("consultant_id", consultantId);
+      fd.append("kind", "audio");
+      fd.append("slug", slotKey.slice(0, 80));
+      uploadRes = await fetch(`${supabaseUrl}/functions/v1/upload-media`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${serviceRole}`, apikey: serviceRole },
+        body: fd,
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (uploadRes.ok) break;
+      console.error("[pos-venda-tts] upload falhou", uploadRes.status, `attempt=${attempt}`);
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 1000));
     }
+    if (!uploadRes?.ok) return null;
     const uploaded = await uploadRes.json();
     const url = uploaded?.url ? String(uploaded.url) : null;
     if (!url) return null;
@@ -152,7 +205,7 @@ export async function renderPersonalizedTtsAudio(
     }
     return url;
   } catch (e) {
-    console.error("[pos-venda-tts] exception", (e as Error)?.message);
+    console.error("[pos-venda-tts] upload exception", (e as Error)?.message);
     return null;
   }
 }

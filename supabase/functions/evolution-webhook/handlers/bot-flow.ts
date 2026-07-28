@@ -6603,9 +6603,11 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         return { reply, updates };
       }
 
-      // ✅ Regenerar igreen_link a partir do cadastro_url do consultor dono
-      // (impede o bug em que o lead é submetido com o link de outro consultor)
+      // ✅ Regenerar igreen_link:
+      //   - cli = consultor abonador → vira ?id= (abona no lugar do dono)
+      //   - partner_igreen_id = cliente cashback → vira &cli=
       if (consultantRow?.igreen_id) {
+        let idBase = String(consultantRow.igreen_id);
         let partnerCli: string | null = null;
         if ((customer as any).referral_partner_id) {
           try {
@@ -6614,12 +6616,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               .select("cli, partner_igreen_id")
               .eq("id", (customer as any).referral_partner_id)
               .maybeSingle();
-            const partnerId = Number((partner as any)?.partner_igreen_id || 0);
-            partnerCli = partnerId > 0 ? String(partnerId) : null;
+            const abonador = Number(String((partner as any)?.cli ?? "").replace(/\D/g, "")) || 0;
+            const clienteCashback =
+              Number(String((partner as any)?.partner_igreen_id ?? "").replace(/\D/g, "")) || 0;
+            if (abonador > 0) idBase = String(abonador);
+            if (clienteCashback > 0 && String(clienteCashback) !== idBase) {
+              partnerCli = String(clienteCashback);
+            }
           } catch (_) { /* segue sem cli */ }
         }
-        updates.igreen_link = buildCadastroLink(consultantRow.igreen_id, partnerCli);
-        console.log(`🔗 igreen_link regenerado: dono=${consultantRow.igreen_id}${partnerCli ? ` + parceiro=${partnerCli}` : ""}`);
+        updates.igreen_link = buildCadastroLink(idBase, partnerCli);
+        console.log(`🔗 igreen_link regenerado: id=${idBase}${partnerCli ? ` + cashback_cli=${partnerCli}` : ""}`);
       } else if (consultantRow?.cadastro_url) {
         updates.igreen_link = consultantRow.cadastro_url;
         console.log(`🔗 igreen_link regenerado para consultor dono: ${consultantRow.id}`);

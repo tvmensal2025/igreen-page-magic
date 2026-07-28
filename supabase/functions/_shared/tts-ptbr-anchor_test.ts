@@ -12,8 +12,8 @@ Deno.test("buildOlaGreetTtsText = Olá+nome+tudo bem (igual ligação)", () => {
   assertEquals(buildOlaGreetTtsText("Fernandinho"), "Olá, Fernandinho! Tudo bem?");
 });
 
-Deno.test("buildCallNameGreetTtsText — ligação gravada sem pergunta", () => {
-  assertEquals(buildCallNameGreetTtsText("Maria"), "Olá, Maria!");
+Deno.test("buildCallNameGreetTtsText = Olá+nome+tudo bem (igual Zap/PV)", () => {
+  assertEquals(buildCallNameGreetTtsText("Maria"), "Olá, Maria! Tudo bem?");
   assertEquals(buildCallNameGreetTtsText(""), "");
   assertEquals(buildOlaGreetTtsText("Maria"), "Olá, Maria! Tudo bem?");
 });

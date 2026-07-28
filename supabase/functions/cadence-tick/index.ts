@@ -16,7 +16,7 @@ import {
 } from "../_shared/cadence-engine.ts";
 import { isBusinessHour } from "../_shared/business-window.ts";
 import { resolveChannelForCustomerWithFailover, isUnavailable, ctx } from "../_shared/channel-sender.ts";
-import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
+import { awaitOutboundSendQuota, registerSend } from "../_shared/anti-ban.ts";
 import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../_shared/customer-display-name.ts";
 import {
   playAudioFile, makeSMS,
@@ -386,6 +386,17 @@ function missingIdentityVar(tpl: string, consultantName: string, consultantPhone
   return null;
 }
 
+/** Remove placeholders de telefone do template WA quando não há chip — envia o corpo. */
+function scrubMissingConsultantPhone(tpl: string): string {
+  return String(tpl || "")
+    .replace(/https?:\/\/wa\.me\/\{\{\s*consultor_phone\s*\}\}/gi, "")
+    .replace(/\{\{\s*consultor_phone\s*\}\}/gi, "")
+    .replace(/\{\{\s*link_wa\s*\}\}/gi, "")
+    .replace(/(?:https?:\/\/)?wa\.me\/(?![\d+])/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 /** Todo SMS sai com https://wa.me do consultor clicável. */
 function ensureSmsWaLink(text: string, consultorPhone: string): string {
   let t = String(text || "").trim();
@@ -409,6 +420,12 @@ type DispatchResult = {
   detail: string;
   /** true = não re-tentar (ex.: número inválido p/ SMS); avança estágio. */
   permanent?: boolean;
+  /**
+   * Intervalo anti-ban: reagendar em segundos (não `failed` + 30 min).
+   * Conta como adiado por slot, não como pessoa falha.
+   */
+  softDefer?: boolean;
+  retryInMs?: number;
   theme_id?: string;
   /** Texto exatamente enviado (já com {{nome}} resolvido ou vazio). */
   message_body?: string;
@@ -474,13 +491,25 @@ async function dispatchWhatsApp(
   });
   if (isUnavailable(ch)) return { ok: false, detail: `channel_${ch.reason}` };
 
-  const quota = await checkSendQuota(supabase, ch.instanceName);
-  if (!quota.allowed) return { ok: false, detail: `quota_${quota.reason}` };
+  // Intervalo mínimo: ESPERA o slot (Whapi usa fila própria). Nunca
+  // `failed`+30min — isso gerava dezenas de logs na mesma pessoa.
+  const quota = await awaitOutboundSendQuota(supabase, ch.instanceName, {
+    channelKind: ch.kind,
+  });
+  if (!quota.allowed) {
+    return {
+      ok: false,
+      detail: `quota_${quota.reason || "blocked"}`,
+      softDefer: !!quota.softDefer,
+      retryInMs: quota.retryInMs,
+    };
+  }
 
   // Carrega consultor p/ substituir {{consultor}} e {{consultor_phone}} — sem
   // isso, o link `wa.me/{{consultor_phone}}` saía literal ou como `wa.me/`.
+  // channelKind=ch.kind: wa.me deve ser o chip do canal que realmente envia.
   const { consultantName, consultantPhone, assistantName, consultantGender } = await loadLeadContext(
-    supabase, row.customer_id, row.consultant_id,
+    supabase, row.customer_id, row.consultant_id, { channelKind: ch.kind },
   );
   const firstName = safeFirstNameForAddress(cust.name, (cust as any).name_source);
   let rawTpl = cfg.message_text || "";
@@ -501,9 +530,15 @@ async function dispatchWhatsApp(
   }
   const availOverrides = await loadAvail(row.consultant_id);
   const { phrase: fraseDisponibilidade } = buildAvailabilityPhrase(new Date(), availOverrides);
-  const missingVar = missingIdentityVar(rawTpl, consultantName, consultantPhone);
-  if (missingVar) return { ok: false, detail: `identity_missing:${missingVar}` };
-  const text = renderTemplate(rawTpl, {
+  let tplForSend = rawTpl;
+  const missingVar = missingIdentityVar(tplForSend, consultantName, consultantPhone);
+  if (missingVar === "consultor_phone") {
+    // Sem chip: manda o corpo sem wa.me (não adianta failed×30min).
+    tplForSend = scrubMissingConsultantPhone(tplForSend);
+  } else if (missingVar) {
+    return { ok: false, detail: `identity_missing:${missingVar}` };
+  }
+  const text = renderTemplate(tplForSend, {
     nome: firstName,
     consultor: consultantName,
     assistente: assistantName,
@@ -578,10 +613,15 @@ async function dispatchWhatsApp(
 }
 
 /** Busca telefone + nome + IA + gênero do consultor do lead (nunca inventar gestor/Rafael). */
-async function loadLeadContext(supabase: any, customerId: string, consultantId: string | null) {
+async function loadLeadContext(
+  supabase: any,
+  customerId: string,
+  consultantId: string | null,
+  opts?: { channelKind?: string | null },
+) {
   const { data: cust } = await supabase
     .from("customers")
-    .select("id, name, name_source, phone_whatsapp")
+    .select("id, name, name_source, phone_whatsapp, origin_channel")
     .eq("id", customerId).maybeSingle();
   let consultantName = "";
   let consultantPhone = "";
@@ -606,8 +646,13 @@ async function loadLeadContext(supabase: any, customerId: string, consultantId: 
       (c as { display_name?: string | null })?.display_name,
       consultantGender,
     );
-    // Link wa.me = WhatsApp CONECTADO (chip), nunca notification_phone (alerta humano).
-    consultantPhone = await resolveConsultantConnectedWaPhone(supabase, consultantId);
+    // Link wa.me = chip do canal real (Whapi vs Evolution saudável).
+    const channelKind = opts?.channelKind ||
+      (cust as { origin_channel?: string | null } | null)?.origin_channel ||
+      null;
+    consultantPhone = await resolveConsultantConnectedWaPhone(supabase, consultantId, {
+      channelKind,
+    });
   }
   return { cust, consultantName, consultantPhone, assistantName, consultantGender };
 }
@@ -1609,6 +1654,30 @@ Deno.serve(async (req) => {
                 deferred++;
                 continue;
               }
+            } else if (res.softDefer) {
+              // Intervalo anti-ban: liberar efeito e reagendar em segundos.
+              // NÃO contar como failed da pessoa (evita N logs × 1 lead).
+              status = "queued";
+              detail = {
+                ...detail,
+                soft_defer: true,
+                retry_in_ms: res.retryInMs ?? 20_000,
+              };
+              await finishOutboundEffect(supabase, eff.effectId, "released", {
+                errorCode: String(res.detail || "min_interval").slice(0, 120),
+              });
+              await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
+              const retryMs = Math.max(3_000, Math.min(Number(res.retryInMs) || 20_000, 60_000));
+              await finishRow(row.id, claimToken, {
+                next_action_at: new Date(now.getTime() + retryMs).toISOString(),
+              });
+              await supabase.from("cadence_action_log").insert({
+                customer_id: row.customer_id,
+                consultant_id: row.consultant_id,
+                stage, channel: def.channel, status, detail,
+              }).then(() => {}, () => {});
+              deferred++;
+              continue;
             } else {
               failed++;
               const permanent =
@@ -1644,8 +1713,12 @@ Deno.serve(async (req) => {
     }
 
     if (status === "failed" && !detail.advance_skip) {
+      // Intervalo mínimo residual: reagendar em segundos, não 30 min.
+      const dispatch = String(detail.dispatch || "");
+      const isMinInterval = dispatch.includes("min_interval");
+      const deferMs = isMinInterval ? 20_000 : 30 * 60_000;
       await finishRow(row.id, claimToken, {
-        next_action_at: new Date(now.getTime() + 30 * 60_000).toISOString(),
+        next_action_at: new Date(now.getTime() + deferMs).toISOString(),
       });
       continue;
     }
