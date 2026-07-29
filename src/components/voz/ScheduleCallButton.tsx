@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogD
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { sofiaClipOwnerIds } from "@/lib/sofiaClipScope";
+
 
 const VOICE_SOFIA = "EJV7H2baGt5ab95tOoSG";
 
