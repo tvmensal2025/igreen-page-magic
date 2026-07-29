@@ -1794,6 +1794,7 @@ export function ReheatCyclePizza({
 
   return (
     <div className="premium-card h-full">
+      <ConsultantIdentityWizard consultantId={consultantId || undefined} className="mb-3" hideWhenReady />
       <CadenceMissingAlert className="mb-3" />
       {consultantId && (
         <>
