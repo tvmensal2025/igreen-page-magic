@@ -15,14 +15,16 @@ export const QR_REDIRECT_BASE =
 export function buildPartnerPublicShortLink(
   ref: string,
   code: string,
-  opts?: { keyword?: string | null; msg?: string | null },
+  opts?: { keyword?: string | null; msg?: string | null; spot?: string | null },
 ): string {
   const base = `${PUBLIC_PARTNER_BASE}/r/${encodeURIComponent(ref.trim())}/${encodeURIComponent(code.trim())}`;
   const params = new URLSearchParams();
   const kw = (opts?.keyword ?? "").trim();
   const msg = (opts?.msg ?? "").trim();
+  const spot = (opts?.spot ?? "").trim().toLowerCase();
   if (kw) params.set("k", kw);
   if (msg) params.set("msg", msg);
+  if (spot) params.set("s", spot);
   const qs = params.toString();
   return qs ? `${base}?${qs}` : base;
 }
@@ -36,6 +38,7 @@ export function buildPartnerWaRedirectUrl(
   code?: string | null,
   msg?: string | null,
   keyword?: string | null,
+  spot?: string | null,
 ): string {
   const params = new URLSearchParams();
   params.set("l", ref.trim());
@@ -45,5 +48,12 @@ export function buildPartnerWaRedirectUrl(
   if (m) params.set("msg", m);
   const k = (keyword ?? "").trim();
   if (k) params.set("k", k);
+  const s = (spot ?? "").trim().toLowerCase();
+  if (s) params.set("s", s);
   return `${QR_REDIRECT_BASE}?${params.toString()}`;
+}
+
+/** Página pública do parceiro (Central só dele). */
+export function buildPartnerPortalUrl(token: string): string {
+  return `${PUBLIC_PARTNER_BASE}/p/${encodeURIComponent(token.trim())}`;
 }

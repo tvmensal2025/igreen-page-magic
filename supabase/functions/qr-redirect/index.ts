@@ -163,20 +163,7 @@ Deno.serve(async (req) => {
           // Evolution: sem chip saudável → fallback consultants.phone; nunca Whapi compartilhado.
           allowSharedWhapiFallback: channelKind === "whapi",
         })) || null;
-
-      supabase
-        .from("page_events")
-        .insert({
-          consultant_id: consultant.id,
-          event_type: "qr_scan",
-          event_target: spotParam
-            ? `banner_spot:${spotParam}`
-            : igreenIdParam
-            ? "banner_root"
-            : "panfleto",
-          page_type: "client",
-        })
-        .then(() => {});
+      // Telemetria qr_scan fica DEPOIS de resolver parceiro/spot (event_target fino).
     }
 
     const normalizedPhone = normalizeWaPhoneDigits(phone);
@@ -214,6 +201,7 @@ Deno.serve(async (req) => {
     let message = msgParam || DEFAULT_MESSAGE;
 
     let partner: {
+      id?: string;
       nome: string;
       keywords: unknown;
       qr_phrase: string | null;
@@ -221,6 +209,9 @@ Deno.serve(async (req) => {
       is_active: boolean;
       short_code: string | null;
     } | null = null;
+
+    let eventTarget = "panfleto";
+    let partnerSpotCode: string | null = null;
 
     // Banner VIVO do consultor (sem parceiro): frase do spot / default no banco.
     let liveBannerResolved = false;
@@ -237,6 +228,7 @@ Deno.serve(async (req) => {
           const custom = String(spot.phrase || "").trim();
           message = resolveQrMessage(custom || null, kw || spotParam, null);
           liveBannerResolved = true;
+          eventTarget = `banner_spot:${spotParam}`;
         } else {
           // Spot inexistente: não quebra — frase padrão + código no texto.
           message = resolveQrMessage(
@@ -245,18 +237,20 @@ Deno.serve(async (req) => {
             null,
           );
           liveBannerResolved = true;
+          eventTarget = `banner_spot:${spotParam}`;
         }
       } else {
         // Raiz /{ini}/{id}: frase default editável no banco.
         const def = String(consultant.banner_default_phrase || "").trim();
         message = def || DEFAULT_MESSAGE;
         liveBannerResolved = true;
+        eventTarget = "banner_root";
       }
     }
 
     if (consultant?.id && !liveBannerResolved) {
       const baseSelect =
-        "nome, keywords, qr_phrase, consultant_id, is_active, short_code";
+        "id, nome, keywords, qr_phrase, consultant_id, is_active, short_code";
 
       if (partnerId) {
         const { data } = await supabase
@@ -301,18 +295,77 @@ Deno.serve(async (req) => {
     }
 
     if (partner) {
-      const fromQuery = (keywordParam ?? "").trim();
-      const rawKw = Array.isArray(partner.keywords)
-        ? (partner.keywords[0] ?? "")
-        : "";
-      const fallbackKw =
-        typeof rawKw === "string" && rawKw.trim()
-          ? rawKw
-          : (partner.nome ?? "");
-      const keyword = fromQuery || fallbackKw;
-      const phraseSource =
-        (msgParam ?? "").trim() || (partner.qr_phrase as string | null);
-      message = resolveQrMessage(phraseSource, keyword, partner.short_code);
+      const short = String(partner.short_code || codeParam || "").trim();
+      eventTarget = short ? `partner:${short}` : "partner";
+
+      // Local nomeado do parceiro: ?s=posto-shell (ou keyword casando spot).
+      let partnerSpot: {
+        code: string;
+        keyword: string;
+        phrase: string | null;
+      } | null = null;
+      if (partner.id && spotParam) {
+        const { data: spot } = await supabase
+          .from("referral_partner_banner_spots")
+          .select("code, keyword, phrase")
+          .eq("partner_id", partner.id)
+          .eq("code", spotParam)
+          .maybeSingle();
+        if (spot) partnerSpot = spot as typeof partnerSpot;
+      }
+      if (!partnerSpot && partner.id && keywordParam) {
+        const kw = decodeURIComponent(keywordParam).trim();
+        if (kw) {
+          const { data: spot } = await supabase
+            .from("referral_partner_banner_spots")
+            .select("code, keyword, phrase")
+            .eq("partner_id", partner.id)
+            .eq("keyword", kw)
+            .eq("is_active", true)
+            .maybeSingle();
+          if (spot) partnerSpot = spot as typeof partnerSpot;
+        }
+      }
+
+      if (partnerSpot) {
+        partnerSpotCode = partnerSpot.code;
+        eventTarget = short
+          ? `partner:${short}:${partnerSpot.code}`
+          : `partner_spot:${partnerSpot.code}`;
+        const kw = String(partnerSpot.keyword || "").trim();
+        const custom = String(partnerSpot.phrase || "").trim();
+        message = resolveQrMessage(
+          custom || (msgParam ?? "").trim() || partner.qr_phrase,
+          kw || keywordParam || partner.nome,
+          partner.short_code,
+        );
+      } else {
+        const fromQuery = (keywordParam ?? "").trim();
+        const rawKw = Array.isArray(partner.keywords)
+          ? (partner.keywords[0] ?? "")
+          : "";
+        const fallbackKw =
+          typeof rawKw === "string" && rawKw.trim()
+            ? rawKw
+            : (partner.nome ?? "");
+        const keyword = fromQuery || fallbackKw;
+        const phraseSource =
+          (msgParam ?? "").trim() || (partner.qr_phrase as string | null);
+        message = resolveQrMessage(phraseSource, keyword, partner.short_code);
+      }
+    }
+
+    // Telemetria fina (consultor Geral / spot / parceiro / parceiro+local).
+    if (consultant?.id) {
+      supabase
+        .from("page_events")
+        .insert({
+          consultant_id: consultant.id,
+          event_type: "qr_scan",
+          event_target: eventTarget,
+          page_type: "client",
+        })
+        .then(() => {});
     }
 
     if (wantsJson) {
@@ -320,7 +373,9 @@ Deno.serve(async (req) => {
         phone: normalizedPhone,
         message,
         live: liveBannerResolved,
-        spot: spotParam || null,
+        spot: spotParam || partnerSpotCode || null,
+        event_target: eventTarget,
+        partner: partner?.short_code || null,
       });
     }
     return redirectTo(buildWhatsappUrl(normalizedPhone, message));

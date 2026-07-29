@@ -11,6 +11,10 @@ export interface ReferralPartner {
   notification_phone: string | null;
   /** Código curto numérico (gerado no banco) usado no link /r/{licenca}/{short_code}. */
   short_code: string | null;
+  /** Token da página pública do parceiro (/p/{token}). */
+  portal_token?: string | null;
+  /** Limiar de alerta 24h (0 = off). */
+  banner_alert_threshold?: number | null;
   is_active: boolean;
   created_at: string;
 }

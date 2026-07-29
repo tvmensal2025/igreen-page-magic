@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { PartnerDashboard } from "./PartnerDashboard";
 import { PartnerForm } from "./PartnerForm";
 import { PartnerQrCode } from "./PartnerQrCode";
@@ -55,6 +56,11 @@ export function ParceirosTab({
   const [liveWaPhone, setLiveWaPhone] = useState(consultantPhone);
   const { partners, create, update, remove, isLoading } = useReferralPartners();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const refreshPartners = useCallback(() => {
+    void queryClient.invalidateQueries({ queryKey: ["referral-partners"] });
+  }, [queryClient]);
 
   const loadConsultantBannerData = useCallback(async () => {
     if (!consultantId) return;
@@ -170,13 +176,17 @@ export function ParceirosTab({
           consultantId={consultantId}
           consultantName={consultantName}
           consultantIgreenId={consultantIgreenId}
+          license={license}
           defaultPhrase={bannerDefaultPhrase}
           spots={bannerSpots}
+          partners={partners}
           onSpotsChanged={() => {
             void loadConsultantBannerData();
           }}
+          onPartnersChanged={refreshPartners}
           onBack={() => setView("rede")}
           onOpenDownload={openBannerDownload}
+          onOpenPartnerQr={setQrPartner}
         />
 
         <ConsultantBannerDownloadModal
@@ -193,6 +203,21 @@ export function ParceirosTab({
           onSpotsChanged={() => {
             void loadConsultantBannerData();
           }}
+        />
+
+        <PartnerQrCode
+          open={!!qrPartner}
+          onClose={() => setQrPartner(null)}
+          partnerName={qrPartner?.nome ?? ""}
+          keyword={qrPartner?.keywords?.[0]?.trim() || qrPartner?.nome || ""}
+          keywords={qrPartner?.keywords ?? []}
+          consultantPhone={liveWaPhone || consultantPhone}
+          consultantName={consultantName}
+          consultantIgreenId={consultantIgreenId}
+          qrPhrase={qrPartner?.qr_phrase}
+          license={license}
+          shortCode={qrPartner?.short_code}
+          onSaveKeyword={handleSavePartnerKeyword}
         />
       </>
     );

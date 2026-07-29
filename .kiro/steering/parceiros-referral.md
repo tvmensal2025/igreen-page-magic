@@ -112,11 +112,14 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
 
 ## 4b. Banners do consultor (QR vivo)
 
-- UI: Parceiros → **Meus Banners** → `BannersHub` (abas Lista | Resultados). Modal só baixa/edita frase.
-- Geral: `consultants.banner_default_phrase` + URL fixa `igreen.cloud/{ini}/{igreen_id}`.
-- Locais: `consultant_banner_spots` (código fixo na URL; keyword/phrase editáveis).
-- Keywords espelho em `consultants.banner_keywords` — sync **une** (nunca remove histórico ao arquivar).
-- Gráficos: `BannersDashboard` lê `page_events` (`qr_scan`/`qr_broken`) + leads via `customers.referral_keyword_matched`.
+- UI: Parceiros → **Central de Banners** → `BannersHub` (abas **Meus | Parceiros | Ranking**).
+- Meus: Geral + `consultant_banner_spots` + `BannersDashboard` + tabela Nome|leituras|leads.
+- Parceiros: `PartnerBannersPanel` + tabela `referral_partner_banner_spots` (nome obrigatório, arquivar, CSV, link `/p/{portal_token}`).
+- Ranking: `BannersRanking` unifica seus + parceiros.
+- Página do parceiro: `PartnerBannerPortalPage` + RPC `get_partner_banner_portal`.
+- Telemetria `qr-redirect`: `banner_root` / `banner_spot:{code}` / `partner:{short}` / `partner:{short}:{spot}`.
+- Keywords espelho em `consultants.banner_keywords` e `referral_partners.keywords` — sync **une** (nunca remove histórico ao arquivar).
+- Limiar `banner_alert_threshold` no parceiro (0=off) — base para alerta WA futuro.
 
 ---
 

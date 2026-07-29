@@ -40,34 +40,48 @@ import {
   BannerNamesTable,
   buildBannerNameRows,
 } from "./BannerNamesTable";
+import { BannersRanking } from "./BannersRanking";
+import { PartnerBannersPanel } from "./PartnerBannersPanel";
 import type { BannerSpot } from "./ConsultantBannerDownloadModal";
+import type { ReferralPartner } from "./hooks/useReferralPartners";
 
+type HubSection = "meus" | "parceiros" | "ranking";
 type HubTab = "lista" | "resultados";
 
 interface Props {
   consultantId: string;
   consultantName?: string;
   consultantIgreenId?: string;
+  license?: string | null;
   defaultPhrase?: string | null;
   spots: BannerSpot[];
+  partners: ReferralPartner[];
   onSpotsChanged: () => void;
+  onPartnersChanged: () => void;
   onBack: () => void;
   /** Abre o modal de download/edição. mode: root | spot; spotId opcional. */
   onOpenDownload: (opts: { mode: "root" | "spot"; spotId?: string }) => void;
+  onOpenPartnerQr: (partner: ReferralPartner) => void;
 }
 
 export function BannersHub({
   consultantId,
   consultantName = "",
   consultantIgreenId = "",
+  license = "",
   defaultPhrase = null,
   spots,
+  partners,
   onSpotsChanged,
+  onPartnersChanged,
   onBack,
   onOpenDownload,
+  onOpenPartnerQr,
 }: Props) {
   const { toast } = useToast();
+  const [section, setSection] = useState<HubSection>("meus");
   const [tab, setTab] = useState<HubTab>("lista");
+  const [selectedPartnerId, setSelectedPartnerId] = useState<string>("");
   const [scanCounts, setScanCounts] = useState<Record<string, number>>({});
   const [leadCounts, setLeadCounts] = useState<Record<string, number>>({});
   const [loadingCounts, setLoadingCounts] = useState(false);
@@ -192,6 +206,15 @@ export function BannersHub({
     }
   };
 
+  const selectedPartner =
+    partners.find((p) => p.id === selectedPartnerId) || partners[0] || null;
+
+  useEffect(() => {
+    if (!selectedPartnerId && partners[0]) {
+      setSelectedPartnerId(partners[0].id);
+    }
+  }, [partners, selectedPartnerId]);
+
   const spotToArchive = spots.find((s) => s.id === archivingId) || null;
 
   const nameRows = useMemo(
@@ -223,25 +246,26 @@ export function BannersHub({
           <div className="min-w-0">
             <h2 className="pe-page-title flex items-center gap-2 flex-wrap">
               <QrCode className="h-5 w-5 text-primary" />
-              Meus Banners
+              Central de Banners
               <HelpHint
                 size={14}
-                title="Banners nunca somem sozinhos"
-                summary="Criar outro não apaga o anterior"
+                title="Você + parceiros, tudo com nome"
+                summary="Meus, Parceiros e Ranking no mesmo lugar"
                 details={
-                  "Geral é um QR eterno do seu ID — imprima 4.000 vezes se quiser.\n\n" +
-                  "Cada local (posto, padaria…) fica salvo nesta lista. Criar outro só adiciona.\n\n" +
-                  "Excluir = arquivar (com confirmação). O registro e a keyword ficam no histórico."
+                  "Meus: seus QRs Gerais e locais nomeados.\n\n" +
+                  "Parceiros: mesma lógica por indicador (nome obrigatório, tabela, link só dele).\n\n" +
+                  "Ranking: compara todos no período.\n\n" +
+                  "Excluir = arquivar. Nada some do banco."
                 }
-                example="Geral: igreen.cloud/rfd/130392 | Local: …/posto-shell"
+                example="Geral: igreen.cloud/rfd/124170 | Parceiro: /r/…/código?s=posto-shell"
               />
             </h2>
             <p className="pe-page-sub">
-              Lista permanente + gráficos de leituras. O QR é vivo; o código na
-              URL é fixo depois de impresso.
+              Seus banners e dos parceiros — nome, leituras, leads e QR vivo.
             </p>
           </div>
         </div>
+        {section === "meus" && (
         <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
           <Button
             type="button"
@@ -261,8 +285,79 @@ export function BannersHub({
             Novo local / baixar
           </Button>
         </div>
+        )}
       </div>
 
+      <div className="flex gap-1 bg-muted/50 rounded-lg p-1 w-fit flex-wrap">
+        {(
+          [
+            { id: "meus" as const, label: "Meus" },
+            { id: "parceiros" as const, label: `Parceiros (${partners.length})` },
+            { id: "ranking" as const, label: "Ranking" },
+          ] as const
+        ).map((s) => (
+          <button
+            key={s.id}
+            type="button"
+            onClick={() => setSection(s.id)}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+              section === s.id
+                ? "bg-card text-primary shadow-sm"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {s.label}
+          </button>
+        ))}
+      </div>
+
+      {section === "ranking" ? (
+        <BannersRanking
+          consultantId={consultantId}
+          mySpots={spots}
+          partners={partners}
+        />
+      ) : section === "parceiros" ? (
+        <div className="space-y-4">
+          {partners.length === 0 ? (
+            <Card className="border-dashed">
+              <CardContent className="py-10 text-center text-sm text-muted-foreground">
+                Cadastre um parceiro na rede para criar banners nomeados dele.
+              </CardContent>
+            </Card>
+          ) : (
+            <>
+              <div className="flex flex-wrap gap-2">
+                {partners.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => setSelectedPartnerId(p.id)}
+                    className={`px-3 py-1.5 text-xs rounded-full border transition-colors ${
+                      selectedPartner?.id === p.id
+                        ? "border-primary bg-primary/10 text-primary"
+                        : "border-border hover:border-primary/40"
+                    }`}
+                  >
+                    {p.nome}
+                  </button>
+                ))}
+              </div>
+              {selectedPartner && (
+                <PartnerBannersPanel
+                  consultantId={consultantId}
+                  partner={selectedPartner}
+                  license={license}
+                  consultantIgreenId={consultantIgreenId}
+                  onOpenPartnerQr={() => onOpenPartnerQr(selectedPartner)}
+                  onPartnerUpdated={onPartnersChanged}
+                />
+              )}
+            </>
+          )}
+        </div>
+      ) : (
+        <>
       <div className="flex gap-1 bg-muted/50 rounded-lg p-1 w-fit">
         <button
           type="button"
@@ -518,6 +613,8 @@ export function BannersHub({
             </div>
           )}
         </div>
+      )}
+        </>
       )}
 
       <AlertDialog

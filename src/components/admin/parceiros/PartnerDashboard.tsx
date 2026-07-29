@@ -29,7 +29,7 @@ interface Props {
   onEdit: (p: ReferralPartner) => void;
   onDelete: (id: string) => void;
   onQrCode: (p: ReferralPartner) => void;
-  /** Abre a página Meus Banners (lista permanente + gráficos). */
+  /** Abre a Central de Banners (meus + parceiros + ranking). */
   onDownloadBanner: () => void;
 }
 
@@ -83,7 +83,7 @@ export function PartnerDashboard({
               className="gap-2 h-8"
             >
               <Download className="h-4 w-4" />
-              Meus Banners
+              Central de Banners
             </Button>
             <Button onClick={onNew} className="gap-2 h-8">
               <Plus className="h-4 w-4" /> Novo Parceiro
@@ -99,8 +99,8 @@ export function PartnerDashboard({
               <h3 className="text-lg font-semibold">Nenhum parceiro ainda</h3>
               <p className="text-sm text-muted-foreground max-w-md mt-1">
                 Cadastre indicadores e acompanhe captação, conversão e cashback de
-                cada um em tempo real. Seus banners (lista + gráficos) ficam em
-                Meus Banners.
+                cada um em tempo real. Seus banners e dos parceiros ficam na
+                Central de Banners.
               </p>
             </div>
             <Button onClick={onNew} className="gap-2">
@@ -129,7 +129,7 @@ export function PartnerDashboard({
             className="gap-2 h-8"
           >
             <Download className="h-4 w-4" />
-            Meus Banners
+            Central de Banners
           </Button>
           <Button
             variant="outline"
