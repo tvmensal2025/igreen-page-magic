@@ -436,6 +436,7 @@ export type Database = {
           format: string
           height: number | null
           id: string
+          is_platform_shared: boolean
           last_used_at: string | null
           storage_path: string | null
           updated_at: string
@@ -454,6 +455,7 @@ export type Database = {
           format: string
           height?: number | null
           id?: string
+          is_platform_shared?: boolean
           last_used_at?: string | null
           storage_path?: string | null
           updated_at?: string
@@ -472,6 +474,7 @@ export type Database = {
           format?: string
           height?: number | null
           id?: string
+          is_platform_shared?: boolean
           last_used_at?: string | null
           storage_path?: string | null
           updated_at?: string
@@ -847,6 +850,7 @@ export type Database = {
           filename: string | null
           height: number | null
           id: string
+          is_platform_shared: boolean
           last_used_at: string | null
           storage_path: string | null
           thumb_source: string
@@ -867,6 +871,7 @@ export type Database = {
           filename?: string | null
           height?: number | null
           id?: string
+          is_platform_shared?: boolean
           last_used_at?: string | null
           storage_path?: string | null
           thumb_source?: string
@@ -887,6 +892,7 @@ export type Database = {
           filename?: string | null
           height?: number | null
           id?: string
+          is_platform_shared?: boolean
           last_used_at?: string | null
           storage_path?: string | null
           thumb_source?: string
@@ -10535,8 +10541,81 @@ export type Database = {
         }
         Relationships: []
       }
+      referral_partner_banner_spots: {
+        Row: {
+          code: string
+          consultant_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          keyword: string
+          partner_id: string
+          phrase: string | null
+          updated_at: string
+        }
+        Insert: {
+          code: string
+          consultant_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          keyword: string
+          partner_id: string
+          phrase?: string | null
+          updated_at?: string
+        }
+        Update: {
+          code?: string
+          consultant_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          keyword?: string
+          partner_id?: string
+          phrase?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "referral_partner_banner_spots_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "referral_partner_banner_spots_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_partner_banner_spots_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "referral_partner_banner_spots_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: false
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "referral_partner_banner_spots_partner_id_fkey"
+            columns: ["partner_id"]
+            isOneToOne: false
+            referencedRelation: "referral_partners"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       referral_partners: {
         Row: {
+          banner_alert_threshold: number
           cli: string | null
           consultant_id: string
           created_at: string
@@ -10546,6 +10625,7 @@ export type Database = {
           nome: string
           notification_phone: string | null
           partner_igreen_id: string | null
+          portal_token: string | null
           protocol_seq: number
           qr_phrase: string | null
           rodizio_metrics_enabled: boolean
@@ -10553,6 +10633,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          banner_alert_threshold?: number
           cli?: string | null
           consultant_id: string
           created_at?: string
@@ -10562,6 +10643,7 @@ export type Database = {
           nome: string
           notification_phone?: string | null
           partner_igreen_id?: string | null
+          portal_token?: string | null
           protocol_seq?: number
           qr_phrase?: string | null
           rodizio_metrics_enabled?: boolean
@@ -10569,6 +10651,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          banner_alert_threshold?: number
           cli?: string | null
           consultant_id?: string
           created_at?: string
@@ -10578,6 +10661,7 @@ export type Database = {
           nome?: string
           notification_phone?: string | null
           partner_igreen_id?: string | null
+          portal_token?: string | null
           protocol_seq?: number
           qr_phrase?: string | null
           rodizio_metrics_enabled?: boolean
@@ -13642,6 +13726,15 @@ export type Database = {
       }
     }
     Functions: {
+      _admin_phone_digits_match: {
+        Args: {
+          _local: string
+          _norm: string
+          _raw: string
+          _variants: string[]
+        }
+        Returns: boolean
+      }
       activate_recovery_mode: {
         Args: { p_hours?: number; p_instance: string }
         Returns: undefined
@@ -14450,6 +14543,7 @@ export type Database = {
       }
       get_devtools_blocked: { Args: never; Returns: boolean }
       get_managed_consultant_ids: { Args: { _user: string }; Returns: string[] }
+      get_partner_banner_portal: { Args: { _token: string }; Returns: Json }
       get_platform_pnl: {
         Args: { _from?: string; _to?: string }
         Returns: {
