@@ -29,6 +29,13 @@ import {
   Pencil,
   LayoutGrid,
   Store,
+  Info,
+  Lock,
+  Users,
+  History,
+  QrCode,
+  RotateCcw,
+  Eye,
 } from "lucide-react";
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
 import { useIsMobile } from "@/hooks/use-mobile";
