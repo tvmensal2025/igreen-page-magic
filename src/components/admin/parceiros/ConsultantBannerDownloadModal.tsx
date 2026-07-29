@@ -36,6 +36,7 @@ import {
   QrCode,
   RotateCcw,
   Eye,
+  AlertTriangle,
 } from "lucide-react";
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
 import { useIsMobile } from "@/hooks/use-mobile";
