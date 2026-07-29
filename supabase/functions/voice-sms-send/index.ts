@@ -102,13 +102,22 @@ Deno.serve(async (req) => {
   if (!template) return json(400, { error: "missing_message", message: "Escreva a mensagem do SMS." });
 
   // Link wa.me = WhatsApp CONECTADO (chip), nunca notification_phone (alerta humano).
-  const consultantPhone = await resolveConsultantConnectedWaPhone(admin, consultantId);
+  // Sem chip conectado NÃO bloqueia o envio: usa o telefone cadastrado do consultor
+  // e, na pior hipótese, manda o SMS sem link (regra: quem tem saldo, envia).
+  let consultantPhone = await resolveConsultantConnectedWaPhone(admin, consultantId);
   if (!consultantPhone) {
-    return json(400, {
-      error: "consultant_phone_missing",
-      message: "Conecte o WhatsApp do consultor (chip/instância) para o link wa.me do SMS.",
-    });
+    const { data: c } = await admin
+      .from("consultants")
+      .select("phone, whatsapp, notification_phone")
+      .eq("id", consultantId)
+      .maybeSingle();
+    const row = (c ?? {}) as { phone?: string; whatsapp?: string; notification_phone?: string };
+    consultantPhone = normalizeWaPhoneDigits(row.whatsapp || row.phone || row.notification_phone);
+    if (!consultantPhone) {
+      console.warn("[voice-sms-send] consultor sem telefone — SMS sem link wa.me", consultantId);
+    }
   }
+
 
   const recipients: RecipientIn[] = [];
   const seen = new Set<string>();
