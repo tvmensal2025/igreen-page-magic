@@ -10,6 +10,8 @@ import {
   DialogFooter,
   DialogDescription,
 } from "@/components/ui/dialog";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -27,6 +29,14 @@ import {
   Pencil,
   LayoutGrid,
   Store,
+  Info,
+  Lock,
+  Users,
+  History,
+  QrCode,
+  RotateCcw,
+  Eye,
+  AlertTriangle,
 } from "lucide-react";
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -219,6 +229,10 @@ export function ConsultantBannerDownloadModal({
   const [saving, setSaving] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [spotLeadCounts, setSpotLeadCounts] = useState<Record<string, number>>(
+    {},
+  );
+  const [loadingCounts, setLoadingCounts] = useState(false);
 
   const template = TEMPLATES[format];
   const initials = useMemo(
@@ -243,6 +257,33 @@ export function ConsultantBannerDownloadModal({
       setEditPhrase(spots[0].phrase || buildDefaultQrPhrase(spots[0].keyword));
     }
   }, [open, spots, defaultPhrase]);
+
+  // Carrega quantos leads vieram de cada banner (spot keyword = referral_keyword_matched).
+  useEffect(() => {
+    if (!open || !consultantId) return;
+    setLoadingCounts(true);
+    (async () => {
+      try {
+        const { data, error: err } = await supabase
+          .from("customers")
+          .select("referral_keyword_matched")
+          .eq("consultant_id", consultantId)
+          .not("referral_keyword_matched", "is", null);
+        if (err) throw err;
+        const counts: Record<string, number> = {};
+        (data || []).forEach((row) => {
+          const kw = String(row.referral_keyword_matched || "").trim();
+          if (!kw) return;
+          counts[kw] = (counts[kw] || 0) + 1;
+        });
+        setSpotLeadCounts(counts);
+      } catch (e) {
+        console.warn("[banner-lead-counts]", e);
+      } finally {
+        setLoadingCounts(false);
+      }
+    })();
+  }, [open, consultantId, spots]);
 
   useEffect(() => {
     if (!selectedSpot) return;
@@ -519,28 +560,55 @@ export function ConsultantBannerDownloadModal({
       <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-4xl max-h-[90dvh] overflow-y-auto p-3 sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
-            <FileText className="w-5 h-5 text-primary" /> Meu Banner (vivo)
+            <QrCode className="w-5 h-5 text-primary" /> Meus Banners (QR vivo)
             <HelpHint
               size={14}
-              title="Banner vivo do consultor"
-              summary="Frase no banco — muda sem reimprimir"
+              title="Como funciona o banner vivo"
+              summary="Edite frase, arte e WhatsApp depois de impresso"
               details={
-                "O QR aponta para igreen.cloud/{suas iniciais}/{seu ID}.\n\n" +
-                "A frase fica salva no sistema. Edite e salve aqui — banners já impressos usam a frase nova no próximo scan.\n\n" +
-                "Se trocar o WhatsApp conectado, o mesmo QR continua válido (vai para o número novo)."
+                "O QR aponta para um link SEU que nunca muda: igreen.cloud/{suas iniciais}/{seu ID}.\n\n" +
+                "O que é VIVO (edita sem reimprimir): frase que abre no WhatsApp, arte do banner e número de WhatsApp de destino.\n\n" +
+                "O que é FIXO depois de impresso: o endereço/código na URL. Se trocar, o papel pendurado na rua para de funcionar.\n\n" +
+                "Todos os banners criados ficam salvos nesta tela, cada um com seu histórico de leads."
               }
-              example="Rafael Ferreira Dias → igreen.cloud/rfd/130392"
+              example="Rafael Ferreira Dias → igreen.cloud/rfd/130392 (fixo) | frase e WhatsApp podem mudar"
             />
           </DialogTitle>
           <DialogDescription>
-            QR permanente:{" "}
-            <span className="font-mono text-foreground">
-              igreen.cloud/{initials}/{igreenId || "SEU_ID"}
-            </span>
-            . Toque no <span className="font-semibold">?</span> para ver como
-            mudar a frase sem reimprimir.
+            Crie, edite e acompanhe todos os seus banners. O QR é vivo, mas o{" "}
+            <span className="font-semibold">código da URL</span> é fixo depois de
+            impresso.
           </DialogDescription>
         </DialogHeader>
+
+        <Alert className="border-primary/20 bg-primary/5">
+          <Info className="h-4 w-4 text-primary" />
+          <AlertTitle className="text-sm">
+            Antes de imprimir, entenda a regra
+          </AlertTitle>
+          <AlertDescription className="text-xs leading-relaxed">
+            <ul className="list-disc pl-4 mt-1 space-y-1">
+              <li>
+                <strong>QR vivo:</strong> você pode mudar a frase do WhatsApp, a
+                arte e o número de destino a qualquer momento.
+              </li>
+              <li>
+                <strong>Endereço fixo:</strong> o que está no papel é{" "}
+                <span className="font-mono text-foreground">
+                  igreen.cloud/{initials}/{igreenId || "SEU_ID"}
+                  {mode === "spot" && selectedSpot
+                    ? `/${selectedSpot.code}`
+                    : ""}
+                </span>
+                . Depois de impresso, não mude esse código.
+              </li>
+              <li>
+                <strong>Todos salvos:</strong> cada banner fica nesta tela com
+                histórico de leads. Você pode criar quantos locais quiser.
+              </li>
+            </ul>
+          </AlertDescription>
+        </Alert>
 
         <div className="grid gap-4 sm:gap-6 md:grid-cols-[auto_1fr] py-2 min-w-0">
           <div className="flex flex-col items-center gap-3 w-full min-w-0 max-w-full">
@@ -709,101 +777,187 @@ export function ConsultantBannerDownloadModal({
             </div>
 
             {mode === "spot" ? (
-              <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-3">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <Store className="h-3.5 w-3.5 text-primary" />
-                  <Label className="text-sm">Locais cadastrados</Label>
-                </div>
-                {spots.length > 0 ? (
-                  <div className="flex flex-wrap gap-1.5">
-                    {spots.map((s) => (
+              <Card className="border-border/60 bg-muted/30">
+                <CardHeader className="p-3 pb-2">
+                  <CardTitle className="text-sm flex items-center gap-1.5">
+                    <Store className="h-3.5 w-3.5 text-primary" />
+                    Seus banners salvos — cada um com histórico de leads
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-3 pt-0 space-y-3">
+                  {spots.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {spots.map((s) => {
+                        const count = spotLeadCounts[s.keyword] || 0;
+                        const isSelected = selectedSpot?.id === s.id;
+                        return (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => setSelectedSpotId(s.id)}
+                            className={`text-left rounded-lg border p-2.5 transition-all ${
+                              isSelected
+                                ? "border-primary bg-primary/5 ring-1 ring-primary"
+                                : "border-border bg-card hover:border-primary/40"
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="font-medium text-xs truncate">
+                                  {s.keyword}
+                                </p>
+                                <p className="text-[10px] font-mono text-muted-foreground break-all">
+                                  igreen.cloud/{initials}/{igreenId}/{s.code}
+                                </p>
+                              </div>
+                              <Badge
+                                variant={isSelected ? "default" : "secondary"}
+                                className="text-[10px] h-5 px-1.5 shrink-0"
+                              >
+                                <Users className="h-3 w-3 mr-1" />
+                                {loadingCounts ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : (
+                                  count
+                                )}
+                              </Badge>
+                            </div>
+                            <p className="text-[10px] text-muted-foreground mt-1.5">
+                              {isSelected
+                                ? "Selecionado — edite a frase abaixo"
+                                : "Clique para editar frase / baixar"}
+                            </p>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-dashed border-border p-3 text-center">
+                      <p className="text-[11px] text-muted-foreground">
+                        Nenhum banner de local ainda. Crie o primeiro abaixo.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="grid gap-2 sm:grid-cols-2 pt-1 border-t border-border/40">
+                    <div>
+                      <Label className="text-[11px]">Nome do local</Label>
+                      <Input
+                        value={newKeyword}
+                        onChange={(e) => {
+                          setNewKeyword(e.target.value);
+                          if (!newCode) {
+                            setNewCode(slugifyBannerSpotCode(e.target.value));
+                          }
+                        }}
+                        placeholder="Ex.: Posto Shell Centro"
+                        className="h-8 text-xs"
+                      />
+                      <p className="text-[10px] text-muted-foreground mt-1">
+                        Aparece para você identificar de onde veio o lead.
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-[11px] flex items-center gap-1">
+                        <Lock className="h-3 w-3" />
+                        Código fixo na URL
+                      </Label>
+                      <Input
+                        value={newCode}
+                        onChange={(e) =>
+                          setNewCode(slugifyBannerSpotCode(e.target.value))
+                        }
+                        placeholder="posto-shell-centro"
+                        className="h-8 text-xs font-mono"
+                      />
+                      <p className="text-[10px] text-amber-700 dark:text-amber-400 mt-1 flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3" />
+                        Depois de imprimir, não mude esse código.
+                      </p>
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={saving || !newKeyword.trim()}
+                    onClick={handleCreateSpot}
+                    className="w-full"
+                  >
+                    {saving ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Criar local e liberar QR"
+                    )}
+                  </Button>
+
+                  {selectedSpot && (
+                    <div className="space-y-1.5 pt-2 border-t border-border/40">
+                      <Label className="text-[11px] flex items-center gap-1">
+                        <Pencil className="h-3 w-3" />
+                        Frase deste local (viva — pode editar sem reimprimir)
+                      </Label>
+                      <Textarea
+                        value={editPhrase}
+                        onChange={(e) => setEditPhrase(e.target.value)}
+                        rows={3}
+                        className="text-xs resize-none"
+                      />
+                      <p className="text-[10px] text-muted-foreground">
+                        Mensagem que aparece no WhatsApp do cliente ao escanear.
+                      </p>
                       <Button
-                        key={s.id}
                         type="button"
                         size="sm"
-                        className="h-7 text-xs"
-                        variant={
-                          selectedSpot?.id === s.id ? "default" : "outline"
-                        }
-                        onClick={() => setSelectedSpotId(s.id)}
+                        onClick={handleSavePhrase}
+                        disabled={saving}
+                        className="w-full"
                       >
-                        {s.keyword}
-                        <span className="opacity-60 ml-1">/{s.code}</span>
+                        Salvar frase (atualiza banners já impressos)
                       </Button>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-[11px] text-muted-foreground">
-                    Nenhum local ainda. Crie o primeiro abaixo.
-                  </p>
-                )}
-
-                <div className="grid gap-2 sm:grid-cols-2 pt-1">
-                  <div>
-                    <Label className="text-[11px]">Nome do local</Label>
-                    <Input
-                      value={newKeyword}
-                      onChange={(e) => {
-                        setNewKeyword(e.target.value);
-                        if (!newCode) {
-                          setNewCode(slugifyBannerSpotCode(e.target.value));
-                        }
-                      }}
-                      placeholder="Ex.: Posto Shell Centro"
-                      className="h-8 text-xs"
-                    />
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      Esse nome aparece para você identificar de onde veio o lead.
-                    </p>
-                  </div>
-                  <div>
-                    <Label className="text-[11px]">
-                      Código fixo na URL (não mude depois de imprimir)
-                    </Label>
-                    <Input
-                      value={newCode}
-                      onChange={(e) =>
-                        setNewCode(slugifyBannerSpotCode(e.target.value))
-                      }
-                      placeholder="posto-shell-centro"
-                      className="h-8 text-xs font-mono"
-                    />
-                    <p className="text-[10px] text-muted-foreground mt-1">
-                      É o endereço do QR. Impresso uma vez, não muda mais.
-                    </p>
-                  </div>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  disabled={saving || !newKeyword.trim()}
-                  onClick={handleCreateSpot}
-                  className="w-full"
-                >
-                  {saving ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    "Criar local e liberar QR"
+                    </div>
                   )}
-                </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <Card className="border-border/60 bg-muted/30">
+                <CardHeader className="p-3 pb-2">
+                  <CardTitle className="text-sm flex items-center gap-1.5">
+                    <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground" />
+                    Banner geral salvo
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-3 pt-0 space-y-3">
+                  <div className="rounded-lg border border-border bg-card p-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium text-xs">Geral</p>
+                        <p className="text-[10px] font-mono text-muted-foreground break-all">
+                          igreen.cloud/{initials}/{igreenId}
+                        </p>
+                      </div>
+                      <Badge variant="secondary" className="text-[10px] h-5 px-1.5 shrink-0">
+                        <Lock className="h-3 w-3 mr-1" />
+                        fixo
+                      </Badge>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1.5">
+                      Um QR para todos os lugares. Edite a frase abaixo sem reimprimir.
+                    </p>
+                  </div>
 
-                {selectedSpot && (
                   <div className="space-y-1.5 pt-2 border-t border-border/40">
                     <Label className="text-[11px] flex items-center gap-1">
                       <Pencil className="h-3 w-3" />
-                      Frase deste local (viva no Supabase)
+                      Frase do banner geral (viva — pode editar sem reimprimir)
                     </Label>
                     <Textarea
-                      value={editPhrase}
-                      onChange={(e) => setEditPhrase(e.target.value)}
+                      value={rootPhrase}
+                      onChange={(e) => setRootPhrase(e.target.value)}
                       rows={3}
                       className="text-xs resize-none"
+                      placeholder="Oi! Vi sobre a iGreen e quero economizar na conta de luz."
                     />
-                    <p className="text-[10px] text-muted-foreground">
-                      Mensagem que aparece no WhatsApp do cliente ao escanear.
-                      Pode editar depois sem reimprimir.
-                    </p>
                     <Button
                       type="button"
                       size="sm"
@@ -811,33 +965,11 @@ export function ConsultantBannerDownloadModal({
                       disabled={saving}
                       className="w-full"
                     >
-                      Salvar frase (atualiza banners já impressos)
+                      Salvar frase padrão (atualiza banners já impressos)
                     </Button>
                   </div>
-                )}
-              </div>
-            ) : (
-              <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-3">
-                <Label className="text-sm">Frase do banner geral</Label>
-                <p className="text-[11px] text-muted-foreground">
-                  Link: /{initials}/{igreenId} — sem código de local.
-                </p>
-                <Textarea
-                  value={rootPhrase}
-                  onChange={(e) => setRootPhrase(e.target.value)}
-                  rows={3}
-                  className="text-xs resize-none"
-                  placeholder="Oi! Vi sobre a iGreen e quero economizar na conta de luz."
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={handleSavePhrase}
-                  disabled={saving}
-                >
-                  Salvar frase padrão
-                </Button>
-              </div>
+                </CardContent>
+              </Card>
             )}
 
             {error && (
