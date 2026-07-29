@@ -189,7 +189,11 @@ const AdminContent = () => {
   useEffect(() => {
     const h = () => setSettingsOpen(true);
     window.addEventListener("open-admin-settings", h);
-    return () => window.removeEventListener("open-admin-settings", h);
+    window.addEventListener("igreen-admin-open-settings", h);
+    return () => {
+      window.removeEventListener("open-admin-settings", h);
+      window.removeEventListener("igreen-admin-open-settings", h);
+    };
   }, []);
 
   useEffect(() => {
