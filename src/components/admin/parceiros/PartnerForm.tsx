@@ -498,16 +498,16 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
             <div className="space-y-1">
               <div className="flex items-center gap-1">
                 <Label htmlFor="partner-qr-phrase" className="text-xs">
-                  Frase QR Code{" "}
+                  Frase que abre no WhatsApp do cliente{" "}
                   <span className="text-muted-foreground">(opcional)</span>
                 </Label>
                 <HelpHint
                   size={12}
-                  title="Frase permanente do parceiro"
-                  summary="Muda a mensagem do WhatsApp sem reimprimir o banner"
+                  title="Frase que abre no WhatsApp"
+                  summary="Muda a mensagem que o cliente envia ao escanear o QR"
                   details={
                     "Salve aqui a frase padrão deste parceiro. Banners/QR já impressos (link curto sem frase fixa) passam a abrir com o texto novo.\n\n" +
-                    "Trocar o WhatsApp do consultor não invalida o QR — o link usa o número conectado agora."
+                    "Se trocar o WhatsApp do consultor, o mesmo QR continua funcionando — aponta para o número conectado agora."
                   }
                   example='Ex.: "Vim pelo Daniel, quero reduzir minha conta de luz"'
                 />
@@ -519,6 +519,9 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                 placeholder={buildDefaultQrPhrase(keywords[0] || keywordInput.trim())}
                 className="h-9"
               />
+              <p className="text-[10px] text-muted-foreground">
+                Se deixar vazio, o sistema usa a frase padrão com o nome do parceiro.
+              </p>
             </div>
           </section>
         </div>
