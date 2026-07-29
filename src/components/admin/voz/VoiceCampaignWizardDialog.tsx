@@ -61,6 +61,8 @@ import {
 import { VozContactPickerPanel, type VozCustomer } from "./VozContactPickerDialog";
 import { crmClosingSummary, resolveCrmByPhoneOrId, statusCrmLabel } from "./voiceCrmContext";
 import { velipOutcomeLabel } from "./voiceOutcomeLabels";
+import { sofiaClipOwnerIds } from "@/lib/sofiaClipScope";
+
 
 type PipelineStepState = "done" | "active" | "pending" | "blocked";
 
