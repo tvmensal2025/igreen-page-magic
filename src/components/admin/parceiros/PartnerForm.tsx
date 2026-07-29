@@ -262,7 +262,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
           </div>
         </DialogHeader>
 
-        <div className="px-5 py-4 space-y-4 overflow-y-auto">
+        <div className="px-4 sm:px-5 py-4 space-y-4 overflow-y-auto flex-1 min-h-0">
           {isEdit && keywords.length === 0 && !qrPhrase.trim() && (
             <div className="flex items-start gap-2 p-2 rounded-md bg-destructive/10 border border-destructive/30 text-destructive text-[11px]">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
