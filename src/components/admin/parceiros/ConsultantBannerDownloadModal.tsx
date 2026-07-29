@@ -20,6 +20,8 @@ import {
 } from "@/components/admin/flyerFooter";
 import { Download, FileText, Loader2, MapPin, Wifi, Pencil } from "lucide-react";
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
+import { useIsMobile } from "@/hooks/use-mobile";
+
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
