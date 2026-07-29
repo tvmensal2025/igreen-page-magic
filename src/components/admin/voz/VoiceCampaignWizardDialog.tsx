@@ -258,11 +258,16 @@ export function VoiceCampaignWizardDialog({
     const owners = await sofiaClipOwnerIds(consultantId);
     const { data } = await (supabase as any)
       .from("voice_audio_clips")
-      .select("id, name, audio_url, duration_sec, created_at")
+      .select("id, name, audio_url, duration_sec, created_at, consultant_id, is_call_body")
       .in("consultant_id", owners)
       .order("created_at", { ascending: false })
       .limit(40);
-    setClips((data as ClipRow[]) ?? []);
+    setClips(
+      ((data as ClipRow[]) ?? []).filter(
+        (c) =>
+          !((c as any).is_call_body && (c as any).consultant_id !== consultantId),
+      ),
+    );
   }, [consultantId]);
 
 
@@ -514,7 +519,7 @@ export function VoiceCampaignWizardDialog({
         model_id: meta?.model_id ?? null,
         is_call_body: meta?.is_call_body ?? false,
       })
-      .select("id, name, audio_url, duration_sec, created_at")
+      .select("id, name, audio_url, duration_sec, created_at, consultant_id, is_call_body")
       .single();
     if (error) throw new Error(error.message);
     setAudioUrl(url);

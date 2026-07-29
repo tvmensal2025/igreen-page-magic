@@ -62,6 +62,9 @@ export function inferDistribuidora(cities: string[]): DistribuidoraPreset | null
   return best?.preset ?? null;
 }
 
+const EXPRESS_FORMATS: ExpressImage["format"][] = ["square", "vertical", "story"];
+
+/** 1 imagem por formato (sem repetir tamanho) e sempre com URL pública. */
 async function loadTopImages(consultantId: string): Promise<ExpressImage[]> {
   const { data } = await supabase
     .from("ad_image_library")
@@ -69,17 +72,37 @@ async function loadTopImages(consultantId: string): Promise<ExpressImage[]> {
     .eq("consultant_id", consultantId)
     .order("usage_count", { ascending: false })
     .order("last_used_at", { ascending: false, nullsFirst: false })
-    .limit(8);
+    .limit(60);
   const rows = (data || []) as Array<{ id: string; url: string; format: string; usage_count: number }>;
-  return rows.map((r, i) => ({
-    id: r.id,
-    url: r.url,
-    format: (["square", "vertical", "story"].includes(r.format) ? r.format : "square") as ExpressImage["format"],
-    usage_count: r.usage_count || 0,
-    is_top: i < 3 && (r.usage_count || 0) > 0,
-    source: "library" as const,
-  }));
+
+  const seenUrls = new Set<string>();
+  const byFormat = new Map<ExpressImage["format"], ExpressImage>();
+
+  for (const r of rows) {
+    const url = String(r.url || "").trim();
+    // Só imagem pública (Meta precisa baixar a URL sem login).
+    if (!/^https?:\/\//i.test(url) || url.includes("/object/sign/")) continue;
+    if (seenUrls.has(url)) continue;
+    const format = (EXPRESS_FORMATS as string[]).includes(r.format)
+      ? (r.format as ExpressImage["format"])
+      : "square";
+    if (byFormat.has(format)) continue; // já temos 1 desse tamanho
+    seenUrls.add(url);
+    byFormat.set(format, {
+      id: r.id,
+      url,
+      format,
+      usage_count: r.usage_count || 0,
+      is_top: (r.usage_count || 0) > 0,
+      source: "library" as const,
+    });
+  }
+
+  return EXPRESS_FORMATS.map((f) => byFormat.get(f)).filter(
+    (i): i is ExpressImage => !!i,
+  );
 }
+
 
 async function loadWinnerDefaults(consultantId: string): Promise<Partial<ExpressDefaults>> {
   const { data } = await supabase

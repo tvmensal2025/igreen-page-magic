@@ -179,7 +179,7 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
       (supabase as any).from("daily_reheat_kit").select("*").eq("consultant_id", consultantId).maybeSingle(),
       supabase
         .from("voice_audio_clips")
-        .select("id, name, velip_audio_id, is_call_body, voice_id")
+        .select("id, name, velip_audio_id, is_call_body, voice_id, consultant_id")
         .in("consultant_id", clipOwners)
         .order("updated_at", { ascending: false })
         .limit(50),
@@ -204,7 +204,14 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
     } else {
       setKit({ ...EMPTY, consultant_id: consultantId });
     }
-    const list = ((clipsRes.data as Clip[]) ?? []).slice().sort((a, b) => {
+    const list = ((clipsRes.data as Clip[]) ?? [])
+      .filter(
+        (c) =>
+          // corpo de ligação de outro dono carrega o nome dele — nunca oferecer
+          !(c.is_call_body && (c as { consultant_id?: string }).consultant_id !== consultantId),
+      )
+      .slice()
+      .sort((a, b) => {
       const score = (c: Clip) =>
         (c.voice_id === VOICE_SOFIA ? 4 : 0) +
         (c.is_call_body ? 2 : 0) +

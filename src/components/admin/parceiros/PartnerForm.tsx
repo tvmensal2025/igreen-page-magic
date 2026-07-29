@@ -240,8 +240,9 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-hidden p-0 gap-0">
-        <DialogHeader className="px-5 py-3 border-b">
+      <DialogContent className="w-[calc(100%-1rem)] sm:w-full sm:max-w-2xl max-h-[92dvh] flex flex-col overflow-hidden p-0 gap-0">
+        <DialogHeader className="px-4 sm:px-5 py-3 border-b shrink-0">
+
           <div className="flex items-center justify-between gap-2 pr-6">
             <DialogTitle className="text-base">
               {isEdit ? "Editar Parceiro" : "Novo Parceiro Indicador"}
@@ -261,7 +262,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
           </div>
         </DialogHeader>
 
-        <div className="px-5 py-4 space-y-4 overflow-y-auto">
+        <div className="px-4 sm:px-5 py-4 space-y-4 overflow-y-auto flex-1 min-h-0">
           {isEdit && keywords.length === 0 && !qrPhrase.trim() && (
             <div className="flex items-start gap-2 p-2 rounded-md bg-destructive/10 border border-destructive/30 text-destructive text-[11px]">
               <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
@@ -520,13 +521,14 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
           </section>
         </div>
 
-        <DialogFooter className="px-5 py-3 border-t bg-muted/30 sm:space-x-2">
-          <Button variant="outline" onClick={onClose} size="sm">
+        <DialogFooter className="px-4 sm:px-5 py-3 border-t bg-muted/30 shrink-0 flex-row justify-end gap-2 sm:space-x-2">
+          <Button variant="outline" onClick={onClose} size="sm" className="min-h-10 flex-1 sm:flex-none">
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} size="sm">
+          <Button onClick={handleSubmit} size="sm" className="min-h-10 flex-1 sm:flex-none">
             {isEdit ? "Salvar" : "Criar Parceiro"}
           </Button>
+
         </DialogFooter>
       </DialogContent>
     </Dialog>

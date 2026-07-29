@@ -32,6 +32,8 @@ import {
   drawFlyerPlaceholderBackground,
 } from "@/components/admin/flyerPlaceholder";
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
+import { useIsMobile } from "@/hooks/use-mobile";
+
 import { buildPartnerPublicShortLink } from "@/lib/partnerShortLink";
 import { useToast } from "@/hooks/use-toast";
 import { HelpHint } from "@/components/ui/help-hint";
@@ -813,12 +815,14 @@ export function PartnerQrCode({
 
   // Preview na tela (responsivo). Export PNG/PDF usa TEMPLATE_DIMS — tamanhos fixos.
   const dims = TEMPLATE_DIMS[templateId];
+  const isMobileQr = useIsMobile();
   const { width: PREVIEW_W_EFF, height: PREVIEW_H } = useFlyerPreviewSize(
     dims.canvasW,
     dims.canvasH,
-    PREVIEW_W,
-    PREVIEW_MAX_H,
+    isMobileQr ? 240 : PREVIEW_W,
+    isMobileQr ? 240 : PREVIEW_MAX_H,
   );
+
 
   // Preview-space sizes (percentages → pixels).
   const qrCorePxPreview = (effQrSize / 100) * PREVIEW_W_EFF;
@@ -857,7 +861,7 @@ export function PartnerQrCode({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-3xl max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
+      <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-3xl max-h-[90dvh] overflow-y-auto p-3 sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-1.5">
             Baixar Banner / QR — {partnerName}

@@ -20,6 +20,8 @@ import {
 } from "@/components/admin/flyerFooter";
 import { Download, FileText, Loader2, MapPin, Wifi, Pencil } from "lucide-react";
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
+import { useIsMobile } from "@/hooks/use-mobile";
+
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -373,12 +375,14 @@ export function ConsultantBannerDownloadModal({
     }
   };
 
+  const isMobile = useIsMobile();
   const { width: PREVIEW_W_EFF, height: PREVIEW_H } = useFlyerPreviewSize(
     template.canvasW,
     template.canvasH,
-    PREVIEW_W,
-    PREVIEW_MAX_H,
+    isMobile ? 240 : PREVIEW_W,
+    isMobile ? 240 : PREVIEW_MAX_H,
   );
+
   const qrCorePxPreview = (template.qrSize / 100) * PREVIEW_W_EFF;
   const qrFramePxPreview =
     qrCorePxPreview + QR_QUIET_PX * 2 + QR_BORDER_PX * 2;
@@ -502,7 +506,7 @@ export function ConsultantBannerDownloadModal({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-4xl max-h-[95dvh] overflow-y-auto p-4 sm:p-6">
+      <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-4xl max-h-[90dvh] overflow-y-auto p-3 sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
             <FileText className="w-5 h-5 text-primary" /> Meu Banner (vivo)
@@ -528,7 +532,7 @@ export function ConsultantBannerDownloadModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-6 md:grid-cols-[auto_1fr] py-2 min-w-0">
+        <div className="grid gap-4 sm:gap-6 md:grid-cols-[auto_1fr] py-2 min-w-0">
           <div className="flex flex-col items-center gap-3 w-full min-w-0 max-w-full">
             <div
               className="relative overflow-hidden rounded-xl border bg-primary shadow-sm max-w-full shrink-0"

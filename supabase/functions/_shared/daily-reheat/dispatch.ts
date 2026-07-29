@@ -139,12 +139,62 @@ async function loadCycleKitRow(supabase: SB, consultantId: string): Promise<Cycl
   } as CycleKit;
 }
 
+/** Clipes de identidade do próprio consultor (nunca de outro — a voz diz o nome). */
+async function loadOwnIdentityCallClips(
+  supabase: SB,
+  consultantId: string,
+): Promise<{ body: string | null; retry: string | null; velip: string | null; velipRetry: string | null }> {
+  const { data } = await supabase
+    .from("voice_audio_clips")
+    .select("id, name, velip_audio_id, created_at")
+    .eq("consultant_id", consultantId)
+    .eq("is_call_body", true)
+    .order("created_at", { ascending: false })
+    .limit(60);
+  const rows = (data ?? []) as Array<{ id: string; name: string; velip_audio_id: string | null }>;
+  const find = (needle: string) =>
+    rows.find((r) => String(r.name || "").toUpperCase().includes(needle)) ?? null;
+  const retry = find("A_CALL_RETRY");
+  const body = rows.find(
+    (r) =>
+      String(r.name || "").toUpperCase().includes("A_CALL") &&
+      !String(r.name || "").toUpperCase().includes("A_CALL_RETRY"),
+  ) ?? null;
+  return {
+    body: body?.id ?? null,
+    retry: retry?.id ?? null,
+    velip: body?.velip_audio_id ?? null,
+    velipRetry: retry?.velip_audio_id ?? null,
+  };
+}
+
 export async function loadCycleKit(supabase: SB, consultantId: string): Promise<CycleKit | null> {
   const own = await loadCycleKitRow(supabase, consultantId);
   if (own) return own;
   if (consultantId === RAFAEL_KIT_CONSULTANT_ID) return null;
-  return await loadCycleKitRow(supabase, RAFAEL_KIT_CONSULTANT_ID);
+
+  const base = await loadCycleKitRow(supabase, RAFAEL_KIT_CONSULTANT_ID);
+  if (!base) return null;
+
+  // NUNCA reaproveitar voz/áudio de outro consultor: a gravação diz o nome dele
+  // (bug "Abel ligou e a voz falou Rafael"). Só textos são herdados.
+  const ident = await loadOwnIdentityCallClips(supabase, consultantId);
+  return {
+    ...base,
+    consultant_id: consultantId,
+    wa_audio_mon_url: null,
+    wa_audio_tue_url: null,
+    wa_audio_wed_url: null,
+    wa_audio_thu_url: null,
+    wa_audio_fri_url: null,
+    wa_audio_sat_url: null,
+    voice_audio_clip_id: ident.body,
+    voice_audio_clip_id_retry: ident.retry,
+    velip_audio_id: ident.velip,
+    velip_audio_id_retry: ident.velipRetry,
+  };
 }
+
 
 /** Áudio WA do dia (BRT). Dom → sábado. */
 export function weekdayWaAudioUrl(kit: CycleKit, now = new Date()): string | null {
