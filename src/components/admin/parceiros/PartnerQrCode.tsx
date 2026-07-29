@@ -813,12 +813,14 @@ export function PartnerQrCode({
 
   // Preview na tela (responsivo). Export PNG/PDF usa TEMPLATE_DIMS — tamanhos fixos.
   const dims = TEMPLATE_DIMS[templateId];
+  const isMobileQr = useIsMobile();
   const { width: PREVIEW_W_EFF, height: PREVIEW_H } = useFlyerPreviewSize(
     dims.canvasW,
     dims.canvasH,
-    PREVIEW_W,
-    PREVIEW_MAX_H,
+    isMobileQr ? 240 : PREVIEW_W,
+    isMobileQr ? 240 : PREVIEW_MAX_H,
   );
+
 
   // Preview-space sizes (percentages → pixels).
   const qrCorePxPreview = (effQrSize / 100) * PREVIEW_W_EFF;
