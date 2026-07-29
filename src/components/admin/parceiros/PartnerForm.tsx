@@ -88,11 +88,14 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       setNome(partner.nome);
       // CLI = consultor abonador deste indicador.
       // "0"/vazio legado → cai no ID do dono logado (padrão).
-      setCli(tidyOwnerCli(partner.cli) || ownerIgreenId || "");
+      const partnerCli = tidyOwnerCli(partner.cli);
+      setCli(partnerCli || ownerIgreenId || "");
       setKeywords(partner.keywords || []);
       setQrPhrase(partner.qr_phrase || "");
       setPartnerIgreenId(partner.partner_igreen_id || "");
       setNotificationPhone(partner.notification_phone || "");
+      // Só abre o campo se outro consultor estiver abonando.
+      setShowAbonador(!!partnerCli && !!ownerIgreenId && partnerCli !== ownerIgreenId);
     } else {
       setNome("");
       setCli(ownerIgreenId || "");
@@ -100,6 +103,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       setQrPhrase("");
       setPartnerIgreenId("");
       setNotificationPhone("");
+      setShowAbonador(false);
     }
     setErrors({});
     setAiExample(null);
