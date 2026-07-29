@@ -81,6 +81,7 @@ import {
   publishCadenceLibrary,
 } from "@/lib/syncCadenceToBotFlow";
 import { CadenceMissingAlert } from "@/components/admin/CadenceMissingAlert";
+import { ConsultantIdentityWizard } from "@/components/admin/ConsultantIdentityWizard";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
