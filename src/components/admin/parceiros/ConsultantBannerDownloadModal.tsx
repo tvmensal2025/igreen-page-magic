@@ -532,7 +532,7 @@ export function ConsultantBannerDownloadModal({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-6 md:grid-cols-[auto_1fr] py-2 min-w-0">
+        <div className="grid gap-4 sm:gap-6 md:grid-cols-[auto_1fr] py-2 min-w-0">
           <div className="flex flex-col items-center gap-3 w-full min-w-0 max-w-full">
             <div
               className="relative overflow-hidden rounded-xl border bg-primary shadow-sm max-w-full shrink-0"
