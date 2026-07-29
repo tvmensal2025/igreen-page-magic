@@ -18,7 +18,16 @@ import {
   clampFooterBand,
   previewFooterFontSize,
 } from "@/components/admin/flyerFooter";
-import { Download, FileText, Loader2, MapPin, Wifi, Pencil } from "lucide-react";
+import {
+  Download,
+  FileText,
+  Loader2,
+  MapPin,
+  Wifi,
+  Pencil,
+  LayoutGrid,
+  Store,
+} from "lucide-react";
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
 import { useIsMobile } from "@/hooks/use-mobile";
 
@@ -35,6 +44,8 @@ import {
   QR_PHRASE_MAX,
 } from "./qrPhrase";
 import { HelpHint } from "@/components/ui/help-hint";
+import { Badge } from "@/components/ui/badge";
+
 
 type Format = "a4" | "banner";
 
