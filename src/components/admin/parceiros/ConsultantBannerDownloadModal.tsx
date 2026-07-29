@@ -920,27 +920,56 @@ export function ConsultantBannerDownloadModal({
                 </CardContent>
               </Card>
             ) : (
-              <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-3">
-                <Label className="text-sm">Frase do banner geral</Label>
-                <p className="text-[11px] text-muted-foreground">
-                  Link: /{initials}/{igreenId} — sem código de local.
-                </p>
-                <Textarea
-                  value={rootPhrase}
-                  onChange={(e) => setRootPhrase(e.target.value)}
-                  rows={3}
-                  className="text-xs resize-none"
-                  placeholder="Oi! Vi sobre a iGreen e quero economizar na conta de luz."
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={handleSavePhrase}
-                  disabled={saving}
-                >
-                  Salvar frase padrão
-                </Button>
-              </div>
+              <Card className="border-border/60 bg-muted/30">
+                <CardHeader className="p-3 pb-2">
+                  <CardTitle className="text-sm flex items-center gap-1.5">
+                    <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground" />
+                    Banner geral salvo
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-3 pt-0 space-y-3">
+                  <div className="rounded-lg border border-border bg-card p-2.5">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium text-xs">Geral</p>
+                        <p className="text-[10px] font-mono text-muted-foreground break-all">
+                          igreen.cloud/{initials}/{igreenId}
+                        </p>
+                      </div>
+                      <Badge variant="secondary" className="text-[10px] h-5 px-1.5 shrink-0">
+                        <Lock className="h-3 w-3 mr-1" />
+                        fixo
+                      </Badge>
+                    </div>
+                    <p className="text-[10px] text-muted-foreground mt-1.5">
+                      Um QR para todos os lugares. Edite a frase abaixo sem reimprimir.
+                    </p>
+                  </div>
+
+                  <div className="space-y-1.5 pt-2 border-t border-border/40">
+                    <Label className="text-[11px] flex items-center gap-1">
+                      <Pencil className="h-3 w-3" />
+                      Frase do banner geral (viva — pode editar sem reimprimir)
+                    </Label>
+                    <Textarea
+                      value={rootPhrase}
+                      onChange={(e) => setRootPhrase(e.target.value)}
+                      rows={3}
+                      className="text-xs resize-none"
+                      placeholder="Oi! Vi sobre a iGreen e quero economizar na conta de luz."
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={handleSavePhrase}
+                      disabled={saving}
+                      className="w-full"
+                    >
+                      Salvar frase padrão (atualiza banners já impressos)
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             )}
 
             {error && (
