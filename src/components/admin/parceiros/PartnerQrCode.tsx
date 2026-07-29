@@ -861,7 +861,7 @@ export function PartnerQrCode({
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-3xl max-h-[90dvh] overflow-y-auto p-4 sm:p-6">
+      <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-3xl max-h-[90dvh] overflow-y-auto p-3 sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-1.5">
             Baixar Banner / QR — {partnerName}
