@@ -4,10 +4,10 @@
 // - Dispara mídia via resolveChannelForCustomerWithFailover (Whapi primeiro; Evolution fallback).
 // - NÃO usa bot_global_enabled — só toggle pos_venda_auto_messages + pos_venda_manual.
 // - Janela seg–sáb 08:00–20:00 BRT (pos-venda-send-window); fora = skip até próximo slot.
+// - Anti-duplicata Zap: telefone sync com colisão (`5511…_igreenCode` ou
+//   dígitos colados >13) NÃO dispara; sibling compara BASE do telefone
+//   (JID legado colado ≠ limpo); spacing ~25d entre marcos D* (catch-up).
 // - Idempotente via customer_auto_message_log (UNIQUE customer_id+stage_key).
-// - Anti-duplicata Zap: telefone sync com colisão (`5511…_igreenCode`) NÃO
-//   dispara; e se outro customer_id já enviou o mesmo stage_key para o mesmo
-//   chat limpo, pula (UNIQUE por customer não protege 2 rows da mesma pessoa).
 
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import {
@@ -80,16 +80,32 @@ const STAGE_TO_KEY: Record<string, string> = {
   d210:      "pv_d210",
 };
 
+/** Mínimo entre dois marcos D* (buckets de 30d) — evita D120+D150 em ~18h no catch-up. */
+const D_STAGE_SPACING_MS = 25 * 24 * 60 * 60 * 1000;
+
 /** Sync iGreen grava colisão como `5511…_igreenCode` — mesma pessoa, outro row. */
 function isSyncCollisionPhone(phoneWhatsapp: string | null | undefined): boolean {
   if (!phoneWhatsapp) return false;
-  return /^\d{10,15}_\d+$/.test(String(phoneWhatsapp).trim());
+  const s = String(phoneWhatsapp).trim();
+  if (/^\d{10,15}_\d+$/.test(s)) return true;
+  // Colado sem `_` (legado / toJid antigo): só dígitos e maior que WA BR (55+11).
+  const digits = s.replace(/\D/g, "");
+  return /^\d+$/.test(s) && digits.length > 13;
 }
 
-/** Digits do Zap limpo (parte antes de `_`; ignore lixo não-numérico). */
+/** Digits do Zap limpo (parte antes de `_`; ignore lixo; corta colado >13). */
 function cleanWaDigits(raw: string | null | undefined): string {
   const base = String(raw || "").split("_")[0];
-  return base.replace(/\D/g, "");
+  let digits = base.replace(/\D/g, "");
+  if (digits.startsWith("55") && digits.length > 13) digits = digits.slice(0, 13);
+  return digits;
+}
+
+/** Base comparável p/ anti-duplicata (limpa ou JID legado colado). */
+function phoneBaseFromRemote(remoteJid: string | null | undefined): string {
+  const digits = String(remoteJid || "").split("@")[0].replace(/\D/g, "");
+  if (digits.startsWith("55") && digits.length >= 12) return digits.slice(0, 13);
+  return digits;
 }
 
 async function processCustomer(
@@ -115,9 +131,13 @@ async function processCustomer(
 
   // Row sombra da colisão sync: o número limpo é quem manda. Sem isso,
   // 2 customer_ids → 2× (img+áudio) = 4 bolhas no mesmo Zap.
-  if (isSyncCollisionPhone(customer.phone_whatsapp)) {
+  const chatIdRaw = String((customer as any).whatsapp_chat_id || "");
+  if (
+    isSyncCollisionPhone(customer.phone_whatsapp) ||
+    isSyncCollisionPhone(chatIdRaw)
+  ) {
     console.warn(
-      `[pos-venda] skip shadow collision phone customer=${customer.id} phone=${customer.phone_whatsapp}`,
+      `[pos-venda] skip shadow collision phone customer=${customer.id} phone=${customer.phone_whatsapp} chat=${chatIdRaw}`,
     );
     await supabase.from("customer_auto_message_log").upsert({
       customer_id: customer.id,
@@ -190,7 +210,8 @@ async function processCustomer(
       st.startsWith("sent") ||
       st === "dismissed" ||
       st === "skipped_prior" ||
-      st === "skipped_duplicate_phone"
+      st === "skipped_duplicate_phone" ||
+      st === "skipped_spacing"
     ) {
       return { moved: true, sent: false };
     }
@@ -283,25 +304,35 @@ async function processCustomer(
 
   // Belt-and-suspenders: outro customer_id já mandou este marco pro mesmo Zap
   // (UNIQUE é por customer_id — não cobre 2 rows da mesma pessoa).
+  // Compara por BASE do telefone: JID legado colado (`55…codigo`) ≠ limpo,
+  // mas é a mesma pessoa.
+  const phoneBase = phoneBaseFromRemote(phone);
   const { data: siblingLogs } = await supabase
     .from("customer_auto_message_log")
-    .select("id, customer_id, status")
+    .select("id, customer_id, status, remote_jid")
     .eq("consultant_id", ownerId)
     .eq("stage_key", stageKey)
     .neq("customer_id", customer.id)
-    .eq("remote_jid", `${phone}@s.whatsapp.net`)
-    .limit(20);
-  const siblingHit = (siblingLogs || []).find((row: { status?: string }) => {
+    .limit(80);
+  const siblingHit = (siblingLogs || []).find((row: {
+    status?: string;
+    remote_jid?: string | null;
+    customer_id?: string;
+  }) => {
     const st = String(row.status || "");
-    return (
+    const terminal =
       st === "sent" ||
       st.startsWith("sent") ||
       st === "claimed" ||
       st === "claimed_retry" ||
       st === "dismissed" ||
       st === "skipped_prior" ||
-      st.startsWith("partial:")
-    );
+      st === "skipped_spacing" ||
+      st === "skipped_duplicate_phone" ||
+      st.startsWith("partial:");
+    if (!terminal) return false;
+    const otherBase = phoneBaseFromRemote(row.remote_jid);
+    return !!phoneBase && !!otherBase && otherBase === phoneBase;
   });
   if (siblingHit) {
     console.warn(
@@ -317,6 +348,56 @@ async function processCustomer(
       status: "skipped_duplicate_phone",
     }, { onConflict: "customer_id,stage_key", ignoreDuplicates: true });
     return { moved: true, sent: false };
+  }
+
+  // Catch-up na virada de bucket: D120 ontem + D150 hoje = spam. Exige ~25d
+  // entre dois marcos D* (aprovado/reprovado não entram nesta trava).
+  if (/^pv_d\d+$/.test(stageKey)) {
+    const { data: recentD } = await supabase
+      .from("customer_auto_message_log")
+      .select("id, stage_key, status, created_at, remote_jid")
+      .eq("customer_id", customer.id)
+      .like("stage_key", "pv_d%")
+      .like("status", "sent%")
+      .order("created_at", { ascending: false })
+      .limit(5);
+    const lastD = (recentD || []).find((row: { created_at?: string }) => {
+      const t = row.created_at ? new Date(row.created_at).getTime() : 0;
+      return t > 0 && Date.now() - t < D_STAGE_SPACING_MS;
+    });
+    // Também bloqueia se OUTRO customer_id (sombra) mandou D* recente no mesmo Zap.
+    let lastSiblingD: { created_at?: string; customer_id?: string } | null = null;
+    if (!lastD && phoneBase) {
+      const sinceIso = new Date(Date.now() - D_STAGE_SPACING_MS).toISOString();
+      const { data: recentSamePhone } = await supabase
+        .from("customer_auto_message_log")
+        .select("id, customer_id, stage_key, status, created_at, remote_jid")
+        .eq("consultant_id", ownerId)
+        .like("stage_key", "pv_d%")
+        .like("status", "sent%")
+        .gte("created_at", sinceIso)
+        .neq("customer_id", customer.id)
+        .limit(40);
+      lastSiblingD = (recentSamePhone || []).find((row: {
+        remote_jid?: string | null;
+      }) => phoneBaseFromRemote(row.remote_jid) === phoneBase) || null;
+    }
+    if (lastD || lastSiblingD) {
+      const ref = lastD || lastSiblingD;
+      console.warn(
+        `[pos-venda] skip spacing customer=${customer.id} stage=${stageKey} last=${JSON.stringify(ref)}`,
+      );
+      await supabase.from("customer_auto_message_log").upsert({
+        customer_id: customer.id,
+        consultant_id: ownerId,
+        stage_key: stageKey,
+        remote_jid: `${phone}@s.whatsapp.net`,
+        customer_name: customer.name,
+        message_preview: "[skipped:d_stage_spacing_25d]",
+        status: "skipped_spacing",
+      }, { onConflict: "customer_id,stage_key", ignoreDuplicates: true });
+      return { moved: true, sent: false };
+    }
   }
 
   if (await isConsultantAIDisabled(supabase, ownerId)) {

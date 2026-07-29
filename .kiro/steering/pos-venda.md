@@ -52,9 +52,11 @@ Sync/bucket recalcula estágio; se palpite aprovado/reprovado sem validação �
 **Sync dashboard (`sync_all`):** puxa todas as contas → `recompute` → `auto_confirm_pending_pos_venda` (se Validar sozinho ON) → dispara `pos-venda-auto-progress` (fire-and-forget). Envio é **idempotente** por `(customer_id, stage_key)` — `sent`/`skipped_prior`/`dismissed`/`skipped_duplicate_phone` nunca reenviam o mesmo marco.
 
 **Anti-duplicata Zap (obrigatório):** sync pode criar **2 rows** da mesma pessoa — número limpo + `5511…_igreenCode`, ambos com o mesmo `whatsapp_chat_id`. UNIQUE por `customer_id` **não** impede 2× (img+áudio) = **4 bolhas** no mesmo chat. O motor:
-1. **Nunca** dispara de row com telefone de colisão (`…_igreenCode`) → status `skipped_duplicate_phone`
-2. Se outro `customer_id` já tem log `sent`/`partial`/`claimed` no mesmo `remote_jid` + `stage_key` → pula
-3. Só lista `pos_venda_invalid=false`
+1. **Nunca** dispara de row com telefone de colisão (`…_igreenCode` **ou** dígitos colados >13) → status `skipped_duplicate_phone`
+2. Se outro `customer_id` já tem log terminal no mesmo **phone base** (13 dígitos) + `stage_key` → pula (JID legado colado conta)
+3. **Spacing ~25d** entre marcos `pv_d*` → `skipped_spacing` (evita D120+D150 no catch-up na virada de bucket)
+4. Só lista `pos_venda_invalid=false`
+5. `normalizePhone`/`toJid` **sempre** cortam sufixo `_codigo` (nunca colar no JID)
 
 **Cliente ≠ lead:** telefone com colisão sync (`5511…_igreenCode`) resolve inbound pela carteira (`_shared/inbound-customer-resolve.ts`). Lead sombra no número limpo é absorvido (pausa+DNC). Origem `igreen_sync`/`igreen_extension` → canal novidades, nunca Grupo A.
 

@@ -738,10 +738,15 @@ export function isValidJid(jid: string): boolean {
 }
 
 export function normalizePhone(raw: string): string {
-  const digits = String(raw || "").replace(/\D/g, "");
-  if (digits.startsWith("55") && digits.length >= 12) return digits;
+  // Sync iGreen: `5511…_igreenCode` — NUNCA colar o código no JID
+  // (replace(/\D/g) transformava `_` em concatenação e duplicava no Zap).
+  const base = String(raw || "").split("_")[0] || "";
+  const digits = base.replace(/\D/g, "");
+  if (digits.startsWith("55") && digits.length >= 12) return digits.slice(0, 13);
   if (digits.length === 11) return `55${digits}`;
   if (digits.length === 10) return `55${digits}`;
+  // >13 sem `_` = telefone+código colado; fica só o WA BR (55+DDD+9 dígitos).
+  if (digits.startsWith("55") && digits.length > 13) return digits.slice(0, 13);
   return digits;
 }
 

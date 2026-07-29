@@ -3,7 +3,11 @@
 /** Sync iGreen: colisão vira `5511…_igreenCode` (mesma pessoa, outro row). */
 export function isSyncCollisionPhone(phone: string | null | undefined): boolean {
   if (!phone) return false;
-  return /^\d{10,15}_\d+$/.test(String(phone).trim());
+  const s = String(phone).trim();
+  if (/^\d{10,15}_\d+$/.test(s)) return true;
+  // Colado sem underscore (bug legado): só dígitos e maior que WA BR com país.
+  const digits = s.replace(/\D/g, "");
+  return /^\d+$/.test(s) && digits.length > 13;
 }
 
 export function isPlaceholderPhone(phone: string | null | undefined): boolean {
