@@ -372,11 +372,25 @@ export function ConsultantBannerDownloadModal({
   const handleCreateSpot = async () => {
     const kw = newKeyword.trim();
     if (!kw) {
-      setError("Informe a palavra-chave do local.");
+      setError("Nome do banner é obrigatório (ex.: Posto Shell Centro).");
+      return;
+    }
+    if (kw.length < 3) {
+      setError("Nome muito curto. Use pelo menos 3 caracteres.");
       return;
     }
     if (isGenericKeyword(kw)) {
-      setError("Palavra-chave genérica demais. Use o nome do local.");
+      setError(
+        "Nome genérico demais (“energia”, “luz”…). Use o nome do ponto físico.",
+      );
+      return;
+    }
+    if (
+      activeSpots.some(
+        (s) => s.keyword.trim().toLowerCase() === kw.toLowerCase(),
+      )
+    ) {
+      setError("Já existe um banner ativo com esse nome. Use outro nome.");
       return;
     }
     const code =
@@ -384,6 +398,12 @@ export function ConsultantBannerDownloadModal({
       slugifyBannerSpotCode(kw);
     if (!code) {
       setError("Código do local inválido.");
+      return;
+    }
+    if (activeSpots.some((s) => s.code === code)) {
+      setError(
+        "Já existe um banner com esse código na URL. Mude o nome ou o código.",
+      );
       return;
     }
     setSaving(true);
@@ -604,7 +624,8 @@ export function ConsultantBannerDownloadModal({
                 "O QR aponta para um link SEU que nunca muda: igreen.cloud/{suas iniciais}/{seu ID}.\n\n" +
                 "O que é VIVO (edita sem reimprimir): frase que abre no WhatsApp, arte do banner e número de WhatsApp de destino.\n\n" +
                 "O que é FIXO depois de impresso: o endereço/código na URL. Se trocar, o papel pendurado na rua para de funcionar.\n\n" +
-                "Geral é eterno (imprima 4.000 vezes). Criar um local novo NÃO apaga o anterior — só adiciona à lista."
+                "Geral é eterno (imprima 4.000 vezes). Criar um local novo NÃO apaga o anterior — só adiciona à lista.\n\n" +
+                "Para saber QUAL ponto trouxe o lead: use Com local e dê um NOME (obrigatório), ex.: Posto Shell Centro. A tabela Nome | leituras | leads separa cada um."
               }
               example="Rafael Ferreira Dias → igreen.cloud/rfd/130392 (fixo) | frase e WhatsApp podem mudar"
             />
@@ -878,20 +899,24 @@ export function ConsultantBannerDownloadModal({
 
                   <div className="grid gap-2 sm:grid-cols-2 pt-1 border-t border-border/40">
                     <div>
-                      <Label className="text-[11px]">Nome do local</Label>
+                      <Label className="text-[11px]">
+                        Nome do banner <span className="text-destructive">*</span>
+                      </Label>
                       <Input
                         value={newKeyword}
                         onChange={(e) => {
                           setNewKeyword(e.target.value);
-                          if (!newCode) {
-                            setNewCode(slugifyBannerSpotCode(e.target.value));
-                          }
+                          setNewCode(slugifyBannerSpotCode(e.target.value));
+                          if (error) setError(null);
                         }}
                         placeholder="Ex.: Posto Shell Centro"
                         className="h-8 text-xs"
+                        required
+                        aria-required
                       />
                       <p className="text-[10px] text-muted-foreground mt-1">
-                        Aparece para você identificar de onde veio o lead.
+                        Obrigatório. É assim que Resultados mostra de qual ponto
+                        veio cada lead.
                       </p>
                     </div>
                     <div>
@@ -924,7 +949,7 @@ export function ConsultantBannerDownloadModal({
                     {saving ? (
                       <Loader2 className="h-4 w-4 animate-spin" />
                     ) : (
-                      "Criar local e liberar QR"
+                      "Criar banner com este nome"
                     )}
                   </Button>
 

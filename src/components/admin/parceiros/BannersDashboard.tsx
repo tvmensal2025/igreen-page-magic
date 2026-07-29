@@ -25,6 +25,10 @@ import {
 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { BannerSpot } from "./ConsultantBannerDownloadModal";
+import {
+  BannerNamesTable,
+  buildBannerNameRows,
+} from "./BannerNamesTable";
 
 interface Props {
   consultantId: string;
@@ -277,6 +281,22 @@ export function BannersDashboard({ consultantId, spots }: Props) {
       (targetMap.banner_root || 0) + (targetMap.panfleto || 0);
     const spotScans = totalScans - rootScans;
 
+    const scanByCode: Record<string, number> = {};
+    Object.entries(targetMap).forEach(([raw, n]) => {
+      if (raw.startsWith("banner_spot:")) {
+        const code = raw.slice("banner_spot:".length);
+        scanByCode[code] = (scanByCode[code] || 0) + n;
+      }
+    });
+
+    const nameRows = buildBannerNameRows({
+      rootScans,
+      rootLeads: 0,
+      spots,
+      scanByCode,
+      leadByKeyword: kwMap,
+    });
+
     return {
       totalScans,
       broken: broken.length,
@@ -291,6 +311,7 @@ export function BannersDashboard({ consultantId, spots }: Props) {
       byKeyword,
       rootScans,
       spotScans,
+      nameRows,
     };
   }, [scans, leads, spots]);
 
@@ -329,8 +350,9 @@ export function BannersDashboard({ consultantId, spots }: Props) {
       </div>
 
       <p className="text-[11px] text-muted-foreground -mt-3">
-        Leituras = alguém escaneou o QR. Leads = conversas no WhatsApp com a
-        palavra-chave do banner. Horários em horário de Brasília.
+        Leituras = alguém escaneou o QR. Leads = conversas no WhatsApp com o{" "}
+        <strong className="font-medium text-foreground/80">nome do banner</strong>.
+        Horários em Brasília. Sem nome de local, tudo cai em “Banner Geral”.
       </p>
 
       {loading || !consultantId ? (
@@ -407,6 +429,12 @@ export function BannersDashboard({ consultantId, spots }: Props) {
               scan — confira o número conectado.
             </div>
           )}
+
+          <BannerNamesTable
+            rows={metrics.nameRows}
+            title="Nome | leituras | leads"
+            emptyHint="Crie banners com nome (Com local) para separar cada ponto nesta tabela."
+          />
 
           <ChartCard title="Leituras por dia" icon={<TrendingUp className="w-4 h-4" />}>
             {metrics.daily.length > 0 ? (

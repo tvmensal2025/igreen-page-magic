@@ -36,6 +36,10 @@ import {
   buildConsultantLiveBannerUrl,
 } from "@/lib/consultantBannerLink";
 import { BannersDashboard } from "./BannersDashboard";
+import {
+  BannerNamesTable,
+  buildBannerNameRows,
+} from "./BannerNamesTable";
 import type { BannerSpot } from "./ConsultantBannerDownloadModal";
 
 type HubTab = "lista" | "resultados";
@@ -190,6 +194,18 @@ export function BannersHub({
 
   const spotToArchive = spots.find((s) => s.id === archivingId) || null;
 
+  const nameRows = useMemo(
+    () =>
+      buildBannerNameRows({
+        rootScans: scanCounts.__root || 0,
+        rootLeads: 0,
+        spots,
+        scanByCode: scanCounts,
+        leadByKeyword: leadCounts,
+      }),
+    [scanCounts, leadCounts, spots],
+  );
+
   return (
     <div className="pe-page space-y-6">
       <div className="pe-page-header">
@@ -281,15 +297,34 @@ export function BannersHub({
           <Alert className="border-primary/20 bg-primary/5">
             <Info className="h-4 w-4 text-primary" />
             <AlertTitle className="text-sm">
-              Seguro para imprimir em massa (ex.: 4.000 panfletos)
+              Cada banner precisa de um nome para você saber de onde veio
             </AlertTitle>
             <AlertDescription className="text-xs leading-relaxed">
-              O <strong>Geral</strong> é eterno: o link não muda e não some ao
-              criar um local novo. Imprima quantas vezes quiser o mesmo QR.
-              Criar local só <strong>adiciona</strong> à lista — nunca substitui
-              o anterior.
+              <ul className="list-disc pl-4 mt-1 space-y-1">
+                <li>
+                  <strong>Geral</strong> = um nome só (“Banner Geral”). Bom para
+                  4.000 panfletos iguais — o link é eterno e não some.
+                </li>
+                <li>
+                  <strong>Com local</strong> = crie com{" "}
+                  <strong>nome obrigatório</strong> (ex.: Posto Shell Centro).
+                  Assim Resultados mostra leituras e leads{" "}
+                  <strong>por nome</strong>.
+                </li>
+                <li>
+                  Criar outro local só <strong>adiciona</strong> — nunca apaga o
+                  anterior.
+                </li>
+              </ul>
             </AlertDescription>
           </Alert>
+
+          <BannerNamesTable
+            rows={nameRows}
+            loading={loadingCounts}
+            title="Nome | leituras | leads"
+            emptyHint="Crie um local com nome (ex.: Posto Shell) para rastrear cada ponto."
+          />
 
           {/* Card Geral */}
           <Card className="border-primary/30 bg-primary/5">
