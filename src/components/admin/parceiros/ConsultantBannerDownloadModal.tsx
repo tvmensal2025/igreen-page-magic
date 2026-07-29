@@ -559,28 +559,55 @@ export function ConsultantBannerDownloadModal({
       <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-4xl max-h-[90dvh] overflow-y-auto p-3 sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-xl">
-            <FileText className="w-5 h-5 text-primary" /> Meu Banner (vivo)
+            <QrCode className="w-5 h-5 text-primary" /> Meus Banners (QR vivo)
             <HelpHint
               size={14}
-              title="Banner vivo do consultor"
-              summary="Frase no banco — muda sem reimprimir"
+              title="Como funciona o banner vivo"
+              summary="Edite frase, arte e WhatsApp depois de impresso"
               details={
-                "O QR aponta para igreen.cloud/{suas iniciais}/{seu ID}.\n\n" +
-                "A frase fica salva no sistema. Edite e salve aqui — banners já impressos usam a frase nova no próximo scan.\n\n" +
-                "Se trocar o WhatsApp conectado, o mesmo QR continua válido (vai para o número novo)."
+                "O QR aponta para um link SEU que nunca muda: igreen.cloud/{suas iniciais}/{seu ID}.\n\n" +
+                "O que é VIVO (edita sem reimprimir): frase que abre no WhatsApp, arte do banner e número de WhatsApp de destino.\n\n" +
+                "O que é FIXO depois de impresso: o endereço/código na URL. Se trocar, o papel pendurado na rua para de funcionar.\n\n" +
+                "Todos os banners criados ficam salvos nesta tela, cada um com seu histórico de leads."
               }
-              example="Rafael Ferreira Dias → igreen.cloud/rfd/130392"
+              example="Rafael Ferreira Dias → igreen.cloud/rfd/130392 (fixo) | frase e WhatsApp podem mudar"
             />
           </DialogTitle>
           <DialogDescription>
-            QR permanente:{" "}
-            <span className="font-mono text-foreground">
-              igreen.cloud/{initials}/{igreenId || "SEU_ID"}
-            </span>
-            . Toque no <span className="font-semibold">?</span> para ver como
-            mudar a frase sem reimprimir.
+            Crie, edite e acompanhe todos os seus banners. O QR é vivo, mas o{" "}
+            <span className="font-semibold">código da URL</span> é fixo depois de
+            impresso.
           </DialogDescription>
         </DialogHeader>
+
+        <Alert className="border-primary/20 bg-primary/5">
+          <Info className="h-4 w-4 text-primary" />
+          <AlertTitle className="text-sm">
+            Antes de imprimir, entenda a regra
+          </AlertTitle>
+          <AlertDescription className="text-xs leading-relaxed">
+            <ul className="list-disc pl-4 mt-1 space-y-1">
+              <li>
+                <strong>QR vivo:</strong> você pode mudar a frase do WhatsApp, a
+                arte e o número de destino a qualquer momento.
+              </li>
+              <li>
+                <strong>Endereço fixo:</strong> o que está no papel é{" "}
+                <span className="font-mono text-foreground">
+                  igreen.cloud/{initials}/{igreenId || "SEU_ID"}
+                  {mode === "spot" && selectedSpot
+                    ? `/${selectedSpot.code}`
+                    : ""}
+                </span>
+                . Depois de impresso, não mude esse código.
+              </li>
+              <li>
+                <strong>Todos salvos:</strong> cada banner fica nesta tela com
+                histórico de leads. Você pode criar quantos locais quiser.
+              </li>
+            </ul>
+          </AlertDescription>
+        </Alert>
 
         <div className="grid gap-4 sm:gap-6 md:grid-cols-[auto_1fr] py-2 min-w-0">
           <div className="flex flex-col items-center gap-3 w-full min-w-0 max-w-full">
