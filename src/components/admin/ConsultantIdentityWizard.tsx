@@ -222,7 +222,7 @@ export function ConsultantIdentityWizard({ consultantId, className, hideWhenRead
               ) : (
                 <Wand2 className="mr-1 h-3.5 w-3.5" />
               )}
-              Gerar minha identidade
+              {generating ? "Gerando automaticamente..." : "Gerar novamente"}
             </Button>
           </div>
         </div>
