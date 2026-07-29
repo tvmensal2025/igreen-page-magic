@@ -6,6 +6,7 @@ import {
   ConsultantBannerDownloadModal,
   type BannerSpot,
 } from "./ConsultantBannerDownloadModal";
+import { BannersHub } from "./BannersHub";
 import { ManualReviewQueueCard } from "./ManualReviewQueueCard";
 import {
   useReferralPartners,
@@ -13,6 +14,7 @@ import {
 } from "./hooks/useReferralPartners";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { resolveConsultantWaPhoneForUi } from "@/lib/consultantWaPhone";
 
 interface ParceirosTabProps {
   consultantId: string;
@@ -20,7 +22,14 @@ interface ParceirosTabProps {
   consultantName?: string;
   consultantIgreenId?: string;
   license?: string | null;
+  /** Canal principal — prioriza chip vivo (settings) quando aplicável. */
+  isWhapi?: boolean;
 }
+
+type BannerDownloadOpts = {
+  mode: "root" | "spot";
+  spotId?: string;
+};
 
 export function ParceirosTab({
   consultantId,
@@ -28,43 +37,42 @@ export function ParceirosTab({
   consultantName = "",
   consultantIgreenId = "",
   license = "",
+  isWhapi = false,
 }: ParceirosTabProps) {
   const [formOpen, setFormOpen] = useState(false);
   const [editingPartner, setEditingPartner] = useState<ReferralPartner | null>(
     null,
   );
   const [qrPartner, setQrPartner] = useState<ReferralPartner | null>(null);
+  const [view, setView] = useState<"rede" | "banners">("rede");
   const [bannerOpen, setBannerOpen] = useState(false);
+  const [bannerDownloadOpts, setBannerDownloadOpts] =
+    useState<BannerDownloadOpts>({ mode: "root" });
   const [bannerSpots, setBannerSpots] = useState<BannerSpot[]>([]);
   const [bannerDefaultPhrase, setBannerDefaultPhrase] = useState<string | null>(
     null,
   );
-  const [whapiPhone, setWhapiPhone] = useState(consultantPhone);
+  const [liveWaPhone, setLiveWaPhone] = useState(consultantPhone);
   const { partners, create, update, remove, isLoading } = useReferralPartners();
   const { toast } = useToast();
 
   const loadConsultantBannerData = useCallback(async () => {
     if (!consultantId) return;
-    const [{ data: cons }, { data: inst }, { data: spots }] = await Promise.all([
+    const [{ data: cons }, { data: spots }, waPhone] = await Promise.all([
       supabase
         .from("consultants")
         .select("banner_keywords, banner_default_phrase, phone, igreen_id")
         .eq("id", consultantId)
         .maybeSingle(),
       supabase
-        .from("whatsapp_instances")
-        .select("connected_phone, updated_at")
-        .eq("consultant_id", consultantId)
-        .not("connected_phone", "is", null)
-        .order("updated_at", { ascending: false })
-        .limit(1)
-        .maybeSingle(),
-      supabase
         .from("consultant_banner_spots")
         .select("id, code, keyword, phrase, is_active")
         .eq("consultant_id", consultantId)
-        .eq("is_active", true)
         .order("created_at", { ascending: true }),
+      resolveConsultantWaPhoneForUi(supabase, consultantId, {
+        isWhapi,
+        fallbackPhone: consultantPhone,
+      }),
     ]);
     setBannerDefaultPhrase(
       String(
@@ -73,12 +81,8 @@ export function ParceirosTab({
       ).trim() || null,
     );
     setBannerSpots((spots as BannerSpot[] | null) || []);
-    const connected = String(inst?.connected_phone || "").replace(/\D/g, "");
-    const fallback = String(
-      consultantPhone || (cons as { phone?: string } | null)?.phone || "",
-    ).replace(/\D/g, "");
-    setWhapiPhone(connected || fallback);
-  }, [consultantId, consultantPhone]);
+    setLiveWaPhone(waPhone);
+  }, [consultantId, consultantPhone, isWhapi]);
 
   useEffect(() => {
     void loadConsultantBannerData();
@@ -153,6 +157,47 @@ export function ParceirosTab({
     setQrPartner({ ...qrPartner, keywords: next });
   };
 
+  const openBannerDownload = (opts: BannerDownloadOpts) => {
+    setBannerDownloadOpts(opts);
+    void loadConsultantBannerData();
+    setBannerOpen(true);
+  };
+
+  if (view === "banners") {
+    return (
+      <>
+        <BannersHub
+          consultantId={consultantId}
+          consultantName={consultantName}
+          consultantIgreenId={consultantIgreenId}
+          defaultPhrase={bannerDefaultPhrase}
+          spots={bannerSpots}
+          onSpotsChanged={() => {
+            void loadConsultantBannerData();
+          }}
+          onBack={() => setView("rede")}
+          onOpenDownload={openBannerDownload}
+        />
+
+        <ConsultantBannerDownloadModal
+          open={bannerOpen}
+          onClose={() => setBannerOpen(false)}
+          consultantId={consultantId}
+          consultantName={consultantName}
+          consultantIgreenId={consultantIgreenId}
+          consultantPhone={liveWaPhone || consultantPhone}
+          defaultPhrase={bannerDefaultPhrase}
+          spots={bannerSpots}
+          initialMode={bannerDownloadOpts.mode}
+          initialSpotId={bannerDownloadOpts.spotId}
+          onSpotsChanged={() => {
+            void loadConsultantBannerData();
+          }}
+        />
+      </>
+    );
+  }
+
   return (
     <>
       <ManualReviewQueueCard consultantId={consultantId} />
@@ -166,7 +211,7 @@ export function ParceirosTab({
         onQrCode={setQrPartner}
         onDownloadBanner={() => {
           void loadConsultantBannerData();
-          setBannerOpen(true);
+          setView("banners");
         }}
       />
 
@@ -178,27 +223,13 @@ export function ParceirosTab({
         onDelete={handleDelete}
       />
 
-      <ConsultantBannerDownloadModal
-        open={bannerOpen}
-        onClose={() => setBannerOpen(false)}
-        consultantId={consultantId}
-        consultantName={consultantName}
-        consultantIgreenId={consultantIgreenId}
-        consultantPhone={whapiPhone || consultantPhone}
-        defaultPhrase={bannerDefaultPhrase}
-        spots={bannerSpots}
-        onSpotsChanged={() => {
-          void loadConsultantBannerData();
-        }}
-      />
-
       <PartnerQrCode
         open={!!qrPartner}
         onClose={() => setQrPartner(null)}
         partnerName={qrPartner?.nome ?? ""}
         keyword={qrPartner?.keywords?.[0]?.trim() || qrPartner?.nome || ""}
         keywords={qrPartner?.keywords ?? []}
-        consultantPhone={whapiPhone || consultantPhone}
+        consultantPhone={liveWaPhone || consultantPhone}
         consultantName={consultantName}
         consultantIgreenId={consultantIgreenId}
         qrPhrase={qrPartner?.qr_phrase}

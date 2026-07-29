@@ -75,8 +75,13 @@ interface Props {
   consultantPhone: string;
   /** Frase padrão do QR raiz /{ini}/{id} */
   defaultPhrase?: string | null;
+  /** Todos os spots (ativos + arquivados). Download usa só ativos. */
   spots: BannerSpot[];
   onSpotsChanged: () => void;
+  /** Aba inicial ao abrir o modal. */
+  initialMode?: "root" | "spot";
+  /** Spot pré-selecionado (ex.: vindo da hub). */
+  initialSpotId?: string;
 }
 
 const TEMPLATES: Record<
@@ -215,6 +220,8 @@ export function ConsultantBannerDownloadModal({
   defaultPhrase = null,
   spots,
   onSpotsChanged,
+  initialMode = "spot",
+  initialSpotId,
 }: Props) {
   const { toast } = useToast();
   const qrSvgWrapperRef = useRef<HTMLDivElement>(null);
@@ -241,22 +248,37 @@ export function ConsultantBannerDownloadModal({
   );
   const igreenId = String(consultantIgreenId || "").replace(/\D/g, "");
 
+  /** Só ativos no seletor de download — arquivados ficam na hub. */
+  const activeSpots = useMemo(
+    () => spots.filter((s) => s.is_active !== false),
+    [spots],
+  );
+
   const selectedSpot =
-    spots.find((s) => s.id === selectedSpotId) || spots[0] || null;
+    activeSpots.find((s) => s.id === selectedSpotId) ||
+    activeSpots[0] ||
+    null;
 
   useEffect(() => {
     if (!open) return;
     setFormat("a4");
-    setMode(spots.length > 0 ? "spot" : "spot");
-    setSelectedSpotId(spots[0]?.id || "");
+    setMode(initialMode);
+    const preferred =
+      (initialSpotId &&
+        activeSpots.find((s) => s.id === initialSpotId)?.id) ||
+      activeSpots[0]?.id ||
+      "";
+    setSelectedSpotId(preferred);
     setNewKeyword("");
     setNewCode("");
     setError(null);
     setRootPhrase(defaultPhrase || "");
-    if (spots[0]) {
-      setEditPhrase(spots[0].phrase || buildDefaultQrPhrase(spots[0].keyword));
+    const spot =
+      activeSpots.find((s) => s.id === preferred) || activeSpots[0] || null;
+    if (spot) {
+      setEditPhrase(spot.phrase || buildDefaultQrPhrase(spot.keyword));
     }
-  }, [open, spots, defaultPhrase]);
+  }, [open, initialMode, initialSpotId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Carrega quantos leads vieram de cada banner (spot keyword = referral_keyword_matched).
   useEffect(() => {
@@ -318,12 +340,25 @@ export function ConsultantBannerDownloadModal({
     );
   }, [mode, rootPhrase, defaultPhrase, selectedSpot, editPhrase]);
 
+  /** Une keywords de TODOS os spots (ativos+arquivados) + existentes — nunca apaga histórico. */
   const syncBannerKeywords = useCallback(
     async (extraKeyword?: string) => {
+      const { data: cons } = await supabase
+        .from("consultants")
+        .select("banner_keywords")
+        .eq("id", consultantId)
+        .maybeSingle();
+      const existing = Array.isArray(
+        (cons as { banner_keywords?: string[] | null } | null)?.banner_keywords,
+      )
+        ? ((cons as { banner_keywords: string[] }).banner_keywords || [])
+        : [];
       const fromSpots = spots.map((s) => s.keyword.trim()).filter(Boolean);
       const next = Array.from(
         new Set(
-          [...fromSpots, extraKeyword?.trim()].filter(Boolean) as string[],
+          [...existing, ...fromSpots, extraKeyword?.trim()].filter(
+            Boolean,
+          ) as string[],
         ),
       );
       await supabase
@@ -569,13 +604,14 @@ export function ConsultantBannerDownloadModal({
                 "O QR aponta para um link SEU que nunca muda: igreen.cloud/{suas iniciais}/{seu ID}.\n\n" +
                 "O que é VIVO (edita sem reimprimir): frase que abre no WhatsApp, arte do banner e número de WhatsApp de destino.\n\n" +
                 "O que é FIXO depois de impresso: o endereço/código na URL. Se trocar, o papel pendurado na rua para de funcionar.\n\n" +
-                "Todos os banners criados ficam salvos nesta tela, cada um com seu histórico de leads."
+                "Geral é eterno (imprima 4.000 vezes). Criar um local novo NÃO apaga o anterior — só adiciona à lista."
               }
               example="Rafael Ferreira Dias → igreen.cloud/rfd/130392 (fixo) | frase e WhatsApp podem mudar"
             />
           </DialogTitle>
           <DialogDescription>
-            Crie, edite e acompanhe todos os seus banners. O QR é vivo, mas o{" "}
+            Baixe e edite a frase. Criar outro local{" "}
+            <span className="font-semibold">não apaga</span> os anteriores. O{" "}
             <span className="font-semibold">código da URL</span> é fixo depois de
             impresso.
           </DialogDescription>
@@ -603,8 +639,9 @@ export function ConsultantBannerDownloadModal({
                 . Depois de impresso, não mude esse código.
               </li>
               <li>
-                <strong>Todos salvos:</strong> cada banner fica nesta tela com
-                histórico de leads. Você pode criar quantos locais quiser.
+                <strong>Nada some sozinho:</strong> o Geral é eterno; cada local
+                novo só adiciona. Excluir (arquivar) é só se você pedir na página
+                Meus Banners.
               </li>
             </ul>
           </AlertDescription>
@@ -662,7 +699,7 @@ export function ConsultantBannerDownloadModal({
             </div>
             <p className="text-xs text-muted-foreground text-center max-w-[320px] flex items-center gap-1.5 justify-center">
               <Wifi className="h-3.5 w-3.5" />
-              WhatsApp = número conectado agora (Whapi)
+              WhatsApp = o número conectado agora no seu celular
             </p>
             <p className="text-[10px] font-mono text-muted-foreground break-all text-center max-w-[320px]">
               {qrUrl}
@@ -781,13 +818,13 @@ export function ConsultantBannerDownloadModal({
                 <CardHeader className="p-3 pb-2">
                   <CardTitle className="text-sm flex items-center gap-1.5">
                     <Store className="h-3.5 w-3.5 text-primary" />
-                    Seus banners salvos — cada um com histórico de leads
+                    Locais ativos — criar outro só adiciona (não apaga)
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-3 pt-0 space-y-3">
-                  {spots.length > 0 ? (
+                  {activeSpots.length > 0 ? (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {spots.map((s) => {
+                      {activeSpots.map((s) => {
                         const count = spotLeadCounts[s.keyword] || 0;
                         const isSelected = selectedSpot?.id === s.id;
                         return (
@@ -924,7 +961,7 @@ export function ConsultantBannerDownloadModal({
                 <CardHeader className="p-3 pb-2">
                   <CardTitle className="text-sm flex items-center gap-1.5">
                     <LayoutGrid className="h-3.5 w-3.5 text-muted-foreground" />
-                    Banner geral salvo
+                    Banner geral (eterno)
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="p-3 pt-0 space-y-3">
@@ -938,11 +975,12 @@ export function ConsultantBannerDownloadModal({
                       </div>
                       <Badge variant="secondary" className="text-[10px] h-5 px-1.5 shrink-0">
                         <Lock className="h-3 w-3 mr-1" />
-                        fixo
+                        eterno
                       </Badge>
                     </div>
                     <p className="text-[10px] text-muted-foreground mt-1.5">
-                      Um QR para todos os lugares. Edite a frase abaixo sem reimprimir.
+                      Imprima quantas vezes quiser (ex.: 4.000) — o link não muda
+                      e não some. Edite a frase abaixo sem reimprimir.
                     </p>
                   </div>
 

@@ -729,6 +729,7 @@ const AdminContent = () => {
               consultantName={form.name || ""}
               consultantIgreenId={form.igreen_id || ""}
               license={form.license || ""}
+              isWhapi={!!isWhapi}
             />
           )}
 

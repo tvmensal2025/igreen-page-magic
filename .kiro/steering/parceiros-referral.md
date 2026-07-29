@@ -48,6 +48,8 @@ Consultor → PartnerForm → useReferralPartners.create
                              + preview via resolveQrMessage(...)
 
 Lead escaneia QR → edge qr-redirect
+    resolve telefone via `resolveConsultantConnectedWaPhone`
+      (superadmin → Whapi settings; consultor → Evolution só se status saudável)
     resolve parceiro (ordem: ?p id → short_code (c) → keyword legado (k))
     monta wa.me?text= com resolveQrMessage() (Deno)
         → frase inclui KEYWORD + marcador "#R{short_code}"
@@ -61,6 +63,7 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
 
     Match → UPDATE customers SET referral_partner_id, referral_keyword_matched,
             referral_detected_at
+          (só se update OK → set in-memory + notifyPartnerNewLead)
           + INSERT campaign_match_log
           + notifyPartnerNewLead(partner.notification_phone, lead)
 ```
@@ -72,11 +75,14 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
 | Área | Arquivo |
 |---|---|
 | Form/UI | `src/components/admin/parceiros/PartnerForm.tsx`, `ParceirosTab.tsx`, `PartnerDashboard.tsx`, `PartnerQrCode.tsx`, `PartnerKpiRow.tsx` |
+| Banners do consultor (hub) | `BannersHub.tsx` (Lista + Resultados), `BannersDashboard.tsx` (gráficos `qr_scan`), `ConsultantBannerDownloadModal.tsx` |
+| Spots / QR vivo | tabela `consultant_banner_spots` + `consultants.banner_default_phrase` / `banner_keywords` |
 | Hook CRUD | `src/components/admin/parceiros/hooks/useReferralPartners.ts` |
 | Analytics | `src/components/admin/parceiros/hooks/usePartnerAnalytics.ts` |
 | qrPhrase (front) | `src/components/admin/parceiros/qrPhrase.ts` — `resolveQrMessage`, `buildDefaultQrPhrase`, `GENERIC_KEYWORD_BLOCKLIST` |
 | qrPhrase (Deno espelho) | `supabase/functions/_shared/qr-phrase.ts` — mesma lógica + `extractShortCodeMarker` |
-| Rota `/r/{licenca}/{code}` | edge `qr-redirect` (HTTP 302 → `wa.me`). QR/link novos apontam direto pra edge; SPA `/r/...` só compatibilidade (bounce imediato). |
+| Rota `/r/{licenca}/{code}` | edge `qr-redirect` (HTTP 302 → `wa.me`). Telefone = `resolveConsultantConnectedWaPhone` (não usar `connected_phone` de `needs_reconnect`). Preview UI: `src/lib/consultantWaPhone.ts`. |
+| Telefone WA (edge) | `_shared/consultant-wa-phone.ts` + `attendance-channel-env.ts` (superadmin → Whapi) |
 | Matcher | `supabase/functions/_shared/keyword-matcher.ts` — `normalizeText`, `hasExactTokenSequence`, `matchKeyword` |
 | Webhook Whapi (inbound) | `supabase/functions/whapi-webhook/index.ts` (bloco keyword ≈ L1553–1658) |
 | Webhook Evolution | `supabase/functions/evolution-webhook/index.ts` (mesmo bloco, paridade) |
@@ -97,7 +103,20 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
 - **Lead de campanha Meta com rodízio ativo NÃO cai em keyword-match.** Vai para `needs_manual_review` até a RPC de rodízio resolver.
 - **`cli` nunca é do parceiro.** Sempre o ID iGreen do consultor dono/abonador. Métrica soma dois IDs (dono + `partner_igreen_id`) sem trocar o dono.
 - **`notifyPartnerNewLead` não notifica lead `is_sandbox`.** Manter esse guard.
+- **Só notificar parceiro depois do UPDATE de `referral_partner_id` sem erro** (Whapi e Evolution). Nunca setar só em memória e avisar.
+- **QR / wa.me usa chip vivo:** `resolveConsultantConnectedWaPhone` — Evolution só com status `connected|online|open`; superadmin Whapi usa `settings.whapi_connected_phone`. Nunca o `connected_phone` mais recente sem filtrar status.
 - Toda inserção/leitura pública passa por `service_role` na edge — não expor `referral_partners` via RLS anon.
+- **Banners do consultor nunca hard-delete:** arquivar = `consultant_banner_spots.is_active = false`. Criar local novo só adiciona. Geral (`/{ini}/{igreen_id}`) é eterno. Telemetria: `page_events.event_type=qr_scan` com `event_target=banner_root` ou `banner_spot:{code}` (legado: `panfleto` = Geral).
+
+---
+
+## 4b. Banners do consultor (QR vivo)
+
+- UI: Parceiros → **Meus Banners** → `BannersHub` (abas Lista | Resultados). Modal só baixa/edita frase.
+- Geral: `consultants.banner_default_phrase` + URL fixa `igreen.cloud/{ini}/{igreen_id}`.
+- Locais: `consultant_banner_spots` (código fixo na URL; keyword/phrase editáveis).
+- Keywords espelho em `consultants.banner_keywords` — sync **une** (nunca remove histórico ao arquivar).
+- Gráficos: `BannersDashboard` lê `page_events` (`qr_scan`/`qr_broken`) + leads via `customers.referral_keyword_matched`.
 
 ---
 

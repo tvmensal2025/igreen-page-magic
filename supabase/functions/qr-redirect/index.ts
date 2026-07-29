@@ -9,6 +9,14 @@
 //      — dá para editar sem reimprimir o papel.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { resolveQrMessage } from "../_shared/qr-phrase.ts";
+import {
+  normalizeWaPhoneDigits,
+  resolveConsultantConnectedWaPhone,
+} from "../_shared/consultant-wa-phone.ts";
+import {
+  isSuperAdminConsultant,
+  loadChannelEnv,
+} from "../_shared/attendance-channel-env.ts";
 
 const SITE_URL = "https://igreen.institutodossonhos.com.br";
 const DEFAULT_MESSAGE =
@@ -140,51 +148,59 @@ Deno.serve(async (req) => {
     let phone: string | null = null;
 
     if (consultant?.id) {
-      const { data: insts } = await supabase
-        .from("whatsapp_instances")
-        .select("connected_phone, updated_at")
-        .eq("consultant_id", consultant.id)
-        .not("connected_phone", "is", null)
-        .order("updated_at", { ascending: false })
-        .limit(1);
-
-      phone = (insts?.[0]?.connected_phone as string | null) || null;
-      if (!phone && consultant.phone) phone = consultant.phone;
+      // Chip vivo do canal real (Evolution saudável / Whapi do superadmin).
+      // NÃO usar connected_phone de needs_reconnect — bug Silvia (chip morto).
+      const channelEnv = await loadChannelEnv(supabase);
+      const channelKind = isSuperAdminConsultant(
+          consultant.id,
+          channelEnv.superadminConsultantId,
+        )
+        ? "whapi"
+        : undefined;
+      phone =
+        (await resolveConsultantConnectedWaPhone(supabase, consultant.id, {
+          channelKind,
+          // Evolution: sem chip saudável → fallback consultants.phone; nunca Whapi compartilhado.
+          allowSharedWhapiFallback: channelKind === "whapi",
+        })) || null;
 
       supabase
         .from("page_events")
         .insert({
           consultant_id: consultant.id,
           event_type: "qr_scan",
-          event_target: spotParam ? `banner_spot:${spotParam}` : "panfleto",
+          event_target: spotParam
+            ? `banner_spot:${spotParam}`
+            : igreenIdParam
+            ? "banner_root"
+            : "panfleto",
           page_type: "client",
         })
         .then(() => {});
     }
 
-    const phoneDigits = (phone ?? "").replace(/\D/g, "");
-    const normalizedPhone = phoneDigits
-      ? phoneDigits.startsWith("55")
-        ? phoneDigits
-        : `55${phoneDigits}`
-      : "";
+    const normalizedPhone = normalizeWaPhoneDigits(phone);
     const phoneValid = /^\d{12,13}$/.test(normalizedPhone);
 
-    if (!phone || !phoneValid) {
+    if (!normalizedPhone || !phoneValid) {
       if (consultant?.id) {
         supabase
           .from("page_events")
           .insert({
             consultant_id: consultant.id,
             event_type: "qr_broken",
-            event_target: "panfleto",
+            event_target: spotParam
+              ? `banner_spot:${spotParam}`
+              : igreenIdParam
+              ? "banner_root"
+              : "panfleto",
             page_type: "client",
           })
           .then(() => {});
         console.warn("[qr-redirect] phone_invalid", {
           consultant_id: consultant.id,
           phone_raw: phone,
-          phone_digits: phoneDigits,
+          phone_digits: normalizedPhone,
         });
       }
       if (wantsJson) return jsonResponse({ error: "no_phone" });
@@ -215,7 +231,6 @@ Deno.serve(async (req) => {
           .select("keyword, phrase, is_active")
           .eq("consultant_id", consultant.id)
           .eq("code", spotParam)
-          .eq("is_active", true)
           .maybeSingle();
         if (spot) {
           const kw = String(spot.keyword || "").trim();
@@ -223,7 +238,7 @@ Deno.serve(async (req) => {
           message = resolveQrMessage(custom || null, kw || spotParam, null);
           liveBannerResolved = true;
         } else {
-          // Spot apagado: não quebra — frase padrão + código no texto.
+          // Spot inexistente: não quebra — frase padrão + código no texto.
           message = resolveQrMessage(
             consultant.banner_default_phrase,
             spotParam,

@@ -49,6 +49,13 @@ export type ResolveWaPhoneOpts = {
    * `whapi` → prioriza chip Whapi settings (evita wa.me de Evolution morta).
    */
   channelKind?: string | null;
+  /**
+   * Se false, não cai na linha Whapi compartilhada quando o consultor não tem
+   * chip próprio saudável. Usar em QR de consultor Evolution — senão o lead
+   * abriria o WhatsApp do superadmin.
+   * Default: true (SMS / templates).
+   */
+  allowSharedWhapiFallback?: boolean;
 };
 
 async function loadWhapiPhoneFromSettings(
@@ -65,6 +72,62 @@ async function loadWhapiPhoneFromSettings(
   } catch {
     return "";
   }
+}
+
+/**
+ * Consultor tem WhatsApp vivo para gerar mídia / disparar?
+ *
+ * Não confiar só em `whatsapp_instances`: superadmin Whapi deixa Evolution
+ * como `needs_reconnect` com telefone null — a UI já trata como conectado.
+ *
+ * Ordem:
+ *   1) settings.superadmin_consultant_id == id → true (canal Whapi do SA)
+ *   2) instance_name whapi* SÓ se for o superadmin (evita spoof por RLS)
+ *   3) instância com telefone E status saudável (connected/online/open)
+ */
+export async function consultantHasConnectedWhatsApp(
+  // deno-lint-ignore no-explicit-any
+  supabase: { from: (t: string) => any },
+  consultantId: string | null | undefined,
+): Promise<boolean> {
+  if (!consultantId) return false;
+
+  try {
+    const { data: settingsRows } = await supabase
+      .from("settings")
+      .select("key, value")
+      .in("key", ["superadmin_consultant_id", "whapi_connected_phone"]);
+    const settings: Record<string, string> = {};
+    for (const r of (settingsRows as SettingsRow[] | null) || []) {
+      if (r?.key) settings[r.key] = String(r.value || "");
+    }
+    if (settings.superadmin_consultant_id === consultantId) {
+      // Mesmo bypass da UI (useWhatsApp): canal Whapi do superadmin.
+      return true;
+    }
+  } catch {
+    /* segue para instâncias */
+  }
+
+  const { data: waRows } = await supabase
+    .from("whatsapp_instances")
+    .select("connected_phone, instance_name, status")
+    .eq("consultant_id", consultantId)
+    .limit(5);
+
+  for (const r of (waRows as Array<{
+    connected_phone?: string | null;
+    instance_name?: string | null;
+    status?: string | null;
+  }> | null) || []) {
+    const p = String(r?.connected_phone || "").replace(/\D/g, "");
+    if (p.length < 10) continue;
+    const st = String(r?.status || "").toLowerCase();
+    // Exigir status saudável explícito (não aceitar null/needs_reconnect).
+    if (HEALTHY_INSTANCE_STATUSES.has(st)) return true;
+  }
+
+  return false;
 }
 
 /** Resolve o número do WhatsApp conectado do consultor (só dígitos, com DDI 55). */
@@ -113,6 +176,8 @@ export async function resolveConsultantConnectedWaPhone(
   const fromOwn = normalizeWaPhoneDigits(raw);
   if (fromOwn) return fromOwn;
 
-  // Sem chip próprio saudável: linha Whapi compartilhada.
+  // Sem chip próprio saudável: linha Whapi compartilhada (SMS/templates).
+  // QR de consultor Evolution NÃO deve apontar pro chip do superadmin.
+  if (opts?.allowSharedWhapiFallback === false) return "";
   return await loadWhapiPhoneFromSettings(supabase);
 }
