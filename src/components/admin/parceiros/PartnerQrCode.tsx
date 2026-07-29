@@ -32,6 +32,8 @@ import {
   drawFlyerPlaceholderBackground,
 } from "@/components/admin/flyerPlaceholder";
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
+import { useIsMobile } from "@/hooks/use-mobile";
+
 import { buildPartnerPublicShortLink } from "@/lib/partnerShortLink";
 import { useToast } from "@/hooks/use-toast";
 import { HelpHint } from "@/components/ui/help-hint";
