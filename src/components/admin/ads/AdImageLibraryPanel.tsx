@@ -41,11 +41,15 @@ export function AdImageLibraryPanel({ consultantId, format, selectedUrls, onPick
   useEffect(() => { reload(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [consultantId]);
 
   async function handleRemove(it: AdImageLibraryItem) {
+    if (it.is_platform_shared && it.consultant_id !== consultantId) {
+      toast({ title: "Imagem oficial", description: "Essa foto é da plataforma — só pode reusar, não excluir.", variant: "destructive" });
+      return;
+    }
     const ok = await confirm({ title: "Excluir essa imagem da biblioteca?", confirmText: "Excluir", tone: "danger" });
     if (!ok) return;
     setDeletingId(it.id);
     try {
-      await removeFromAdImageLibrary(it.id, it.storage_path);
+      await removeFromAdImageLibrary(it.id, it.storage_path, { isPlatformShared: !!it.is_platform_shared && it.consultant_id !== consultantId });
       setItems((prev) => prev.filter((x) => x.id !== it.id));
     } catch (e: any) {
       toast({ title: "Falha ao excluir", description: e.message, variant: "destructive" });
@@ -89,6 +93,9 @@ export function AdImageLibraryPanel({ consultantId, format, selectedUrls, onPick
               </button>
               <div className="absolute top-1 left-1 flex gap-1">
                 <Badge variant="secondary" className="text-[9px] px-1 py-0">{FORMAT_LABEL[it.format].split(" ")[0]}</Badge>
+                {it.is_platform_shared && (
+                  <Badge className="text-[9px] px-1 py-0 bg-emerald-600 hover:bg-emerald-600">Oficial</Badge>
+                )}
                 {it.fb_image_hash && (
                   <Badge className="text-[9px] px-1 py-0 bg-primary hover:bg-primary gap-0.5">
                     <Sparkles className="w-2.5 h-2.5" /> Meta
@@ -105,7 +112,8 @@ export function AdImageLibraryPanel({ consultantId, format, selectedUrls, onPick
                   {it.width}×{it.height}{it.usage_count > 0 ? ` · ${it.usage_count}×` : ""}
                 </span>
                 <Button type="button" size="icon" variant="ghost" className="h-6 w-6 text-white/80 hover:text-destructive"
-                  disabled={deletingId === it.id} onClick={(e) => { e.stopPropagation(); handleRemove(it); }}>
+                  disabled={deletingId === it.id || (!!it.is_platform_shared && it.consultant_id !== consultantId)}
+                  onClick={(e) => { e.stopPropagation(); handleRemove(it); }}>
                   {deletingId === it.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
                 </Button>
               </div>

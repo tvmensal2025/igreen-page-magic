@@ -5,10 +5,10 @@
 // não polui a UI de quem já está com tudo verde.
 //
 // Passos:
-//   1. Conectar bot (Evolution QR) — bot responde leads no WhatsApp.
-//   2. Conectar Facebook — autoriza Página + conta de anúncios + pixel.
-//   3. Vincular WhatsApp Business à Página no Meta Business Suite.
-//   4. Confirmar número (auto-detect) e publicar campanha.
+//   1. Conectar WhatsApp (Whapi ou canal do consultor) — bot responde leads.
+//   2. Conta Meta da plataforma já cobre Página/pixel (consultor só cadastra o próprio número).
+//   3. Cadastrar telefone na WABA com SMS (modal CTWA).
+//   4. Checklist verde e publicar.
 
 import { useState } from "react";
 import { Card } from "@/components/ui/card";
@@ -23,22 +23,22 @@ interface Props {
 const STEPS = [
   {
     icon: MessageSquare,
-    title: "1. Conecte o bot no WhatsApp",
-    body: "Vá na aba WhatsApp do menu e escaneie o QR Code. O bot vai atender automaticamente todo lead que mandar mensagem.",
+    title: "1. Conecte o WhatsApp",
+    body: "Vá na aba WhatsApp do menu e deixe o canal online (Whapi AUTH ou seu número conectado). Assim o bot atende todo lead que vier do anúncio.",
     cta: { label: "Abrir aba WhatsApp", href: "?tab=whatsapp" },
   },
   {
     icon: Facebook,
-    title: "2. Conecte sua conta do Facebook",
-    body: "Autorize sua Página oficial, conta de anúncios e (opcional) o rastreamento do Facebook. Isso permite criar campanhas em seu nome.",
-    cta: { label: "Conectar Facebook", href: "#facebook-connect" },
+    title: "2. Conta de anúncios da plataforma",
+    body: "A Página, a conta de anúncios e o pixel oficiais já estão na plataforma. Você não precisa reconectar o Facebook da iGreen — só garantir o WhatsApp abaixo.",
+    cta: { label: "Ver conexão", href: "#facebook-connect" },
   },
   {
     icon: Smartphone,
-    title: "3. Vincule WhatsApp Business à sua Página",
-    body: "Pelo Meta Business Suite, abra WhatsApp → Configurações da Conta → vincule o número à mesma Página que você conectou aqui. Esse é o número que vai aparecer nos anúncios.",
+    title: "3. Cadastre SEU telefone na Meta (SMS)",
+    body: "Em Anúncios, use “Cadastrar / validar na Meta (SMS)”. Digite o seu número, peça o SMS e confirme o código. Sem o phone_number_id da Meta a campanha não publica.",
     cta: {
-      label: "Abrir Meta Business Suite",
+      label: "Abrir números WhatsApp (Meta)",
       href: "https://business.facebook.com/wa/manage/phone-numbers/",
       external: true,
     },
@@ -46,7 +46,7 @@ const STEPS = [
   {
     icon: Rocket,
     title: "4. Checklist e publicação",
-    body: "Quando os 4 itens estiverem verdes no card Antes de anunciar, o botão Publicar libera. Pronto: anúncio que abre o WhatsApp, sem link wa.me.",
+    body: "Quando os itens estiverem verdes no card Antes de anunciar, o botão Publicar libera. Use as fotos/vídeos oficiais da galeria ou um template publicado.",
   },
 ];
 

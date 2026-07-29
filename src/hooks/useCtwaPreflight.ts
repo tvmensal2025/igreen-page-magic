@@ -2,9 +2,9 @@
 // ────────────────
 // Aglutina os 4 checks que precisam estar verdes pro consultor publicar um
 // anúncio Click-to-WhatsApp:
-//   1. Bot WhatsApp conectado (whatsapp_instances.connected_phone)
-//   2. Facebook conectado e token válido (facebook_connections.status='active' + expira > now)
-//   3. Pixel configurado (facebook_connections.pixel_id)
+//   1. Bot WhatsApp conectado (Whapi AUTH / instance whapi* OU Evolution connected_phone)
+//   2. Facebook plataforma OK (ctwa-status)
+//   3. Pixel (recomendado, não bloqueante)
 //   4. WABA registrado na Página + bate com whatsapp_destination_number
 //      (chamada à edge facebook-detect-waba sob demanda)
 //
@@ -35,6 +35,10 @@ export interface CtwaPreflightState {
 
 const LOADING: CtwaCheck = { status: "loading", label: "Verificando..." };
 
+function isWhapiInstanceName(name: string | null | undefined): boolean {
+  return !!name && /^whapi/i.test(String(name));
+}
+
 export function useCtwaPreflight(consultantId: string | null): CtwaPreflightState {
   const [loading, setLoading] = useState(true);
   const [bot, setBot] = useState<CtwaCheck>(LOADING);
@@ -49,37 +53,82 @@ export function useCtwaPreflight(consultantId: string | null): CtwaPreflightStat
     }
     setLoading(true);
 
-    // 1) Bot conectado (Evolution OU Whapi via super admin)
+    // 1) Bot conectado — Whapi (primário) OU Evolution (legado)
     try {
       const { data: settingsRows } = await supabase
         .from("settings")
         .select("key, value")
-        .in("key", ["superadmin_consultant_id"]);
-      const isSuper =
-        (settingsRows as Array<{ key: string; value: string }> | null)?.find(
-          (s) => s.key === "superadmin_consultant_id"
-        )?.value === consultantId;
-
+        .in("key", ["superadmin_consultant_id", "whapi_connected_phone"]);
+      const settingsMap = Object.fromEntries(
+        ((settingsRows as Array<{ key: string; value: string }> | null) || []).map((s) => [s.key, s.value]),
+      );
+      const isSuper = settingsMap.superadmin_consultant_id === consultantId;
 
       if (isSuper) {
-        setBot({ status: "ok", label: "WhatsApp conectado", detail: "WhatsApp (super admin)" });
+        const phone = (settingsMap.whapi_connected_phone || "").replace(/\D/g, "");
+        setBot({
+          status: "ok",
+          label: "WhatsApp conectado",
+          detail: phone ? `Whapi +${phone}` : "WhatsApp (Whapi)",
+        });
       } else {
         const { data: inst } = await supabase
           .from("whatsapp_instances")
-          .select("connected_phone,status")
+          .select("connected_phone,status,instance_name")
           .eq("consultant_id", consultantId)
           .maybeSingle();
-        if (inst?.connected_phone) {
+
+        const whapiNamed = isWhapiInstanceName(inst?.instance_name);
+        if (whapiNamed) {
+          // Canal Whapi: health real via edge (AUTH). Sem AUTH → fail com hint certo.
+          try {
+            const { data: health } = await supabase.functions.invoke("whapi-proxy", {
+              body: { action: "health_check", payload: {} },
+            });
+            const status = String((health as any)?.status || "").toUpperCase();
+            const phone =
+              String((health as any)?.phone || inst?.connected_phone || "").replace(/\D/g, "") || null;
+            if (status === "AUTH") {
+              setBot({
+                status: "ok",
+                label: "WhatsApp conectado",
+                detail: phone ? `Whapi +${phone}` : "WhatsApp (Whapi)",
+              });
+            } else {
+              setBot({
+                status: "fail",
+                label: "WhatsApp (Whapi) offline",
+                hint: "Abra a aba WhatsApp e reconecte o canal Whapi (status AUTH) para atender os leads.",
+                detail: status || undefined,
+              });
+            }
+          } catch {
+            // Se o health falhar mas há telefone gravado, avisa sem bloquear à toa.
+            if (inst?.connected_phone) {
+              setBot({
+                status: "ok",
+                label: "WhatsApp conectado",
+                detail: `Whapi +${String(inst.connected_phone).replace(/\D/g, "")}`,
+              });
+            } else {
+              setBot({
+                status: "fail",
+                label: "WhatsApp ainda não conectado",
+                hint: "Abra a aba WhatsApp e conecte o canal (Whapi) para atender os clientes.",
+              });
+            }
+          }
+        } else if (inst?.connected_phone) {
           setBot({
             status: "ok",
             label: "WhatsApp conectado",
-            detail: `+${inst.connected_phone}`,
+            detail: `+${String(inst.connected_phone).replace(/\D/g, "")}`,
           });
         } else {
           setBot({
             status: "fail",
             label: "WhatsApp ainda não conectado",
-            hint: "Abra a aba WhatsApp e escaneie o QR Code para poder atender os clientes.",
+            hint: "Abra a aba WhatsApp e conecte seu número para poder atender os clientes dos anúncios.",
           });
         }
       }

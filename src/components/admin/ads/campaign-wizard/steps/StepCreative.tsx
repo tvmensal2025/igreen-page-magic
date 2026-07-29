@@ -2,6 +2,7 @@
  * StepCreative — Step 2: fotos (com arrastar/ordenar via @dnd-kit) ou vídeo Reels.
  * Reaproveita toda a lógica de upload/crop/IA/legenda do hook useCreativeLogic.
  */
+import { useEffect, useState } from "react";
 import { ImageIcon, Video, Upload, X, Wand2, Loader2, Check, GripVertical } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -11,6 +12,7 @@ import {
 import { SortableContext, arrayMove, rectSortingStrategy, useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { AdImageLibraryPanel } from "../../AdImageLibraryPanel";
+import { listAdVideoLibrary, type AdVideoLibraryItem } from "@/services/adVideoLibrary";
 import { FORMAT_SPEC, PER_FORMAT_LIMIT, isFileValidFor, type AdFile, type AdFormat } from "../wizardHelpers";
 import type { WizardState } from "../hooks/useWizardState";
 import type { useCreativeLogic } from "../hooks/useCreativeLogic";
@@ -61,7 +63,7 @@ export function StepCreative({ state, patch, patchFn, creative, consultantId }: 
       </div>
 
       {state.creativeMode === "video" ? (
-        <VideoUploader state={state} patch={patch} creative={creative} />
+        <VideoUploader state={state} patch={patch} creative={creative} consultantId={consultantId} />
       ) : (
         <>
           {/* Formatos */}
@@ -85,7 +87,7 @@ export function StepCreative({ state, patch, patchFn, creative, consultantId }: 
           <Tabs value={state.photoTab} onValueChange={(v) => patch({ photoTab: v as "upload" | "library" })}>
             <TabsList className="grid grid-cols-2 w-full">
               <TabsTrigger value="upload">🆕 Enviar novo</TabsTrigger>
-              <TabsTrigger value="library">📁 Minhas imagens</TabsTrigger>
+              <TabsTrigger value="library">📁 Biblioteca (suas + oficiais)</TabsTrigger>
             </TabsList>
             <TabsContent value="upload" className="space-y-3 mt-3">
               <div className={`border-2 border-dashed border-[hsl(var(--ads-border))] rounded-xl p-6 text-center ${adFiles.length >= PER_FORMAT_LIMIT ? "opacity-50 pointer-events-none" : ""}`}>
@@ -167,10 +169,38 @@ function SortablePhoto({ id, file, format, aiResizing, onCrop, onAi, onRemove }:
   );
 }
 
-function VideoUploader({ state, patch, creative }: { state: WizardState; patch: (p: Partial<WizardState>) => void; creative: ReturnType<typeof useCreativeLogic> }) {
+function VideoUploader({ state, patch, creative, consultantId }: {
+  state: WizardState;
+  patch: (p: Partial<WizardState>) => void;
+  creative: ReturnType<typeof useCreativeLogic>;
+  consultantId: string;
+}) {
+  const [videos, setVideos] = useState<AdVideoLibraryItem[]>([]);
+  const [videosLoading, setVideosLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setVideosLoading(true);
+    listAdVideoLibrary(consultantId)
+      .then((rows) => { if (!cancelled) setVideos(rows); })
+      .catch(() => { if (!cancelled) setVideos([]); })
+      .finally(() => { if (!cancelled) setVideosLoading(false); });
+    return () => { cancelled = true; };
+  }, [consultantId]);
+
+  const pickShared = (it: AdVideoLibraryItem) => {
+    patch({
+      videoFile: null,
+      videoUrl: it.url,
+      videoMeta: it.width && it.height
+        ? { duration: Number(it.duration_seconds || 15), w: it.width, h: it.height }
+        : state.videoMeta,
+    });
+  };
+
   return (
     <div className="space-y-3">
-      <div className={`border-2 border-dashed border-[hsl(var(--ads-border))] rounded-xl p-6 text-center ${state.videoFile ? "opacity-60" : ""}`}>
+      <div className={`border-2 border-dashed border-[hsl(var(--ads-border))] rounded-xl p-6 text-center ${state.videoFile || state.videoUrl ? "opacity-60" : ""}`}>
         <input type="file" accept="video/mp4,video/quicktime,video/mov" id="wz-video-input" className="hidden"
           onChange={(e) => { const f = e.target.files?.[0]; e.currentTarget.value = ""; creative.handleVideoPick(f || null); }} />
         <label htmlFor="wz-video-input" className="cursor-pointer space-y-2 block">
@@ -179,6 +209,45 @@ function VideoUploader({ state, patch, creative }: { state: WizardState; patch: 
           <div className="text-xs text-[hsl(var(--ads-muted))]">MP4 ou MOV · vertical <strong className="text-foreground">9:16</strong> · 4–60s · até 50 MB</div>
         </label>
       </div>
+
+      <div className="space-y-2">
+        <div className="text-xs font-semibold text-[hsl(var(--ads-muted))]">Ou use um vídeo oficial / da sua biblioteca</div>
+        {videosLoading ? (
+          <div className="flex justify-center py-4"><Loader2 className="w-4 h-4 animate-spin" /></div>
+        ) : videos.length === 0 ? (
+          <div className="text-xs text-muted-foreground border border-dashed rounded-lg p-3 text-center">
+            Nenhum vídeo compartilhado ainda. Envie o seu acima ou use um template publicado.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+            {videos.slice(0, 9).map((it) => {
+              const picked = state.videoUrl === it.url && !state.videoFile;
+              const label = it.filename || (it.is_platform_shared ? "Oficial" : "Seu vídeo");
+              return (
+                <button
+                  key={it.id}
+                  type="button"
+                  onClick={() => pickShared(it)}
+                  className={`text-left rounded-lg border overflow-hidden ${picked ? "border-primary ring-2 ring-primary/40" : "border-border"}`}
+                >
+                  <div className="aspect-[9/16] bg-muted relative">
+                    {it.thumb_url ? (
+                      <img src={it.thumb_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <video src={it.url} muted preload="metadata" className="w-full h-full object-cover" />
+                    )}
+                    {it.is_platform_shared && (
+                      <span className="absolute top-1 left-1 text-[9px] bg-emerald-600 text-white px-1 rounded">Oficial</span>
+                    )}
+                  </div>
+                  <div className="px-1.5 py-1 text-[10px] truncate">{label}</div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {state.videoUrl && (
         <div className="space-y-2">
           <div className="relative rounded-lg overflow-hidden border border-[hsl(var(--ads-emerald-2))]/40 bg-black max-w-[280px] mx-auto">
