@@ -300,60 +300,62 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
               </div>
 
               <div className="space-y-1">
-                <div className="flex items-center gap-1">
-                  <Label htmlFor="partner-cli" className="text-xs">
-                    Quem abona o cadastro *
-                  </Label>
-                  <TooltipProvider delayDuration={200}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <button
-                          type="button"
-                          className="inline-flex text-muted-foreground hover:text-foreground"
-                          aria-label="Ajuda: quem abona o cadastro"
-                        >
-                          <HelpCircle className="h-3.5 w-3.5" />
-                        </button>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-[280px] text-xs leading-snug">
-                        É o consultor que aparece como responsável no cadastro.
-                        Padrão = você. Se o indicador for consultor (ex.: Abel), coloque o ID dele
-                        para ele abonar no lugar do seu. Se for cliente, deixe vazio.
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
-                <div className="flex gap-1.5">
-                  <Input
-                    id="partner-cli"
-                    value={cli}
-                    onChange={(e) => {
-                      setCli(e.target.value);
-                      if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
-                    }}
-                    placeholder="ID iGreen do consultor"
-                    className="h-9"
-                  />
-                  {ownerIgreenId && tidyOwnerCli(cli) !== ownerIgreenId && (
-                    <Button
+                <Label className="text-xs">Onde o cadastro cai</Label>
+                {!showAbonador ? (
+                  <div className="rounded-md border bg-muted/40 px-2.5 py-2">
+                    <p className="text-xs font-medium">
+                      Direto na sua conta
+                      {ownerIgreenId ? ` — ID ${ownerIgreenId}` : ""}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground mt-0.5">
+                      Sem intermediário: o cliente é cadastrado direto por você.
+                    </p>
+                    <button
                       type="button"
-                      variant="outline"
-                      size="sm"
-                      className="h-9 shrink-0 px-2 text-[11px]"
-                      title={`Voltar para o meu ID (${ownerIgreenId})`}
-                      onClick={() => setCli(ownerIgreenId)}
+                      className="text-[10px] underline text-muted-foreground hover:text-foreground mt-1"
+                      onClick={() => setShowAbonador(true)}
                     >
-                      Meu ID
-                    </Button>
-                  )}
-                </div>
-                {errors.cli && <p className="text-[11px] text-destructive">{errors.cli}</p>}
-                {ownerIgreenId && tidyOwnerCli(cli) && tidyOwnerCli(cli) !== ownerIgreenId && (
-                  <p className="text-[10px] text-amber-700 dark:text-amber-400">
-                    Cadastro abonado pelo ID {tidyOwnerCli(cli)} em vez do seu ({ownerIgreenId}).
-                  </p>
+                      Outro consultor vai abonar
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex gap-1.5">
+                      <Input
+                        id="partner-cli"
+                        value={cli}
+                        onChange={(e) => {
+                          setCli(e.target.value);
+                          if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
+                        }}
+                        placeholder="ID iGreen do outro consultor"
+                        className="h-9"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-9 shrink-0 px-2 text-[11px]"
+                        title="Voltar para cadastro direto na minha conta"
+                        onClick={() => {
+                          setCli(ownerIgreenId);
+                          setShowAbonador(false);
+                          setErrors((prev) => ({ ...prev, cli: undefined }));
+                        }}
+                      >
+                        Direto em mim
+                      </Button>
+                    </div>
+                    {errors.cli && <p className="text-[11px] text-destructive">{errors.cli}</p>}
+                    {ownerIgreenId && tidyOwnerCli(cli) && tidyOwnerCli(cli) !== ownerIgreenId && (
+                      <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                        Cadastro abonado pelo ID {tidyOwnerCli(cli)} em vez do seu ({ownerIgreenId}).
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
+
 
               <div className="space-y-1">
                 <div className="flex items-center gap-1">
