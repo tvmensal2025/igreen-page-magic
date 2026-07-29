@@ -39,6 +39,8 @@ import {
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import { sofiaClipOwnerIds } from "@/lib/sofiaClipScope";
+
 
 type KitRow = {
   consultant_id: string;
