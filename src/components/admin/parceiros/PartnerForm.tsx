@@ -521,13 +521,14 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
           </section>
         </div>
 
-        <DialogFooter className="px-5 py-3 border-t bg-muted/30 sm:space-x-2">
-          <Button variant="outline" onClick={onClose} size="sm">
+        <DialogFooter className="px-4 sm:px-5 py-3 border-t bg-muted/30 shrink-0 flex-row justify-end gap-2 sm:space-x-2">
+          <Button variant="outline" onClick={onClose} size="sm" className="min-h-10 flex-1 sm:flex-none">
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} size="sm">
+          <Button onClick={handleSubmit} size="sm" className="min-h-10 flex-1 sm:flex-none">
             {isEdit ? "Salvar" : "Criar Parceiro"}
           </Button>
+
         </DialogFooter>
       </DialogContent>
     </Dialog>
