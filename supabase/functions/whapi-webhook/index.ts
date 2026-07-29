@@ -2954,7 +2954,7 @@ Deno.serve(async (req) => {
           finalReply = scrubLegacyWelcomeRoleLeak(finalReply);
         } catch (_) { /* best-effort */ }
       }
-      if (finalReply.trim()) {
+      if (finalReply?.trim()) {
         let isDuplicate = false;
         try {
           const sinceIso = new Date(Date.now() - 60_000).toISOString();

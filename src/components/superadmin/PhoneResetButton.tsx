@@ -36,7 +36,7 @@ export function PhoneResetButton({ userId }: PhoneResetButtonProps) {
     const ok = await confirm({
       title: `Resetar o número ${RESET_PHONE}?`,
       description:
-        "Apaga customer (inclui soft-delete com sufixo), conversas, deals, fluxo, IA, CRM, logs, opt-out e DNC. Volta a ser número novo para teste. NÃO pode ser desfeito.",
+        "Apaga customer (inclui soft-delete com sufixo), conversas, deals, fluxo, IA, CRM, logs, opt-out e bloqueio (nunca mais contatar). Volta a ser número novo para teste. NÃO pode ser desfeito.",
       confirmText: "Resetar do zero",
       tone: "danger",
     });
