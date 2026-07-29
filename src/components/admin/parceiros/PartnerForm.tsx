@@ -240,8 +240,9 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && onClose()}>
-      <DialogContent className="sm:max-w-2xl max-h-[95vh] overflow-hidden p-0 gap-0">
-        <DialogHeader className="px-5 py-3 border-b">
+      <DialogContent className="w-[calc(100%-1rem)] sm:w-full sm:max-w-2xl max-h-[92dvh] flex flex-col overflow-hidden p-0 gap-0">
+        <DialogHeader className="px-4 sm:px-5 py-3 border-b shrink-0">
+
           <div className="flex items-center justify-between gap-2 pr-6">
             <DialogTitle className="text-base">
               {isEdit ? "Editar Parceiro" : "Novo Parceiro Indicador"}
