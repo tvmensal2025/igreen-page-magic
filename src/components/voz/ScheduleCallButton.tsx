@@ -11,6 +11,8 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogD
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { sofiaClipOwnerIds } from "@/lib/sofiaClipScope";
+
 
 const VOICE_SOFIA = "EJV7H2baGt5ab95tOoSG";
 
@@ -66,12 +68,14 @@ export function ScheduleCallButton({
 
   const loadClips = useCallback(async () => {
     if (!consultantId) return;
+    const owners = await sofiaClipOwnerIds(consultantId);
     const { data } = await (supabase as any)
       .from("voice_audio_clips")
       .select("id, name, duration_sec, voice_id")
-      .eq("consultant_id", consultantId)
+      .in("consultant_id", owners)
       .order("created_at", { ascending: false })
       .limit(40);
+
     const rows = ((data as ClipRow[]) ?? []).filter(
       (c) => !c.voice_id || c.voice_id === VOICE_SOFIA,
     );

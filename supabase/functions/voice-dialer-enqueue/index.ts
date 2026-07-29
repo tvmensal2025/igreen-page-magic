@@ -68,7 +68,9 @@ interface Body {
 
 const MAX_TARGETS = 5000;
 
-/** Garante que o clipe tem velip_audio_id — sobe on-demand se preciso. */
+/** Garante que o clipe tem velip_audio_id — sobe on-demand se preciso.
+ *  Aceita clipe do próprio consultor OU da biblioteca compartilhada do super admin
+ *  (consultor novo ainda não tem áudio Sofia próprio e não pode ficar bloqueado). */
 async function ensureVelipAudioForClip(
   admin: ReturnType<typeof createClient>,
   clipId: string,
@@ -76,11 +78,20 @@ async function ensureVelipAudioForClip(
 ): Promise<{ audio_id: string; audio_url: string } | { error: string }> {
   const { data: clip } = await admin
     .from("voice_audio_clips")
-    .select("id, audio_url, name, velip_audio_id")
+    .select("id, audio_url, name, velip_audio_id, consultant_id")
     .eq("id", clipId)
-    .eq("consultant_id", consultantId)
     .maybeSingle();
   if (!clip?.audio_url) return { error: "clip_not_found" };
+  if (clip.consultant_id && clip.consultant_id !== consultantId) {
+    const { data: superRow } = await admin
+      .from("settings")
+      .select("value")
+      .eq("key", "superadmin_consultant_id")
+      .maybeSingle();
+    const superId = String((superRow as { value?: string } | null)?.value || "");
+    if (clip.consultant_id !== superId) return { error: "clip_not_found" };
+  }
+
   if (clip.velip_audio_id) {
     return { audio_id: clip.velip_audio_id, audio_url: clip.audio_url };
   }
