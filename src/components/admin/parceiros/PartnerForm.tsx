@@ -245,7 +245,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
 
           <div className="flex items-center justify-between gap-2 pr-6">
             <DialogTitle className="text-base">
-              {isEdit ? "Editar Parceiro" : "Novo Parceiro Indicador"}
+              {isEdit ? "Editar Parceiro" : "Cadastrar Indicador/Parceiro"}
             </DialogTitle>
             {isEdit && onDelete && (
               <Button
@@ -275,11 +275,11 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
           {/* Section: Identificação */}
           <section className="space-y-2.5">
             <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Identificação
+              Quem é o parceiro
             </h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label htmlFor="partner-nome" className="text-xs">Nome *</Label>
+                <Label htmlFor="partner-nome" className="text-xs">Nome do parceiro *</Label>
                 <Input
                   id="partner-nome"
                   value={nome}
@@ -287,7 +287,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                     setNome(e.target.value);
                     if (errors.nome) setErrors((prev) => ({ ...prev, nome: undefined }));
                   }}
-                  placeholder="Nome do parceiro"
+                  placeholder="Ex.: Daniel da Padaria Central"
                   className="h-9"
                 />
                 {errors.nome && <p className="text-[11px] text-destructive">{errors.nome}</p>}
@@ -296,7 +296,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
               <div className="space-y-1">
                 <div className="flex items-center gap-1">
                   <Label htmlFor="partner-cli" className="text-xs">
-                    ID iGreen do consultor / abonador *
+                    Quem abona o cadastro *
                   </Label>
                   <TooltipProvider delayDuration={200}>
                     <Tooltip>
@@ -304,15 +304,15 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                         <button
                           type="button"
                           className="inline-flex text-muted-foreground hover:text-foreground"
-                          aria-label="Ajuda: ID do consultor abonador"
+                          aria-label="Ajuda: quem abona o cadastro"
                         >
                           <HelpCircle className="h-3.5 w-3.5" />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-[280px] text-xs leading-snug">
-                        Quem abona o cadastro. Padrão = o seu ID. Se o indicador
-                        for consultor (ex.: Abel), coloque o ID dele aqui — ele
-                        abona no lugar do seu. Não use o campo de cliente.
+                        É o consultor que aparece como responsável no cadastro.
+                        Padrão = você. Se o indicador for consultor (ex.: Abel), coloque o ID dele
+                        para ele abonar no lugar do seu. Se for cliente, deixe vazio.
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -325,7 +325,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                       setCli(e.target.value);
                       if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
                     }}
-                    placeholder="ID do consultor que abona"
+                    placeholder="ID iGreen do consultor"
                     className="h-9"
                   />
                   {ownerIgreenId && tidyOwnerCli(cli) !== ownerIgreenId && (
@@ -344,7 +344,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                 {errors.cli && <p className="text-[11px] text-destructive">{errors.cli}</p>}
                 {ownerIgreenId && tidyOwnerCli(cli) && tidyOwnerCli(cli) !== ownerIgreenId && (
                   <p className="text-[10px] text-amber-700 dark:text-amber-400">
-                    Consultor abonando no lugar do seu ID ({ownerIgreenId}).
+                    Cadastro abonado pelo ID {tidyOwnerCli(cli)} em vez do seu ({ownerIgreenId}).
                   </p>
                 )}
               </div>
@@ -353,7 +353,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                 <div className="flex items-center gap-1">
                   <Label htmlFor="partner-igreen-id" className="text-xs">
                     ID iGreen do cliente{" "}
-                    <span className="text-muted-foreground">(cashback)</span>
+                    <span className="text-muted-foreground">(se for cliente)</span>
                   </Label>
                   <TooltipProvider delayDuration={200}>
                     <Tooltip>
@@ -367,9 +367,8 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="top" className="max-w-[280px] text-xs leading-snug">
-                        Só para cliente indicador (não consultor). É quem recebe
-                        o cashback (&amp;cli= no link). Se for consultor, deixe
-                        vazio e use o campo de abonador acima.
+                        Só preencha se o parceiro for cliente que quer receber cashback.
+                        Se for consultor, deixe vazio e use o campo "Quem abona" acima.
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
@@ -378,7 +377,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                   id="partner-igreen-id"
                   value={partnerIgreenId}
                   onChange={(e) => setPartnerIgreenId(e.target.value)}
-                  placeholder="Só se for cliente (não consultor)"
+                  placeholder="Só para cliente indicador (cashback)"
                   className="h-9"
                 />
               </div>
@@ -394,6 +393,9 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                   placeholder="Ex: 11999998888"
                   className="h-9"
                 />
+                <p className="text-[10px] text-muted-foreground">
+                  Se quiser avisar outro número quando chegar um lead para este parceiro.
+                </p>
               </div>
             </div>
           </section>
@@ -401,12 +403,12 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
           {/* Section: Atribuição */}
           <section className="space-y-2.5 pt-3 border-t">
             <h3 className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-              Atribuição de leads
+              Como o cliente chega no WhatsApp deste parceiro
             </h3>
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between">
-                <Label className="text-xs">Palavra-chave do parceiro</Label>
+                <Label className="text-xs">Palavra que identifica este parceiro</Label>
                 {keywords.length > 0 && (
                   <span className="text-[10px] text-muted-foreground">{keywords.length} cadastrada(s)</span>
                 )}
@@ -419,7 +421,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                     if (errors.keywords) setErrors((prev) => ({ ...prev, keywords: undefined }));
                   }}
                   onKeyDown={handleKeyDown}
-                  placeholder="Ex.: Melquiades Uberlândia"
+                  placeholder="Ex.: Daniel Padaria Central"
                   className="flex-1 h-9"
                 />
                 <Button type="button" variant="secondary" onClick={addKeyword} size="sm" className="h-9 px-3">
@@ -432,7 +434,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                   size="sm"
                   disabled={aiLoading}
                   className="h-9 px-3 gap-1 border-primary/40 text-primary hover:bg-primary/10"
-                  title="Gerar exemplo com IA"
+                  title="Gerar sugestão com IA"
                 >
                   {aiLoading ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -446,8 +448,8 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                 <p className="text-[11px] text-destructive">{errors.keywords}</p>
               ) : (
                 <p className="text-[10px] text-muted-foreground">
-                  É o que o cliente escreve no WhatsApp para cair neste parceiro.
-                  Prefira nome + cidade (único). Evite "energia", "desconto", "oi" — isso pega lead errado.
+                  É a palavra que o cliente escreve no WhatsApp para que o sistema saiba que veio deste parceiro.
+                  Prefira nome + cidade. Evite palavras comuns como "energia", "desconto", "oi" — elas podem atribuir o lead errado.
                 </p>
               )}
               {keywords.length > 0 && (
@@ -496,16 +498,16 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
             <div className="space-y-1">
               <div className="flex items-center gap-1">
                 <Label htmlFor="partner-qr-phrase" className="text-xs">
-                  Frase QR Code{" "}
+                  Frase que abre no WhatsApp do cliente{" "}
                   <span className="text-muted-foreground">(opcional)</span>
                 </Label>
                 <HelpHint
                   size={12}
-                  title="Frase permanente do parceiro"
-                  summary="Muda a mensagem do WhatsApp sem reimprimir o banner"
+                  title="Frase que abre no WhatsApp"
+                  summary="Muda a mensagem que o cliente envia ao escanear o QR"
                   details={
                     "Salve aqui a frase padrão deste parceiro. Banners/QR já impressos (link curto sem frase fixa) passam a abrir com o texto novo.\n\n" +
-                    "Trocar o WhatsApp do consultor não invalida o QR — o link usa o número conectado agora."
+                    "Se trocar o WhatsApp do consultor, o mesmo QR continua funcionando — aponta para o número conectado agora."
                   }
                   example='Ex.: "Vim pelo Daniel, quero reduzir minha conta de luz"'
                 />
@@ -517,6 +519,9 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                 placeholder={buildDefaultQrPhrase(keywords[0] || keywordInput.trim())}
                 className="h-9"
               />
+              <p className="text-[10px] text-muted-foreground">
+                Se deixar vazio, o sistema usa a frase padrão com o nome do parceiro.
+              </p>
             </div>
           </section>
         </div>

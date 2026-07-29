@@ -864,23 +864,23 @@ export function PartnerQrCode({
       <DialogContent className="w-[calc(100%-1rem)] sm:w-full max-w-3xl max-h-[90dvh] overflow-y-auto p-3 sm:p-6">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-1.5">
-            Baixar Banner / QR — {partnerName}
+            QR do parceiro: {partnerName}
             <HelpHint
               size={14}
               title="Como funciona este QR"
-              summary="Toque no ? para ver onde mudar a frase e o que acontece se trocar o WhatsApp"
+              summary="Toque no ? para entender o que acontece se trocar o WhatsApp ou a frase"
               details={
-                "1) O link curto abre o WhatsApp do consultor conectado agora — se trocar o número, o mesmo QR continua válido.\n\n" +
-                "2) A palavra-chave (ex.: Daniel) identifica de onde veio o lead.\n\n" +
-                "3) Para mudar a frase SEM reimprimir: edite o parceiro → campo \"Frase QR Code\" e salve.\n\n" +
-                "4) Neste modal, marque \"Editar frase do WhatsApp\" só para personalizar ESTE download — aí baixe de novo."
+                "1) O QR aponta para o WhatsApp do consultor que está conectado agora. Se trocar o número, o mesmo QR continua válido.\n\n" +
+                "2) A palavra (ex.: Daniel) é como o sistema sabe que o lead veio deste banner.\n\n" +
+                "3) Para mudar a frase SEM reimprimir: volte → Editar parceiro → Frase que abre no WhatsApp → Salvar.\n\n" +
+                "4) Nesta tela, marque \"Trocar a frase só para este banner\" para personalizar APENAS este download."
               }
-              example="Link do Daniel: igreen.cloud/r/130392/365524?k=Daniel — o 365524 é o código do parceiro; o telefone não fica gravado no papel."
+              example="Link do Daniel: igreen.cloud/r/130392/365524?k=Daniel — o código 365524 é do parceiro; o telefone não fica no papel."
             />
           </DialogTitle>
           <DialogDescription className="text-xs sm:text-sm">
             Toque no <span className="font-semibold">?</span> ao lado do título
-            para ver onde editar a frase e o que muda se trocar o WhatsApp.
+            para ver dicas sobre troca de frase, WhatsApp e impressão.
           </DialogDescription>
         </DialogHeader>
 
@@ -979,21 +979,21 @@ export function PartnerQrCode({
           <div className="flex flex-col gap-4 min-w-0">
             <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-3">
               <div className="flex items-center gap-1.5">
-                <Label className="text-sm">Palavra-chave deste banner</Label>
+                <Label className="text-sm">Palavra que identifica este banner</Label>
                 <HelpHint
                   size={13}
-                  title="Palavra-chave"
-                  summary="Identifica a origem do lead neste banner"
+                  title="Palavra que identifica o banner"
+                  summary="Escolha como o sistema vai saber que o lead veio deste banner"
                   details={
-                    "Escolha ou digite uma palavra (ex.: Daniel, Posto Shell). Ela entra no link (?k=) e na frase do WhatsApp.\n\n" +
-                    "Trocar a palavra e baixar de novo gera outro material — o parceiro continua o mesmo (código na URL)."
+                    "Escolha ou digite uma palavra (ex.: Daniel, Posto Shell). Ela entra no link e na frase do WhatsApp.\n\n" +
+                    "Trocar a palavra e baixar de novo gera outro material — o parceiro continua o mesmo (o código na URL não muda)."
                   }
                   example="Daniel → igreen.cloud/r/.../365524?k=Daniel"
                 />
               </div>
               <p className="text-[11px] text-muted-foreground leading-snug">
-                Troque a palavra-chave e baixe de novo para gerar vários
-                banners. O QR continua atribuindo o mesmo parceiro.
+                Troque a palavra e baixe de novo para criar vários banners
+                diferentes. Todos vão atribuir o lead ao mesmo parceiro.
               </p>
               {keywordOptions.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
@@ -1065,17 +1065,17 @@ export function PartnerQrCode({
                   className="h-3.5 w-3.5 rounded border-input"
                 />
                 <span className="flex items-center gap-1">
-                  Editar frase do WhatsApp neste banner
+                  Trocar a frase só para este banner
                   <HelpHint
                     size={12}
                     title="Onde editar a frase"
-                    summary="Duas formas: permanente (sem reimprimir) ou só neste download"
+                    summary="Duas formas: mudar para sempre (sem reimprimir) ou só neste download"
                     details={
-                      "• Sem reimprimir: feche este modal → Editar o parceiro → campo \"Frase QR Code\" → Salvar. Banners já impressos passam a usar a frase nova.\n\n" +
-                      "• Só neste download: marque esta opção, escreva a frase e baixe de novo (a frase vai no link).\n\n" +
-                      "Trocar o WhatsApp conectado NÃO apaga o QR — o próximo scan usa o número novo."
+                      "• Para sempre (sem reimprimir): feche este modal → Editar parceiro → \"Frase que abre no WhatsApp\" → Salvar. Banners já impressos passam a usar a frase nova.\n\n" +
+                      "• Só neste download: marque esta opção, escreva a frase e baixe de novo (a frase vai junto no link).\n\n" +
+                      "Trocar o WhatsApp conectado não apaga o QR — o próximo scan usa o número novo."
                     }
-                    example='Editar parceiro Daniel → Frase QR Code → "Vim pelo Daniel, quero economizar na luz"'
+                    example='Editar parceiro Daniel → Frase que abre no WhatsApp → "Vim pelo Daniel, quero economizar na luz"'
                   />
                 </span>
               </label>
