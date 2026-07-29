@@ -228,6 +228,10 @@ export function ConsultantBannerDownloadModal({
   const [saving, setSaving] = useState(false);
   const [rendering, setRendering] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [spotLeadCounts, setSpotLeadCounts] = useState<Record<string, number>>(
+    {},
+  );
+  const [loadingCounts, setLoadingCounts] = useState(false);
 
   const template = TEMPLATES[format];
   const initials = useMemo(
