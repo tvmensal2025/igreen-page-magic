@@ -257,6 +257,33 @@ export function ConsultantBannerDownloadModal({
     }
   }, [open, spots, defaultPhrase]);
 
+  // Carrega quantos leads vieram de cada banner (spot keyword = referral_keyword_matched).
+  useEffect(() => {
+    if (!open || !consultantId) return;
+    setLoadingCounts(true);
+    (async () => {
+      try {
+        const { data, error: err } = await supabase
+          .from("customers")
+          .select("referral_keyword_matched")
+          .eq("consultant_id", consultantId)
+          .not("referral_keyword_matched", "is", null);
+        if (err) throw err;
+        const counts: Record<string, number> = {};
+        (data || []).forEach((row) => {
+          const kw = String(row.referral_keyword_matched || "").trim();
+          if (!kw) return;
+          counts[kw] = (counts[kw] || 0) + 1;
+        });
+        setSpotLeadCounts(counts);
+      } catch (e) {
+        console.warn("[banner-lead-counts]", e);
+      } finally {
+        setLoadingCounts(false);
+      }
+    })();
+  }, [open, consultantId, spots]);
+
   useEffect(() => {
     if (!selectedSpot) return;
     setEditPhrase(
