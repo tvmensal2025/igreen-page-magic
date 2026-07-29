@@ -55,6 +55,8 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const [partnerIgreenId, setPartnerIgreenId] = useState("");
   const [notificationPhone, setNotificationPhone] = useState("");
   const [ownerIgreenId, setOwnerIgreenId] = useState("");
+  /** Só mostra o campo de ID quando OUTRO consultor for abonar. Padrão: direto na sua conta. */
+  const [showAbonador, setShowAbonador] = useState(false);
   const [errors, setErrors] = useState<{ nome?: string; cli?: string; keywords?: string }>({});
   const [aiLoading, setAiLoading] = useState(false);
   const [aiExample, setAiExample] = useState<string | null>(null);
