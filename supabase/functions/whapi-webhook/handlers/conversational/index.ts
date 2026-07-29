@@ -1378,6 +1378,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     const vars = {
       nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source,
       representante: ctx.nomeRepresentante,
+      consultor_gender: ctx.consultorGender || "consultor",
       protocolo: protocoloBoot,
       valor_conta: (ctx.customer as any).electricity_bill_value,
       telefone: ctx.customer.phone_whatsapp,

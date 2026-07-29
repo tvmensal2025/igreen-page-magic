@@ -630,13 +630,14 @@ Deno.serve(async (req) => {
 
     // Nome humano só — slug/login (silviaclaudiaalmeida) NUNCA vai pro lead.
     // Usa só o PRIMEIRO NOME — soa mais natural no WhatsApp ("Rafael" em vez de "Rafael Ferreira").
-    const { resolvePublicConsultantLabel, resolveAssistantDisplayName, resolveConsultantRoleGender } = await import("../_shared/consultant-public-label.ts");
-    const _fullName = resolvePublicConsultantLabel(
+    // Presentation label: NUNCA devolve "sua consultora"/"consultor" (bug abertura).
+    const { resolveConsultantPresentationLabel, resolveAssistantDisplayName, resolveConsultantRoleGender } = await import("../_shared/consultant-public-label.ts");
+    const _fullName = resolveConsultantPresentationLabel(
       consultantData?.name,
       consultantData?.display_name,
-      "iGreen Energy",
+      consultantData?.gender,
     );
-    const nomeRepresentante = _fullName.split(/\s+/)[0] || "iGreen Energy";
+    const nomeRepresentante = _fullName.split(/\s+/)[0] || "";
     const nomeAssistente = resolveAssistantDisplayName(consultantData?.assistant_name);
     const consultorGender: "consultor" | "consultora" = resolveConsultantRoleGender(
       consultantData?.gender,
@@ -1751,40 +1752,47 @@ Deno.serve(async (req) => {
           }
 
           if (matchedPartnerId) {
-            await supabase.from("customers").update({
+            const { error: partnerLinkErr } = await supabase.from("customers").update({
               referral_partner_id: matchedPartnerId,
               referral_keyword_matched: matchedKeyword,
               referral_detected_at: new Date().toISOString(),
             }).eq("id", customer.id);
-            (customer as any).referral_partner_id = matchedPartnerId;
-            console.log(
-              `[partner-match] customer=${customer.id} partner=${matchedPartnerId} source=${matchedSource} marker="${matchedKeyword}" score=${matchedScore}`,
-            );
-            try {
-              await supabase.from("campaign_match_log").insert({
-                customer_id: customer.id,
-                campaign_id: null,
-                method: matchedSource === "short_code" ? "short_code" : "keyword",
-                similarity: matchedScore,
-                message_sample: messageText ? String(messageText).slice(0, 200) : null,
-              });
-            } catch (e) {
-              console.warn("[campaign-match-log] insert falhou:", (e as Error).message);
+            if (partnerLinkErr) {
+              console.warn(
+                `[partner-match] update falhou customer=${customer.id} partner=${matchedPartnerId}:`,
+                partnerLinkErr.message,
+              );
+            } else {
+              (customer as any).referral_partner_id = matchedPartnerId;
+              console.log(
+                `[partner-match] customer=${customer.id} partner=${matchedPartnerId} source=${matchedSource} marker="${matchedKeyword}" score=${matchedScore}`,
+              );
+              try {
+                await supabase.from("campaign_match_log").insert({
+                  customer_id: customer.id,
+                  campaign_id: null,
+                  method: matchedSource === "short_code" ? "short_code" : "keyword",
+                  similarity: matchedScore,
+                  message_sample: messageText ? String(messageText).slice(0, 200) : null,
+                });
+              } catch (e) {
+                console.warn("[campaign-match-log] insert falhou:", (e as Error).message);
+              }
+              // Só notifica se o vínculo ficou gravado no banco.
+              (async () => {
+                const { assignProtocolToCustomer } = await import("../_shared/protocol.ts");
+                const { data: prow } = await supabase.from("referral_partners").select("nome").eq("id", matchedPartnerId).maybeSingle();
+                const res = await assignProtocolToCustomer(supabase, customer.id, { partnerId: matchedPartnerId, partnerName: (prow as any)?.nome });
+                return notifyPartnerNewLead(superAdminConsultantId, matchedPartnerId, {
+                  id: customer.id,
+                  name: (customer as any).name,
+                  name_source: (customer as any).name_source,
+                  phone_whatsapp: (customer as any).phone_whatsapp,
+                  is_sandbox: (customer as any).is_sandbox,
+                  tracking_protocol: res?.protocol,
+                });
+              })().catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
             }
-            // Aviso EXTRA ao parceiro (se tiver notification_phone). Não bloqueia o fluxo.
-            (async () => {
-              const { assignProtocolToCustomer } = await import("../_shared/protocol.ts");
-              const { data: prow } = await supabase.from("referral_partners").select("nome").eq("id", matchedPartnerId).maybeSingle();
-              const res = await assignProtocolToCustomer(supabase, customer.id, { partnerId: matchedPartnerId, partnerName: (prow as any)?.nome });
-              return notifyPartnerNewLead(superAdminConsultantId, matchedPartnerId, {
-                id: customer.id,
-                name: (customer as any).name,
-                name_source: (customer as any).name_source,
-                phone_whatsapp: (customer as any).phone_whatsapp,
-                is_sandbox: (customer as any).is_sandbox,
-                tracking_protocol: res?.protocol,
-              });
-            })().catch((e) => console.warn("[notify-partner-lead] falhou:", (e as Error).message));
           }
         }
       } catch (e) {
@@ -2939,6 +2947,14 @@ Deno.serve(async (req) => {
         finalReply = "";
       }
       if (finalReply) {
+        // Última linha: nunca vazar "sua consultora"/Gestor na abertura (mesmo
+        // se algum caminho inline/IA escapou do scrub do template).
+        try {
+          const { scrubLegacyWelcomeRoleLeak } = await import("../_shared/protocol.ts");
+          finalReply = scrubLegacyWelcomeRoleLeak(finalReply);
+        } catch (_) { /* best-effort */ }
+      }
+      if (finalReply.trim()) {
         let isDuplicate = false;
         try {
           const sinceIso = new Date(Date.now() - 60_000).toISOString();
@@ -3455,10 +3471,17 @@ Deno.serve(async (req) => {
       // 🛡️ Cadastro = steps legados CADASTRO_STEPS + UUID/passo do funil
       // (Sofia a1_ask_name, flow builder). Sem UUID, lead no Grupo A caía no
       // Cérebro (Leandro Severiano 2026-07-28: step UUID → !_emCadastro → IA).
+      // Boot Grupo A (welcome/null): também é cadastro — senão o 1º "Oi" com
+      // step ainda null ia pro Cérebro e inventava "sua consultora" (Igor 2026-07-29).
+      const _isGrupoABootStep =
+        !stepBefore ||
+        stepBefore === "welcome" ||
+        stepBefore === "menu_inicial";
       const _emCadastro =
         CADASTRO_STEPS.has(stepBefore) ||
         bridgeForcedSysForCapture ||
-        isActiveConversationalFunnelStep(stepBefore);
+        isActiveConversationalFunnelStep(stepBefore) ||
+        (_fbVarCerebro === "A" && _isGrupoABootStep && !_isAtivoOrigin);
       const _cadKind = (_emCadastro && !_isAtivoOrigin)
         ? classifyCadastroInput({
           stepBefore,

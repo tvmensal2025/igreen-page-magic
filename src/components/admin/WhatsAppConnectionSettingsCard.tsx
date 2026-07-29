@@ -90,8 +90,7 @@ export function WhatsAppConnectionSettingsCard({
         <div className="min-w-0 flex-1">
           <h3 className="font-heading font-bold text-foreground">WhatsApp</h3>
           <p className="text-xs text-muted-foreground mt-0.5">
-            Desconecte para trocar de chip ou conectar outro número
-            {isWhapi ? " (Whapi)" : " (Evolution)"}.
+            Desconecte para trocar de chip ou conectar outro número.
           </p>
         </div>
       </div>

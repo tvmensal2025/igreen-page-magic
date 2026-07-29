@@ -1,23 +1,14 @@
 import { supabase } from "@/integrations/supabase/client";
 import { validateBrazilPhone } from "@/lib/phone";
+import { consultantHasConnectedWhatsAppForUi } from "@/lib/consultantWaPhone";
 
-/** Zap conectado = instância com telefone OU canal Whapi. */
+/** Zap conectado = chip vivo OU superadmin no canal principal (não Evolution morta). */
 export async function consultantHasWhatsAppConnected(
   consultantId: string,
 ): Promise<boolean> {
   const id = String(consultantId || "").trim();
   if (!id) return false;
-  const { data } = await supabase
-    .from("whatsapp_instances")
-    .select("connected_phone, instance_name")
-    .eq("consultant_id", id)
-    .limit(3);
-  const rows = Array.isArray(data) ? data : [];
-  return rows.some((r) => {
-    const phone = String(r?.connected_phone || "").replace(/\D/g, "");
-    const name = String(r?.instance_name || "").toLowerCase();
-    return phone.length >= 10 || name.startsWith("whapi");
-  });
+  return consultantHasConnectedWhatsAppForUi(supabase, id);
 }
 
 /** Dispara geração de áudios A2 + ligações com a identidade do consultor. */

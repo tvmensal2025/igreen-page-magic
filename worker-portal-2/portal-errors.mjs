@@ -28,11 +28,14 @@ export const ERROR_KINDS = Object.freeze({
   duplicate_email:        { recoverable: true,  field: 'email' },
   duplicate_installation: { recoverable: true,  field: 'numero_instalacao' },
   missing_consumo:        { recoverable: true,  field: 'media_consumo' },
+  // Documento com validade vencida: pede RG/CNH novo ao cliente (sem handoff).
+  doc_vencido:            { recoverable: true,  field: 'document_front_url' },
   duplicate_document:     { recoverable: false },
   no_coverage:            { recoverable: false },
   attachment_not_confirmed:{ recoverable: false },
-  // IA da iGreen reprovou conta/doc (is_authentic=false, doc error, validade
-  // vencida, mismatch titular). Não é retry de payload — precisa humano.
+  // IA da iGreen reprovou conta/doc (is_authentic=false, doc error,
+  // mismatch titular). Não é retry de payload — precisa humano.
+  // (Validade vencida = doc_vencido, recuperável via nova foto.)
   ia_reprovada:           { recoverable: false },
   validation_error:       { recoverable: false },
   unknown:                { recoverable: false },
@@ -56,6 +59,16 @@ export const CORRECTION_PROMPTS = Object.freeze({
   duplicate_installation: {
     step: 'corrigir_instalacao_portal',
     prompt: 'O número de instalação não foi aceito. Confere na conta e me envia de novo (7+ dígitos).',
+  },
+  doc_vencido: {
+    step: 'corrigir_documento_portal',
+    // Placeholder {{validade}} preenchido no worker quando souber a data.
+    prompt:
+      'Consegui ler seu documento, mas a *validade já expirou*{{validade}}.\n\n' +
+      'Pra seguir, me envia um documento *dentro da validade*, bem nítido:\n\n' +
+      '• *CNH* → só a *frente*\n' +
+      '• *RG* → *frente e verso*\n\n' +
+      'Pode começar pela frente. Assim que estiver completo, eu continuo daqui ✨',
   },
 });
 
@@ -144,8 +157,12 @@ export function classifyPortalError(message) {
   // attachment_not_confirmed — OCR leu, mas o Portal não confirmou anexo físico.
   } else if (hasAny('portal_attachments_not_confirmed', 'attachment_not_confirmed', 'anexos obrigatórios não confirmados', 'anexos obrigatorios nao confirmados')) {
     kind = 'attachment_not_confirmed';
+  // doc_vencido ANTES de ia_reprovada: a mensagem começa com PORTAL_IA_REPROVADA
+  // e também contém "documento vencido" — sem esta ordem cairia em handoff.
+  } else if (hasAny('documento vencido', 'ia_doc_vencido')) {
+    kind = 'doc_vencido';
   // ia_reprovada — veredito explícito da IA (conta/doc) antes do POST /customers.
-  } else if (hasAny('ia_reprovada', 'portal_ia_reprovada', 'conta reprovada pela ia', 'documento reprovado pela ia', 'titular divergente', 'documento vencido')) {
+  } else if (hasAny('ia_reprovada', 'portal_ia_reprovada', 'conta reprovada pela ia', 'documento reprovado pela ia', 'titular divergente')) {
     kind = 'ia_reprovada';
 
   // ── 2) Recuperáveis ──
@@ -164,6 +181,9 @@ export function classifyPortalError(message) {
   // missing_consumo — consumo médio não informado. Req 6.9
   } else if (has('consumo') && hasAny('não informado', 'nao informado')) {
     kind = 'missing_consumo';
+  // doc_vencido também listado em ERROR_KINDS como recuperável (match acima).
+  } else if (has('doc_vencido')) {
+    kind = 'doc_vencido';
 
   // ── 3) Erro de validação de payload (400/422) — não-recuperável, sem retry.
   // Qualquer mismatch de schema (Too small / expected string / etc) cai aqui

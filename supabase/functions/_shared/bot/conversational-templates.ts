@@ -3,6 +3,11 @@
 
 import { parseMoneyBR } from "../parse-money.ts";
 import { safeFirstNameForAddress, scrubEmptyNameGreeting } from "../customer-display-name.ts";
+import {
+  isConsultantRoleNounLabel,
+  scrubLegacyWelcomeRoleLeak,
+  stripConsultantRoleSuffix,
+} from "../protocol.ts";
 
 const FALLBACK: Record<string, string> = {
   "welcome:saudacao": "Oi! Aqui é {{o_a_consultor}} {{representante}} 👋",
@@ -75,8 +80,18 @@ function fmtEconomiaRange(v: number | string | null | undefined): string {
 
 export function renderTemplate(tpl: string, vars: TemplateVars): string {
   const nome = safeFirstNameForAddress(vars.nome, vars.nome_source);
-  const rep =
-    (String(vars.representante || vars.consultor || "").trim()) || "iGreen Energy";
+  // Nome humano só. Nunca "sua consultora"/"consultora"/"Gestor" no lugar do nome
+  // (bug recorrente: Grupo A usa ESTE renderTemplate, não renderVars — o scrub
+  // do attendance/renderVars não cobria o A1 do flow builder).
+  let rep = String(vars.representante || vars.consultor || "").trim();
+  // Possessivo/papel inteiro ANTES do strip (senão "sua consultora" → "sua").
+  if (isConsultantRoleNounLabel(rep)) rep = "";
+  else {
+    rep = stripConsultantRoleSuffix(rep);
+    if (isConsultantRoleNounLabel(rep)) rep = "";
+  }
+  // Sem nome humano: vazio → scrub vira "Aqui é o atendimento da iGreen"
+  // (NÃO usar fallback possessivo nem "iGreen Energy" como se fosse pessoa).
   const oA = String(vars.consultor_gender || "").trim() === "consultora" ? "a" : "o";
   const protocolo = String(vars.protocolo || "").trim();
   const valor = fmtValor(vars.valor_conta);
@@ -139,7 +154,8 @@ export function renderTemplate(tpl: string, vars: TemplateVars): string {
   if (!nome) {
     out = scrubEmptyNameGreeting(out);
   }
-  return out;
+  // Última linha de defesa: nunca vazar Gestor/consultora no A1 do flow.
+  return scrubLegacyWelcomeRoleLeak(out);
 }
 
 export async function getTemplate(

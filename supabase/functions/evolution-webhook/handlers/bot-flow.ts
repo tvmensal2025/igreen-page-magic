@@ -535,7 +535,7 @@ const NO_QA_STEPS = new Set([
   "aguardando_assinatura", "complete", "aguardando_humano",
   "aguardando_avaliacao_atendimento", "atendimento_finalizado",
   // Loop de correção Portal 2 — steps determinísticos, QA semântico não dispara.
-  "corrigir_celular_portal", "corrigir_email_portal", "corrigir_instalacao_portal",
+  "corrigir_celular_portal", "corrigir_email_portal", "corrigir_instalacao_portal", "corrigir_documento_portal", "corrigir_documento_verso_portal",
   "editing_conta_menu", "editing_conta_nome", "editing_conta_endereco",
   "editing_conta_cep", "editing_conta_distribuidora", "editing_conta_instalacao", "editing_conta_valor",
   "editing_doc_menu", "editing_doc_nome", "editing_doc_cpf", "editing_doc_rg",
@@ -2856,7 +2856,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     "cadastro_em_analise", "aguardando_facial", "otp_falhou", "otp_confirmar",
     "aguardando_humano",
     // Loop de correção Portal 2: steps que pedem o dado rejeitado ao cliente.
-    "corrigir_celular_portal", "corrigir_email_portal", "corrigir_instalacao_portal",
+    "corrigir_celular_portal", "corrigir_email_portal", "corrigir_instalacao_portal", "corrigir_documento_portal", "corrigir_documento_verso_portal",
   ]);
   const UUID_RX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -3412,7 +3412,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
   // ═══════════════════════════════════════════════════════════════════
   if (
     String((customer as any).portal2_status || "") === "awaiting_correction" &&
-    !["corrigir_celular_portal", "corrigir_email_portal", "corrigir_instalacao_portal", "portal_submitting"].includes(step)
+    !["corrigir_celular_portal", "corrigir_email_portal", "corrigir_instalacao_portal", "corrigir_documento_portal", "corrigir_documento_verso_portal", "portal_submitting"].includes(step)
   ) {
     const _decision = decideCorrection(
       (customer as any).portal2_error_kind,
@@ -6154,6 +6154,112 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       updates.numero_instalacao = _instDigits;
       reply = "Perfeito! Atualizei o número de instalação e estou reenviando seu cadastro para o portal. Pode aguardar alguns instantes ✅";
       await persistAndRedispatch("duplicate_installation", maskCorrectionValueForLog("duplicate_installation", _instDigits));
+      break;
+    }
+
+    case "corrigir_documento_portal": {
+      // Documento vencido: CNH = só frente; RG = frente + verso.
+      if (!isFile) {
+        reply =
+          "📸 Me envia um documento *dentro da validade*, bem nítido:\n\n" +
+          "• *CNH* → só a *frente*\n" +
+          "• *RG* → *frente e verso*\n\n" +
+          "Pode começar pela *frente* (JPG, PNG ou PDF).";
+        break;
+      }
+      const mime = (documentMessage as any)?.mimetype || (imageMessage as any)?.mimetype || "image/jpeg";
+      const docFileBase64 = fileBase64 || "";
+      const docFileUrl = fileUrl || "";
+      if (!docFileBase64 && !docFileUrl) {
+        reply = "Não consegui abrir essa foto. Pode reenviar a *frente* do RG ou CNH (JPG/PNG/PDF)?";
+        break;
+      }
+
+      let detectedType: string = "outro";
+      let detectConfidence = 0;
+      try {
+        const det = await detectDocumentTypeDetailed({
+          base64: docFileBase64,
+          mimeType: mime,
+          imageUrl: String(docFileUrl).startsWith("http") ? docFileUrl : undefined,
+          geminiApiKey,
+        });
+        detectedType = det.tipo;
+        detectConfidence = det.confianca;
+      } catch (e) {
+        console.warn(`[corrigir_documento_portal] detect tipo falhou:`, (e as Error).message);
+      }
+      if (detectedType === "outro") {
+        reply =
+          "❌ Esse arquivo não parece ser um *RG* ou *CNH*.\n\n" +
+          "📸 Me envia a *frente* do documento *dentro da validade* (JPG, PNG ou PDF).";
+        break;
+      }
+
+      if (docFileBase64) {
+        updates.document_front_url = `data:${mime};base64,${docFileBase64}`;
+        updates.document_front_base64 = docFileBase64;
+        updates.media_message_id = messageId || null;
+        updates.media_storage = "inline";
+        const _custId = customer.id;
+        uploadMediaToMinio({
+          fileBase64: docFileBase64, mimeType: mime, consultantFolder: consultorId, consultantName: nomeRepresentante,
+          customerName: customer.name || "cliente", customerBirth: customer.data_nascimento, kind: "doc_frente",
+        }).then(async (minioUrl) => {
+          if (minioUrl) {
+            await supabase.from("customers").update({ document_front_url: minioUrl, media_storage: "minio" }).eq("id", _custId);
+          }
+        }).catch((e) => console.warn(`📦⚠️ [BG] MinIO doc_frente (corrigir) falhou: ${e?.message}`));
+      } else {
+        updates.document_front_url = String(docFileUrl).startsWith("http") ? docFileUrl : "evolution-media:pending";
+      }
+
+      const treatAsCnh = detectedType === "cnh" && detectConfidence >= 0.55;
+      updates.document_type = treatAsCnh ? "cnh" : (detectedType === "rg_novo" ? "rg_novo" : "rg_antigo");
+
+      if (treatAsCnh) {
+        updates.document_back_url = "nao_aplicavel";
+        reply = "Recebi a *frente da CNH*! ✅ Estou reenviando seu cadastro — pode aguardar alguns instantes 🌱";
+        await persistAndRedispatch("doc_vencido", "doc");
+      } else {
+        updates.document_back_url = null;
+        updates.document_back_base64 = null;
+        updates.conversation_step = "corrigir_documento_verso_portal";
+        reply =
+          "✅ Frente do RG recebida!\n\n" +
+          "Agora me envia a foto do *verso* do RG (também *dentro da validade*), bem nítida 📸";
+      }
+      break;
+    }
+
+    case "corrigir_documento_verso_portal": {
+      if (!isFile) {
+        reply = "📸 Me envia agora a foto do *verso* do RG (*dentro da validade*), bem nítida. JPG, PNG ou PDF.";
+        break;
+      }
+      const mimeBack = (documentMessage as any)?.mimetype || (imageMessage as any)?.mimetype || "image/jpeg";
+      if (fileBase64) {
+        updates.document_back_url = `data:${mimeBack};base64,${fileBase64}`;
+        updates.document_back_base64 = fileBase64;
+        updates.media_message_id = messageId || null;
+        updates.media_storage = "inline";
+        const _custId = customer.id;
+        uploadMediaToMinio({
+          fileBase64, mimeType: mimeBack, consultantFolder: consultorId, consultantName: nomeRepresentante,
+          customerName: customer.name || "cliente", customerBirth: customer.data_nascimento, kind: "doc_verso",
+        }).then(async (minioUrl) => {
+          if (minioUrl) {
+            await supabase.from("customers").update({ document_back_url: minioUrl, media_storage: "minio" }).eq("id", _custId);
+          }
+        }).catch((e) => console.warn(`📦⚠️ [BG] MinIO doc_verso (corrigir) falhou: ${e?.message}`));
+      } else if (fileUrl) {
+        updates.document_back_url = String(fileUrl).startsWith("http") ? fileUrl : "evolution-media:pending";
+      } else {
+        reply = "Não consegui abrir essa foto. Pode reenviar o *verso* do RG (JPG/PNG/PDF)?";
+        break;
+      }
+      reply = "Verso recebido! ✅ Estou reenviando seu cadastro com frente e verso — pode aguardar alguns instantes 🌱";
+      await persistAndRedispatch("doc_vencido", "doc");
       break;
     }
 

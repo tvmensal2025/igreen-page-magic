@@ -241,6 +241,7 @@ export function CaptureLeadCard({
     const v = isPhoneField
       ? resolvePortalWhatsapp(customer)
       : (customer as unknown as Record<string, unknown>)[key];
+    // ID efetivo: override manual > parceiro > consultor da página.
     const displayId = isIdField
       ? (v !== null && v !== undefined && String(v).trim() !== "" && Number(v) > 0
         ? String(v)

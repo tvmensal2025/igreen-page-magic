@@ -67,3 +67,25 @@ Deno.test("buildGrupoAOpenAttendanceText — sem nome nunca fala consultora/Gest
   assertEquals(/consultora/i.test(full), false);
   assertEquals(/gestor/i.test(full), false);
 });
+
+Deno.test("renderTemplate A1 — nunca vaza possessivo/papel como nome (regressão Igor)", () => {
+  for (const bad of ["sua consultora", "seu consultor", "consultora", "consultor", "Gestor"]) {
+    const out = renderTemplate(A1_TPL, {
+      representante: bad,
+      protocolo: "IGR-TST-1",
+      consultor_gender: "consultora",
+    });
+    assertEquals(/consultora|consultor|gestor/i.test(out), false, `vaza "${bad}": ${out}`);
+    assertStringIncludes(out, "atendimento");
+  }
+});
+
+Deno.test("renderTemplate A1 — nome humano Rafael permanece", () => {
+  const out = renderTemplate(A1_TPL, {
+    representante: "Rafael",
+    protocolo: "IGR-RAF-1",
+    consultor_gender: "consultor",
+  });
+  assertStringIncludes(out, "Aqui é o *Rafael* da *iGreen*.");
+  assertEquals(/consultora/i.test(out), false);
+});

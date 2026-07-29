@@ -26,6 +26,20 @@ Deno.test("scrubLegacyWelcomeRoleLeak — nunca deixa *consultora* no lugar do n
   assertEquals(/consultora/i.test(out), false);
 });
 
+Deno.test("scrubLegacyWelcomeRoleLeak — lacuna Igor: sua *consultora* (possessivo fora do bold)", () => {
+  const leaks = [
+    "Olá! Aqui é a sua *consultora* da *iGreen*.",
+    "Olá! Aqui é a *sua consultora* da *iGreen*.",
+    "Olá! Aqui é a sua consultora da *iGreen*.",
+    "Oi! Olá! Aqui é a sua *consultora* da iGreen.",
+  ];
+  for (const raw of leaks) {
+    const out = scrubLegacyWelcomeRoleLeak(raw);
+    assertEquals(/consultora/i.test(out), false, `ainda vaza em: ${raw} → ${out}`);
+    assertStringIncludes(out, "atendimento");
+  }
+});
+
 Deno.test("buildWelcomeHeaderProtocol — com nome humano", () => {
   const out = buildWelcomeHeaderProtocol("IGR-RFD-0001", "Rafael Ferreira", {
     gender: "consultor",

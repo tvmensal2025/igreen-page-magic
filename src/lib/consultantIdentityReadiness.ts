@@ -9,6 +9,7 @@
  */
 import { supabase } from "@/integrations/supabase/client";
 import { validateBrazilPhone } from "@/lib/phone";
+import { consultantHasConnectedWhatsAppForUi } from "@/lib/consultantWaPhone";
 
 /** Etapas de ligação que precisam de corpo com a voz/identidade do consultor. */
 export const IDENTITY_CALL_STAGES = [
@@ -75,29 +76,25 @@ export async function loadConsultantIdentityStatus(
   const consultantId = String(consultantIdInput || (await currentConsultantId()) || "").trim();
   if (!consultantId) return null;
 
-  const [consRes, waRes, mediaRes, clipsRes] = await Promise.all([
+  const [consRes, waOk, mediaRes, stageRes] = await Promise.all([
     supabase
       .from("consultants")
       .select("id, name, display_name, assistant_name, gender, phone, identity_media_bootstrapped_at")
       .eq("id", consultantId)
       .maybeSingle(),
-    supabase
-      .from("whatsapp_instances")
-      .select("connected_phone, instance_name")
-      .eq("consultant_id", consultantId)
-      .limit(5),
+    consultantHasConnectedWhatsAppForUi(supabase, consultantId),
     (supabase as any)
       .from("ai_media_library")
       .select("slot_key, active")
       .eq("consultant_id", consultantId)
       .eq("active", true)
       .like("slot_key", "a2_audio_activate_name__body_%"),
-    (supabase as any)
-      .from("voice_audio_clips")
-      .select("id, name, is_call_body")
+    supabase
+      .from("cadence_stage_config")
+      .select("stage, voice_audio_clip_id")
       .eq("consultant_id", consultantId)
-      .eq("is_call_body", true)
-      .limit(500),
+      .in("stage", [...IDENTITY_CALL_STAGES])
+      .not("voice_audio_clip_id", "is", null),
   ]);
 
   const cons = (consRes.data || null) as
@@ -119,13 +116,6 @@ export async function loadConsultantIdentityStatus(
   const generoOk = ["consultor", "consultora"].includes(String(cons.gender || "").trim());
   const telOk = validateBrazilPhone(String(cons.phone || "")).valid;
 
-  const waRows = Array.isArray(waRes.data) ? waRes.data : [];
-  const waOk = waRows.some((r: any) => {
-    const p = String(r?.connected_phone || "").replace(/\D/g, "");
-    const n = String(r?.instance_name || "").toLowerCase();
-    return p.length >= 10 || n.startsWith("whapi");
-  });
-
   const a2Slots = new Set(
     ((mediaRes.data || []) as Array<{ slot_key: string }>).map((m) => m.slot_key),
   );
@@ -134,12 +124,15 @@ export async function loadConsultantIdentityStatus(
     (a2Slots.has("a2_audio_activate_name__body_masculino") ? 1 : 0) +
     (a2Slots.has("a2_audio_activate_name__body_feminino") ? 1 : 0);
 
-  const clips = (clipsRes.data || []) as Array<{ id: string; name: string | null }>;
-  const identityClips = clips.filter((c) => /\[identidade\]/i.test(String(c.name || "")));
-  const stagesCovered = IDENTITY_CALL_STAGES.filter((stage) =>
-    identityClips.some((c) => String(c.name || "").toUpperCase().includes(stage)),
-  ).length;
+  // Fonte da verdade = stage com clip ligado (Regen corpo / Identidade / Multicanal).
+  // Contar só nome "[Identidade]" gerava falso "0 de 11" com áudios vivos.
+  const stagesWithClip = new Set(
+    ((stageRes.data || []) as Array<{ stage: string; voice_audio_clip_id: string | null }>)
+      .filter((r) => Boolean(r.voice_audio_clip_id))
+      .map((r) => String(r.stage || "")),
+  );
   const callsTotal = IDENTITY_CALL_STAGES.length;
+  const stagesCovered = IDENTITY_CALL_STAGES.filter((stage) => stagesWithClip.has(stage)).length;
 
   const consultorLabel = String(cons.name || cons.display_name || "").trim();
 

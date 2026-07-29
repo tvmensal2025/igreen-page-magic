@@ -116,7 +116,6 @@ const NON_RECOVERABLE_MESSAGES = {
     'PORTAL_IA_REPROVADA: Conta reprovada pela IA: documento adulterado',
     'Documento reprovado pela IA: ilegível',
     'Titular divergente (doc="A B" × conta="C D")',
-    'Documento vencido (01/01/2020)',
   ],
 };
 
@@ -223,6 +222,7 @@ const RECOVERABLE_MESSAGES = {
   duplicate_email: 'duplicateEmail',
   duplicate_installation: 'número de instalação inválido',
   missing_consumo: 'Consumo médio não informado',
+  doc_vencido: 'PORTAL_IA_REPROVADA: Documento vencido (20/08/2025)',
 };
 
 describe('Contraste — recuperável com attempts<3 → awaiting_correction; >=3 → needs_human (Req 9.5/10.2)', () => {

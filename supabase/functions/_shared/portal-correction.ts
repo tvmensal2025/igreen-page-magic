@@ -28,12 +28,14 @@ export const CORRECTION_LIMIT = 3;
 export type CorrectionKind =
   | "duplicate_phone"
   | "duplicate_email"
-  | "duplicate_installation";
+  | "duplicate_installation"
+  | "doc_vencido";
 
 export const RECOVERABLE_CORRECTION_KINDS: ReadonlySet<string> = new Set<string>([
   "duplicate_phone",
   "duplicate_email",
   "duplicate_installation",
+  "doc_vencido",
 ]);
 
 /** Especificação de um step de correção: para onde ir, qual campo gravar, o que perguntar. */
@@ -65,6 +67,16 @@ export const CORRECTION_MAP: Readonly<Record<CorrectionKind, CorrectionStepSpec>
     step: "corrigir_instalacao_portal",
     field: "numero_instalacao",
     prompt: "O número de instalação não foi aceito. Confere na conta e me envia de novo (7+ dígitos).",
+  },
+  doc_vencido: {
+    step: "corrigir_documento_portal",
+    field: "document_front_url",
+    prompt:
+      "Consegui ler seu documento, mas a *validade já expirou*.\n\n" +
+      "Pra seguir, me envia um documento *dentro da validade*, bem nítido:\n\n" +
+      "• *CNH* → só a *frente*\n" +
+      "• *RG* → *frente e verso*\n\n" +
+      "Pode começar pela frente. Assim que estiver completo, eu continuo daqui ✨",
   },
 });
 
@@ -186,7 +198,14 @@ export function decideCorrection(
   if (kind === "missing_consumo") return { action: "none" };
 
   // Classes explicitamente não-recuperáveis (Req 10.1/10.4).
-  if (kind === "duplicate_document" || kind === "no_coverage" || kind === "unknown") {
+  if (
+    kind === "duplicate_document" ||
+    kind === "no_coverage" ||
+    kind === "unknown" ||
+    kind === "ia_reprovada" ||
+    kind === "attachment_not_confirmed" ||
+    kind === "validation_error"
+  ) {
     return { action: "needs_human", reason: "non_recoverable" };
   }
 
@@ -212,5 +231,6 @@ export function maskEmailForLog(value: string | null | undefined): string {
 
 /** Mascara o valor corrigido conforme a classe, para uso seguro em logs (Req 12.4). */
 export function maskCorrectionValueForLog(kind: string, value: string | null | undefined): string {
+  if (kind === "doc_vencido") return "doc";
   return kind === "duplicate_email" ? maskEmailForLog(value) : maskTail(value, 4);
 }

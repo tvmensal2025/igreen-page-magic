@@ -18,6 +18,7 @@ import {
   resolveAssistantDisplayName,
   resolveConsultantRoleGender,
 } from "../_shared/consultant-public-label.ts";
+import { consultantHasConnectedWhatsApp } from "../_shared/consultant-wa-phone.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -189,16 +190,8 @@ Deno.serve(async (req) => {
   if (phoneDigits.length < 10) return json(400, { error: "phone_required" });
 
   // Só gera mídia com WhatsApp conectado (não bootstrap em massa / cadastro seco).
-  const { data: waRows } = await admin
-    .from("whatsapp_instances")
-    .select("connected_phone, instance_name")
-    .eq("consultant_id", consultantId)
-    .limit(5);
-  const waConnected = (Array.isArray(waRows) ? waRows : []).some((r) => {
-    const p = String(r?.connected_phone || "").replace(/\D/g, "");
-    const n = String(r?.instance_name || "").toLowerCase();
-    return p.length >= 10 || n.startsWith("whapi");
-  });
+  // Superadmin Whapi: não depende de whatsapp_instances Evolution (needs_reconnect).
+  const waConnected = await consultantHasConnectedWhatsApp(admin, consultantId);
   if (!waConnected) {
     return json(200, {
       ok: true,

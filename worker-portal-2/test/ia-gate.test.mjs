@@ -118,6 +118,12 @@ test('classifyPortalError reconhece ia_reprovada', () => {
   assert.equal(r.recoverable, false);
 });
 
+test('classifyPortalError documento vencido → doc_vencido (recuperável)', () => {
+  const r = classifyPortalError('PORTAL_IA_REPROVADA: Documento vencido (20/08/2025)');
+  assert.equal(r.kind, 'doc_vencido');
+  assert.equal(r.recoverable, true);
+});
+
 test('F10 classifyPortalError duplicate_document mesmo consultor', () => {
   const r = classifyPortalError('Cliente já cadastrado: mesmo consultor');
   assert.equal(r.kind, 'duplicate_document');

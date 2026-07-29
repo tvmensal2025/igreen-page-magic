@@ -469,7 +469,13 @@ export async function responderComCerebro(
       });
     }
 
-    const reply = (resultado.reply ?? "").trim();
+    const replyRaw = (resultado.reply ?? "").trim();
+    // Nunca vazar "sua consultora"/Gestor se a IA inventar na abertura.
+    let reply = replyRaw;
+    try {
+      const { scrubLegacyWelcomeRoleLeak } = await import("../protocol.ts");
+      reply = scrubLegacyWelcomeRoleLeak(replyRaw);
+    } catch (_) { /* best-effort */ }
     const temTexto = reply.length > 0;
 
     // Envio real pelo sender do canal (anti-ban + trio de proteção intactos).
@@ -487,6 +493,19 @@ export async function responderComCerebro(
         );
         enviou = false;
       }
+    }
+
+    // Espelha no chat do CRM (Whapi UI lê o canal; conversations evita “fantasma”).
+    if (enviou && temTexto) {
+      try {
+        await supabase.from("conversations").insert({
+          customer_id: customerId,
+          message_direction: "outbound",
+          message_text: reply,
+          message_type: "text",
+          conversation_step: "cerebro",
+        });
+      } catch (_) { /* best-effort */ }
     }
 
     // OBSERVABILIDADE: registra o RESULTADO do turno respondido pelo Cérebro

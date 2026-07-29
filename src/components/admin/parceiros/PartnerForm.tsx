@@ -23,6 +23,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { normalizeBrazilPhone, validateBrazilPhone } from "@/lib/phone";
 
 /** Trata "0"/vazio como ausente — evita gravar CLI inválido do dono. */
 function tidyOwnerCli(raw?: string | null): string {
@@ -55,9 +56,12 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
   const [partnerIgreenId, setPartnerIgreenId] = useState("");
   const [notificationPhone, setNotificationPhone] = useState("");
   const [ownerIgreenId, setOwnerIgreenId] = useState("");
-  /** Só mostra o campo de ID quando OUTRO consultor for abonar. Padrão: direto na sua conta. */
-  const [showAbonador, setShowAbonador] = useState(false);
-  const [errors, setErrors] = useState<{ nome?: string; cli?: string; keywords?: string }>({});
+  const [errors, setErrors] = useState<{
+    nome?: string;
+    cli?: string;
+    keywords?: string;
+    notification_phone?: string;
+  }>({});
   const [aiLoading, setAiLoading] = useState(false);
   const [aiExample, setAiExample] = useState<string | null>(null);
   const confirm = useConfirm();
@@ -88,14 +92,11 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       setNome(partner.nome);
       // CLI = consultor abonador deste indicador.
       // "0"/vazio legado → cai no ID do dono logado (padrão).
-      const partnerCli = tidyOwnerCli(partner.cli);
-      setCli(partnerCli || ownerIgreenId || "");
+      setCli(tidyOwnerCli(partner.cli) || ownerIgreenId || "");
       setKeywords(partner.keywords || []);
       setQrPhrase(partner.qr_phrase || "");
       setPartnerIgreenId(partner.partner_igreen_id || "");
       setNotificationPhone(partner.notification_phone || "");
-      // Só abre o campo se outro consultor estiver abonando.
-      setShowAbonador(!!partnerCli && !!ownerIgreenId && partnerCli !== ownerIgreenId);
     } else {
       setNome("");
       setCli(ownerIgreenId || "");
@@ -103,7 +104,6 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       setQrPhrase("");
       setPartnerIgreenId("");
       setNotificationPhone("");
-      setShowAbonador(false);
     }
     setErrors({});
     setAiExample(null);
@@ -158,7 +158,12 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
           keywords,
           qr_phrase: text,
           partner_igreen_id: partnerIgreenId.trim() || null,
-          notification_phone: notificationPhone.trim() || null,
+          notification_phone: (() => {
+            const raw = notificationPhone.trim();
+            if (!raw) return null;
+            const v = validateBrazilPhone(raw);
+            return v.valid ? v.normalized : normalizeBrazilPhone(raw) || raw;
+          })(),
         });
         toast({ title: "✨ Frase gerada e salva", description: "Edite no campo abaixo se quiser ajustar.", duration: 2200 });
       } else {
@@ -179,7 +184,12 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
 
 
   const handleSubmit = () => {
-    const newErrors: { nome?: string; cli?: string; keywords?: string } = {};
+    const newErrors: {
+      nome?: string;
+      cli?: string;
+      keywords?: string;
+      notification_phone?: string;
+    } = {};
     if (!nome.trim()) newErrors.nome = "Nome é obrigatório";
     // CLI = consultor abonador (seu ID, ou o ID de outro consultor indicador).
     const abonadorCli = tidyOwnerCli(cli) || ownerIgreenId;
@@ -208,6 +218,19 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       }
     }
 
+    // Telefone de aviso é opcional, mas se preenchido precisa ser BR válido.
+    const notifyRaw = notificationPhone.trim();
+    let notifyNormalized: string | null = null;
+    if (notifyRaw) {
+      const phoneCheck = validateBrazilPhone(notifyRaw);
+      if (!phoneCheck.valid) {
+        newErrors.notification_phone =
+          phoneCheck.message || "Telefone inválido (use DDD + número)";
+      } else {
+        notifyNormalized = phoneCheck.normalized;
+      }
+    }
+
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
       return;
@@ -219,6 +242,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       setKeywordInput("");
     }
     if (abonadorCli !== cli) setCli(abonadorCli);
+    if (notifyNormalized) setNotificationPhone(notifyNormalized);
 
     onSave({
       nome: nome.trim(),
@@ -226,7 +250,7 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       keywords: finalKeywords,
       qr_phrase: qrPhrase.trim() || null,
       partner_igreen_id: partnerIgreenId.trim() || null,
-      notification_phone: notificationPhone.trim() || null,
+      notification_phone: notifyNormalized,
     });
   };
 
@@ -300,62 +324,60 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
               </div>
 
               <div className="space-y-1">
-                <Label className="text-xs">Onde o cadastro cai</Label>
-                {!showAbonador ? (
-                  <div className="rounded-md border bg-muted/40 px-2.5 py-2">
-                    <p className="text-xs font-medium">
-                      Direto na sua conta
-                      {ownerIgreenId ? ` — ID ${ownerIgreenId}` : ""}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground mt-0.5">
-                      Sem intermediário: o cliente é cadastrado direto por você.
-                    </p>
-                    <button
+                <div className="flex items-center gap-1">
+                  <Label htmlFor="partner-cli" className="text-xs">
+                    Quem abona o cadastro *
+                  </Label>
+                  <TooltipProvider delayDuration={200}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          type="button"
+                          className="inline-flex text-muted-foreground hover:text-foreground"
+                          aria-label="Ajuda: quem abona o cadastro"
+                        >
+                          <HelpCircle className="h-3.5 w-3.5" />
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-[280px] text-xs leading-snug">
+                        É o consultor que aparece como responsável no cadastro.
+                        Padrão = você. Se o indicador for consultor (ex.: Abel), coloque o ID dele
+                        para ele abonar no lugar do seu. Se for cliente, deixe vazio.
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <div className="flex gap-1.5">
+                  <Input
+                    id="partner-cli"
+                    value={cli}
+                    onChange={(e) => {
+                      setCli(e.target.value);
+                      if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
+                    }}
+                    placeholder="ID iGreen do consultor"
+                    className="h-9"
+                  />
+                  {ownerIgreenId && tidyOwnerCli(cli) !== ownerIgreenId && (
+                    <Button
                       type="button"
-                      className="text-[10px] underline text-muted-foreground hover:text-foreground mt-1"
-                      onClick={() => setShowAbonador(true)}
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0 px-2 text-[11px]"
+                      title={`Voltar para o meu ID (${ownerIgreenId})`}
+                      onClick={() => setCli(ownerIgreenId)}
                     >
-                      Outro consultor vai abonar
-                    </button>
-                  </div>
-                ) : (
-                  <>
-                    <div className="flex gap-1.5">
-                      <Input
-                        id="partner-cli"
-                        value={cli}
-                        onChange={(e) => {
-                          setCli(e.target.value);
-                          if (errors.cli) setErrors((prev) => ({ ...prev, cli: undefined }));
-                        }}
-                        placeholder="ID iGreen do outro consultor"
-                        className="h-9"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        className="h-9 shrink-0 px-2 text-[11px]"
-                        title="Voltar para cadastro direto na minha conta"
-                        onClick={() => {
-                          setCli(ownerIgreenId);
-                          setShowAbonador(false);
-                          setErrors((prev) => ({ ...prev, cli: undefined }));
-                        }}
-                      >
-                        Direto em mim
-                      </Button>
-                    </div>
-                    {errors.cli && <p className="text-[11px] text-destructive">{errors.cli}</p>}
-                    {ownerIgreenId && tidyOwnerCli(cli) && tidyOwnerCli(cli) !== ownerIgreenId && (
-                      <p className="text-[10px] text-amber-700 dark:text-amber-400">
-                        Cadastro abonado pelo ID {tidyOwnerCli(cli)} em vez do seu ({ownerIgreenId}).
-                      </p>
-                    )}
-                  </>
+                      Meu ID
+                    </Button>
+                  )}
+                </div>
+                {errors.cli && <p className="text-[11px] text-destructive">{errors.cli}</p>}
+                {ownerIgreenId && tidyOwnerCli(cli) && tidyOwnerCli(cli) !== ownerIgreenId && (
+                  <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                    Cadastro abonado pelo ID {tidyOwnerCli(cli)} em vez do seu ({ownerIgreenId}).
+                  </p>
                 )}
               </div>
-
 
               <div className="space-y-1">
                 <div className="flex items-center gap-1">
@@ -397,13 +419,22 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                 <Input
                   id="partner-notify"
                   value={notificationPhone}
-                  onChange={(e) => setNotificationPhone(e.target.value)}
+                  onChange={(e) => {
+                    setNotificationPhone(e.target.value);
+                    if (errors.notification_phone) {
+                      setErrors((prev) => ({ ...prev, notification_phone: undefined }));
+                    }
+                  }}
                   placeholder="Ex: 11999998888"
-                  className="h-9"
+                  className={`h-9 ${errors.notification_phone ? "border-destructive" : ""}`}
                 />
-                <p className="text-[10px] text-muted-foreground">
-                  Se quiser avisar outro número quando chegar um lead para este parceiro.
-                </p>
+                {errors.notification_phone ? (
+                  <p className="text-[10px] text-destructive">{errors.notification_phone}</p>
+                ) : (
+                  <p className="text-[10px] text-muted-foreground">
+                    Se quiser avisar outro número quando chegar um lead para este parceiro.
+                  </p>
+                )}
               </div>
             </div>
           </section>

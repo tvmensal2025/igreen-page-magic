@@ -138,9 +138,12 @@ async function sendFacialLinkToCustomer(customerId, link) {
  * esperando um OTP que nunca chegava (o bot só re-perguntava se o cliente
  * mandasse mensagem espontânea). Best-effort: erro de envio só loga.
  */
-async function sendCorrectionRequestToCustomer(customerId, prompt) {
+async function sendCorrectionRequestToCustomer(customerId, prompt, opts = {}) {
+  const elegant = opts.kind === 'doc_vencido';
   return _sendMessageToCustomer(customerId, ({ firstName }) =>
-    `${firstName}, quase lá! 🙌\n\n${prompt}`,
+    elegant
+      ? `${firstName}, quase concluímos seu cadastro! 🌱\n\n${prompt}`
+      : `${firstName}, quase lá! 🙌\n\n${prompt}`,
   );
 }
 
@@ -362,7 +365,12 @@ async function processLead(job) {
     // (sem match textual) é tratado como instabilidade/transporte e mantém o
     // retry do BullMQ; classes determinísticas NÃO re-lançam (payload errado
     // não deve ser reenviado — Req 9.1).
-    const { kind, recoverable } = classifyPortalError(e.message);
+    let { kind, recoverable } = classifyPortalError(e.message);
+    // Gate code explícito tem precedência (mensagem também começa com PORTAL_IA_REPROVADA).
+    if (e.code === 'IA_DOC_VENCIDO') {
+      kind = 'doc_vencido';
+      recoverable = true;
+    }
 
     // Short-circuit: cliente JÁ está cadastrado na iGreen (mesmo CPF ou
     // throw explícito do checkCustomerExists). Não é falha — é sucesso
@@ -435,7 +443,27 @@ async function processLead(job) {
       let correctionToSend = null;
       if (nextStatus === 'awaiting_correction' && CORRECTION_PROMPTS[kind]) {
         updates.conversation_step = CORRECTION_PROMPTS[kind].step;
-        correctionToSend = CORRECTION_PROMPTS[kind].prompt;
+        let prompt = CORRECTION_PROMPTS[kind].prompt;
+        if (kind === 'doc_vencido') {
+          const validade =
+            e?.body?.gate?.details?.validade ||
+            (String(e.message || '').match(/documento vencido\s*\(([^)]+)\)/i) || [])[1] ||
+            null;
+          prompt = prompt.replace(
+            '{{validade}}',
+            validade ? ` (${validade})` : '',
+          );
+          // Não reenviar o mesmo RG/CNH vencido no próximo submit.
+          updates.document_front_url = null;
+          updates.document_back_url = null;
+          updates.document_front_base64 = null;
+          updates.document_back_base64 = null;
+          // Garante bot ativo pra receber a nova foto.
+          updates.bot_paused = false;
+          updates.bot_paused_reason = null;
+          updates.status = 'pending';
+        }
+        correctionToSend = prompt;
       }
       // Modo_Extração mesmo em falha (Req 3.3 — antes do estado terminal).
       if (e.extraction) {
@@ -496,7 +524,7 @@ async function processLead(job) {
       // Pergunta proativa ao cliente (Req 7.1). Best-effort: só após a
       // persistência do step, para a resposta do cliente cair no handler certo.
       if (correctionToSend) {
-        await sendCorrectionRequestToCustomer(customer_id, correctionToSend).then(
+        await sendCorrectionRequestToCustomer(customer_id, correctionToSend, { kind }).then(
           (r) => console.log(`  📲 correção solicitada ao cliente (${kind}): ${JSON.stringify(r)}`),
           (err) => console.warn(`  ⚠ envio da correção falhou: ${err.message}`),
         );

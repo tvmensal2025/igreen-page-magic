@@ -130,14 +130,17 @@ export function stripConsultantRoleSuffix(name: string | null | undefined): stri
 /** True se o label é só o substantivo de papel — nunca vai entre *asteriscos* na abertura. */
 export function isConsultantRoleNounLabel(raw: string | null | undefined): boolean {
   const s = String(raw || "").trim().toLowerCase();
-  return /^(seu |sua )?(consultor|consultora)$/.test(s);
+  return /^(seu |sua )?(consultor|consultora|gestor|gestora)$/.test(s);
 }
 
 /**
- * Remove vazamentos legados na abertura (bug 2026-07-28 Leandro):
+ * Remove vazamentos legados na abertura (bug 2026-07-28 Leandro + regressão 2026-07-29 Igor):
  * - `, *Gestor*` hardcoded (buildWelcome antigo)
- * - `*consultora*` / `*consultor*` no lugar do nome
+ * - `*consultora*` / `*consultor*` / `sua *consultora*` no lugar do nome
  * - artigo órfão após nome vazio (`Aqui é o  da`)
+ *
+ * Lacuna do 1º scrub: `Aqui é a sua *consultora* da` (possessivo fora do bold)
+ * NÃO casava — o lead via “sua consultora” no Zap.
  */
 export function scrubLegacyWelcomeRoleLeak(text: string): string {
   let out = String(text || "");
@@ -148,13 +151,18 @@ export function scrubLegacyWelcomeRoleLeak(text: string): string {
     /\*([^*\n]+?),\s*(gestor|gestora|consultor|consultora)\*/gi,
     (_m, nome: string) => `*${String(nome).trim()}*`,
   );
-  // Substantivo de papel no lugar do nome humano
+  // Normaliza negrito fragmentado: "sua *consultora*" / "*sua* *consultora*" → "sua consultora"
+  out = out.replace(/\*\s*(seu|sua)\s*\*\s*\*\s*(consultor|consultora)\s*\*/gi, "$1 $2");
+  out = out.replace(/(seu|sua)\s+\*(consultor|consultora)\*/gi, "$1 $2");
+  out = out.replace(/\*(seu|sua)\s+(consultor|consultora)\*/gi, "$1 $2");
+  out = out.replace(/\*(consultor|consultora|gestor|gestora)\*/gi, "$1");
+  // Substantivo de papel no lugar do nome humano (com ou sem possessivo / bold)
   out = out.replace(
-    /Aqui é\s+(o|a)\s+\*?(seu |sua )?(consultor|consultora)\*?\s+da/gi,
+    /Aqui é\s+(o|a)\s+(?:(?:seu|sua)\s+)?(?:consultor|consultora|gestor|gestora)\s+da/gi,
     "Aqui é o atendimento da",
   );
-  // Artigo órfão quando {{consultor}} veio vazio: "Aqui é o  da" / "Aqui é a * * da"
-  out = out.replace(/Aqui é\s+(o|a)\s+\*?\s*\*?\s+da/gi, "Aqui é o atendimento da");
+  // Artigo órfão quando {{consultor}} veio vazio: "Aqui é o  da" / "Aqui é a da" / "Aqui é a * * da"
+  out = out.replace(/Aqui é\s+(o|a)\s+(?:\*\s*)*da\b/gi, "Aqui é o atendimento da");
   out = out.replace(/👤\s*Consultor\(a\):\s*\*?[^*\n]*\*?\s*/gi, "");
   return out
     .replace(/\*\s*\*/g, "")
