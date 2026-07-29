@@ -375,12 +375,14 @@ export function ConsultantBannerDownloadModal({
     }
   };
 
+  const isMobile = useIsMobile();
   const { width: PREVIEW_W_EFF, height: PREVIEW_H } = useFlyerPreviewSize(
     template.canvasW,
     template.canvasH,
-    PREVIEW_W,
-    PREVIEW_MAX_H,
+    isMobile ? 240 : PREVIEW_W,
+    isMobile ? 240 : PREVIEW_MAX_H,
   );
+
   const qrCorePxPreview = (template.qrSize / 100) * PREVIEW_W_EFF;
   const qrFramePxPreview =
     qrCorePxPreview + QR_QUIET_PX * 2 + QR_BORDER_PX * 2;
