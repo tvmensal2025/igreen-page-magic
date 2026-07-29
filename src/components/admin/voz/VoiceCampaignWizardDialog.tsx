@@ -252,14 +252,17 @@ export function VoiceCampaignWizardDialog({
   }, [open, monitorCampaignId, resetDraft]);
 
   const loadClips = useCallback(async () => {
+    if (!consultantId) return;
+    const owners = await sofiaClipOwnerIds(consultantId);
     const { data } = await (supabase as any)
       .from("voice_audio_clips")
       .select("id, name, audio_url, duration_sec, created_at")
-      .eq("consultant_id", consultantId)
+      .in("consultant_id", owners)
       .order("created_at", { ascending: false })
-      .limit(20);
+      .limit(40);
     setClips((data as ClipRow[]) ?? []);
   }, [consultantId]);
+
 
   useEffect(() => {
     if (!open) return;
