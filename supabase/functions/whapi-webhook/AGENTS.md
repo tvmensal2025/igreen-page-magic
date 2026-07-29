@@ -25,4 +25,10 @@ Canal **Whapi** é a fonte de verdade do WhatsApp. Evolution aqui é só paridad
 
 ## Helpers canônicos
 
-`_shared/channel-sender.ts` · `_shared/deterministic-campaign-resolver.ts` · `_shared/customer-display-name.ts` · `_shared/bot/dedupe.ts` · `_shared/bot/global-flag.ts`
+`_shared/channel-sender.ts` · `_shared/deterministic-campaign-resolver.ts` · `_shared/customer-display-name.ts` · `_shared/bot/dedupe.ts` · `_shared/bot/global-flag.ts` · `_shared/bot/sofia-post-bill-routing.ts` (OCR conta/doc **sem** SIM no happy path)
+
+## OCR pós-anexo (2026-07)
+
+- OCR bom → avança sozinho (conta→doc; doc→próximo). Não mandar SIM/NÃO/EDITAR.
+- OCR fraco → `OCR_RETRY_*_SHORT` (só aquele anexo).
+- `confirmando_dados_*` = legado / edição explícita.

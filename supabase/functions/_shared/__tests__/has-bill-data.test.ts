@@ -76,3 +76,32 @@ Deno.test("resolveResumeStep: com foto, sem confirmação → confirmando_dados_
   });
   assertEquals(next, "confirmando_dados_conta");
 });
+
+Deno.test("resolveResumeStep: conta auto_ocr → pede doc (não volta ao SIM)", () => {
+  const next = resolveResumeStep({
+    name: "Jhenn",
+    electricity_bill_photo_url: "https://x/conta.jpg",
+    ocr_done: true,
+    bill_data_confirmed_at: "2026-07-29T12:00:00Z",
+    bill_data_confirmation_by: "auto_ocr",
+  });
+  assertEquals(next, "aguardando_doc_auto");
+});
+
+Deno.test("resolveResumeStep: conta+doc auto_ocr → próximo campo (não SIM doc)", () => {
+  const next = resolveResumeStep({
+    name: "Jhenn Brandao",
+    cpf: "52998224725",
+    electricity_bill_photo_url: "https://x/conta.jpg",
+    document_front_url: "https://x/cnh.jpg",
+    document_back_url: "nao_aplicavel",
+    document_type: "cnh",
+    ocr_done: true,
+    bill_data_confirmed_at: "2026-07-29T12:00:00Z",
+    bill_data_confirmation_by: "auto_ocr",
+    doc_data_confirmed_at: "2026-07-29T12:01:00Z",
+    doc_data_confirmation_by: "auto_ocr",
+  });
+  assertEquals(next === "confirmando_dados_doc", false);
+  assertEquals(next === "confirmando_dados_conta", false);
+});

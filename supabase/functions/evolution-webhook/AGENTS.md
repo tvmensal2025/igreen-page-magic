@@ -12,4 +12,4 @@ Whapi é o canal **primário**. Este webhook existe para consultores Evolution e
 - Importar `_shared/vendedora/`
 
 ## Shared canônico
-`_shared/bot/step-interaction.ts` · `holder-match.ts` · `confirmation-formatters.ts` · `channel-sender.ts`
+`_shared/bot/step-interaction.ts` · `holder-match.ts` · `confirmation-formatters.ts` · `channel-sender.ts` · `sofia-post-bill-routing.ts` (OCR sem SIM no happy path — espelhar Whapi)

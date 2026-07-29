@@ -1,12 +1,21 @@
 /**
  * Sofia Multicanal (Grupo A): após OCR da conta → documento direto.
  * Sem re-explicar economia (a3) nem pedir cadastrar de novo.
+ * Sem confirmação SIM/NÃO/EDITAR no caminho feliz (OCR bom).
  */
 
 import { isSofiaMulticanalCustomer } from "./cadastro-fixes.ts";
 import { safeFirstNameForAddress } from "../customer-display-name.ts";
 
 export const SOFIA_DOC_STEP_KEY = "a7_ask_document";
+
+/** Texto curto pedindo de novo a foto da conta (baixa confiança / OCR fraco). */
+export const OCR_RETRY_CONTA_SHORT =
+  "⚠️ Não consegui ler bem a conta. Envie de novo a *foto da conta de luz*, bem nítida e sem reflexo 📸";
+
+/** Texto curto pedindo de novo a foto do documento. */
+export const OCR_RETRY_DOC_SHORT =
+  "⚠️ Não consegui ler bem o documento. Envie de novo a *foto*, bem nítida e sem reflexo 📸";
 
 export type FlowStepRow = {
   id?: string;
@@ -42,24 +51,63 @@ export function buildSofiaDispatchNameVars(
   };
 }
 
+/** Marca conta como confirmada pelo sistema (OCR ok — sem SIM do lead). */
+export function markBillAutoConfirmed(updates: Record<string, unknown>): void {
+  if (!updates.bill_data_confirmed_at) {
+    updates.bill_data_confirmed_at = new Date().toISOString();
+  }
+  updates.bill_data_confirmation_by = "auto_ocr";
+}
+
+/** Marca documento como confirmado pelo sistema (OCR ok — sem SIM do lead). */
+export function markDocAutoConfirmed(updates: Record<string, unknown>): void {
+  if (!updates.doc_data_confirmed_at) {
+    updates.doc_data_confirmed_at = new Date().toISOString();
+  }
+  updates.doc_data_confirmation_by = "auto_ocr";
+}
+
 /**
  * Conta OCR ok → confirma automaticamente e despacha a7 (documento).
- * Retorna true se aplicou (Sofia A/C); false = caller segue fluxo legado.
+ * Retorna true se aplicou (Sofia A/C); false = caller segue fallback sem botões.
  */
-/**
- * DESATIVADO (2026-07-18): o cliente pediu que a confirmação dos dados
- * da conta seja SEMPRE feita pela pessoa (igual Fluxo D), nunca pelo bot.
- * Retornar `false` faz o caller cair no fluxo padrão `confirmando_dados_conta`
- * que envia botões SIM / NÃO / EDITAR ao lead e só avança quando ele responde
- * → simulação → "Quero me cadastrar" → documento → Portal → OTP → link facial.
- *
- * Mantido como no-op para preservar as importações existentes.
- */
-export async function advanceSofiaToDocumentAfterBill(_opts: {
-  customer: { flow_variant?: string | null; conversation_step?: string | null; name?: string | null };
+export async function advanceSofiaToDocumentAfterBill(opts: {
+  customer: {
+    flow_variant?: string | null;
+    conversation_step?: string | null;
+    name?: string | null;
+    name_source?: string | null;
+  };
   updates: Record<string, unknown>;
   dispatchStep: (stepKey: string, vars: Record<string, string>) => Promise<unknown>;
   logPrefix?: string;
 }): Promise<boolean> {
-  return false;
+  const merged = { ...opts.customer, ...opts.updates };
+  if (!isSofiaPostBillCadastro(merged)) return false;
+
+  markBillAutoConfirmed(opts.updates);
+  opts.updates.conversation_step = "aguardando_doc_auto";
+
+  const vars = buildSofiaDispatchNameVars(merged as {
+    name?: string | null;
+    name_source?: string | null;
+  });
+  try {
+    await opts.dispatchStep(SOFIA_DOC_STEP_KEY, vars);
+    opts.updates.__inline_sent = true;
+    console.log(
+      `[${opts.logPrefix || "sofia-post-bill"}] conta→documento direto (sem confirmação SIM) name=${vars["{{nome}}"]}`,
+    );
+    return true;
+  } catch (e) {
+    console.warn(`[sofia-post-bill] dispatch ${SOFIA_DOC_STEP_KEY} falhou:`, (e as Error).message);
+    return false;
+  }
+}
+
+/** Fallback não-Sofia: conta OCR ok → pede documento sem SIM/NÃO/EDITAR. */
+export function advanceGenericToDocumentAfterBill(updates: Record<string, unknown>): string {
+  markBillAutoConfirmed(updates);
+  updates.conversation_step = "aguardando_doc_auto";
+  return "📄 Conta recebida! Agora me envie a foto do seu *documento com foto*:\n\n🪪 *CNH* → só a *frente*\n🆔 *RG* → *frente e verso*\n\nFotos *nítidas*, por favor ✅";
 }

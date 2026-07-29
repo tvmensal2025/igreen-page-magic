@@ -103,6 +103,10 @@ import {
 } from "../../_shared/bot/cadastro-fixes.ts";
 import {
   advanceSofiaToDocumentAfterBill,
+  advanceGenericToDocumentAfterBill,
+  markDocAutoConfirmed,
+  OCR_RETRY_CONTA_SHORT,
+  OCR_RETRY_DOC_SHORT,
   isSofiaPostBillCadastro,
 } from "../../_shared/bot/sofia-post-bill-routing.ts";
 
@@ -207,6 +211,61 @@ async function applyOcrRetryReply(opts: {
     return "";
   }
   return finalText;
+}
+
+/**
+ * Após preencher campo da conta (nome/valor), avança ao doc sem SIM.
+ */
+async function autoAdvanceBillAfterFieldEdit(opts: {
+  customer: any;
+  updates: Record<string, unknown>;
+  dispatchStep: (k: string, v: Record<string, string>) => Promise<unknown>;
+  logPrefix: string;
+}): Promise<string> {
+  if (await advanceSofiaToDocumentAfterBill({
+    customer: opts.customer,
+    updates: opts.updates,
+    dispatchStep: opts.dispatchStep,
+    logPrefix: opts.logPrefix,
+  })) {
+    return "";
+  }
+  return advanceGenericToDocumentAfterBill(opts.updates);
+}
+
+/**
+ * OCR doc ok → avança sem pedir SIM/NÃO/EDITAR.
+ * Mantém checagem de titularidade (conta × doc) quando há mismatch.
+ */
+async function autoAdvanceAfterDocOcr(opts: {
+  customer: any;
+  updates: Record<string, unknown>;
+  remoteJid: string;
+  sendOptions: (jid: string, text: string, buttons: Array<{ id: string; title: string }>) => Promise<unknown>;
+}): Promise<string> {
+  const { customer, updates, remoteJid, sendOptions } = opts;
+  markDocAutoConfirmed(updates);
+  const mismatch = (updates.name_mismatch_flag ?? customer.name_mismatch_flag) === true;
+  const acked = updates.name_mismatch_acknowledged_at ?? customer.name_mismatch_acknowledged_at;
+  if (mismatch && !acked) {
+    updates.conversation_step = "confirmar_titularidade";
+    const bill = customer.bill_holder_name || updates.bill_holder_name || "—";
+    const doc = customer.doc_holder_name || updates.doc_holder_name || "—";
+    await sendOptions(
+      remoteJid,
+      `Antes de finalizar preciso confirmar:\n\n👤 Conta de luz: *${bill}*\n🪪 Documento: *${doc}*\n\nÉ a mesma pessoa?`,
+      [
+        { id: "titular_mesmo", title: "Mesma pessoa" },
+        { id: "titular_outro", title: "Outro titular" },
+        { id: "titular_corrigir", title: "Corrigir" },
+      ],
+    );
+    return "";
+  }
+  const merged = { ...customer, ...updates };
+  const next = await autoResolveCepIfNeeded(merged, updates);
+  updates.conversation_step = next;
+  return getReplyForStep(next, merged);
 }
 
 // ── Auto-resolve CEP from address data (avoid asking user) ──
@@ -4015,7 +4074,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               supabase, customer, updates, remoteJid, sendText, sendMedia,
               stepType: "capture_conta",
               attempts: tries,
-              defaultRetryText: `⚠️ Não consegui ler a conta com clareza suficiente (qualidade: ${confianca}%).\n\n📸 Por favor, envie uma *foto mais nítida e bem iluminada* da conta de energia.\n\nDicas:\n• Use boa iluminação\n• Evite reflexos\n• Foco nos dados principais\n• Tire em ambiente claro`,
+              defaultRetryText: OCR_RETRY_CONTA_SHORT,
               nomeRepresentante,
               conversationStep: "aguardando_conta",
               pauseReason: "ocr_conta_max_retries",
@@ -4048,7 +4107,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               supabase, customer, updates, remoteJid, sendText, sendMedia,
               stepType: "capture_conta",
               attempts: tries,
-              defaultRetryText: "⚠️ Recebi a conta, mas não consegui extrair os dados principais.\n\n📸 Envie uma *foto mais nítida* mostrando claramente:\n• Seu nome\n• Endereço\n• Distribuidora\n• Valor da conta",
+              defaultRetryText: OCR_RETRY_CONTA_SHORT,
               nomeRepresentante,
               conversationStep: "aguardando_conta",
               pauseReason: "ocr_conta_max_retries",
@@ -4153,7 +4212,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             break;
           }
 
-          // Sofia A: conta validada → documento direto (sem confirmar SIM / sem re-explicar a3).
+          // OCR conta ok → avança sozinho (sem SIM/NÃO/EDITAR). Sofia → a7; demais → doc genérico.
           if (await advanceSofiaToDocumentAfterBill({
             customer,
             updates,
@@ -4163,35 +4222,8 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             reply = "";
             break;
           }
-
-          updates.conversation_step = "confirmando_dados_conta";
-
-          // 🧪 testMode: pula a fila de revisão do consultor e envia a confirmação direto
-          if (isCustomerSandbox(customer)) {
-            const merged = { ...customer, ...updates };
-            await sendOptions(remoteJid, buildConfirmacaoConta(merged), [
-              { id: "sim_conta", title: "✅ SIM" },
-              { id: "nao_conta", title: "❌ NÃO" },
-              { id: "editar_conta", title: "✏️ EDITAR" },
-            ]);
-            reply = "";
-            break;
-          }
-
-          // 📌 REGRA DE NEGÓCIO (2026-06-19): capture_mode='manual' descontinuado —
-          // todos os leads seguem o fluxo automático para finalizar no Portal 2.
-
-
-          // Modo automático → manda direto pro cliente confirmar (com botões).
-          console.log(`[ocr-bill/whapi] 🤖 [auto] enviando confirmação direto pro cliente (customer=${customer.id})`);
-          const merged = { ...customer, ...updates };
-          await sendOptions(remoteJid, buildConfirmacaoConta(merged), [
-            { id: "sim_conta", title: "✅ SIM" },
-            { id: "nao_conta", title: "❌ NÃO" },
-            { id: "editar_conta", title: "✏️ EDITAR" },
-          ]);
-          updates.bill_data_confirmation_by = "awaiting_client";
-          reply = "";
+          reply = advanceGenericToDocumentAfterBill(updates);
+          console.log(`[ocr-bill/whapi] auto-advance conta→doc (sem confirmação) customer=${customer.id}`);
           break;
 
 
@@ -4217,7 +4249,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               supabase, customer, updates, remoteJid, sendText, sendMedia,
               stepType: "capture_conta",
               attempts: tries,
-              defaultRetryText: "⚠️ Não consegui ler a conta. Por favor, envie uma *foto mais nítida e bem iluminada* (sem reflexos).",
+              defaultRetryText: OCR_RETRY_CONTA_SHORT,
               nomeRepresentante,
               conversationStep: "aguardando_conta",
               pauseReason: "ocr_conta_max_retries",
@@ -4231,7 +4263,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               supabase, customer, updates, remoteJid, sendText, sendMedia,
               stepType: "capture_conta",
               attempts: tries,
-              defaultRetryText: "⚠️ Erro ao processar a conta. Tente enviar novamente.",
+              defaultRetryText: OCR_RETRY_CONTA_SHORT,
               nomeRepresentante,
               conversationStep: "aguardando_conta",
               pauseReason: "ocr_conta_max_retries",
@@ -4241,6 +4273,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     // ─── 3. CONFIRMANDO DADOS DA CONTA ──────────
+    // Legado: caminho feliz não entra mais aqui (auto-advance pós-OCR).
     case "confirmando_dados_conta": {
       const resp = isButton ? buttonId : messageText.toLowerCase().trim();
       console.log(`[post-confirm-conta] ENTER resp="${resp}" customer=${customer.id}`);
@@ -4290,15 +4323,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           if (_earlyDocStep) {
             console.log(`[post-confirm-conta] doc precoce → ${_earlyDocStep} (sem re-pedir foto)`);
             updates.conversation_step = _earlyDocStep;
-            if (_earlyDocStep === "confirmando_dados_doc") {
-              await sendOptions(remoteJid, buildEarlyDocConfirmMessage(_mergedEarly), [
-                { id: "sim_doc", title: "✅ SIM" },
-                { id: "nao_doc", title: "❌ NÃO" },
-                { id: "editar_doc", title: "✏️ EDITAR" },
-              ]);
-              reply = "";
+          if (_earlyDocStep === "confirmando_dados_doc") {
+              reply = await autoAdvanceAfterDocOcr({
+                customer: _mergedEarly,
+                updates,
+                remoteJid,
+                sendOptions,
+              });
             } else {
-              reply = "✅ Conta confirmada!\n\n📸 Agora envie o *VERSO do RG*.\n\nFormatos: JPG, PNG ou PDF";
+              reply = "✅ Conta recebida!\n\n📸 Agora envie o *VERSO do RG*.\n\nFormatos: JPG, PNG ou PDF";
             }
             break;
           }
@@ -4897,16 +4930,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           break;
         }
         updates.conversation_step = "confirmando_dados_doc";
-        const nome = updates.name || customer.name || "—";
-        const cpf = updates.cpf || customer.cpf || "—";
-        const rg = updates.rg || customer.rg || "—";
-        const nasc = updates.data_nascimento || customer.data_nascimento || "_(será preenchido pelo portal via CPF)_";
-        await sendOptions(remoteJid, `📋 *Dados extraídos da CNH:*\n\n👤 Nome: *${nome}*\n🆔 CPF: *${cpf}*\n🪪 RG: *${rg}*\n🎂 Nascimento: *${nasc}*\n\nEstá tudo correto?`, [
-          { id: "sim_doc", title: "✅ SIM" },
-          { id: "nao_doc", title: "❌ NÃO" },
-          { id: "editar_doc", title: "✏️ EDITAR" },
-        ]);
-        reply = "";
+        reply = await autoAdvanceAfterDocOcr({
+          customer,
+          updates,
+          remoteJid,
+          sendOptions,
+        });
       } else {
         updates.conversation_step = "aguardando_doc_verso";
         reply = "✅ Frente recebida!\n\n📸 Agora envie o *VERSO do RG*.\n\nFormatos: JPG, PNG ou PDF";
@@ -4977,12 +5006,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             reply = `📋 Consegui ler sua CNH${_nome ? `:\n\n👤 Nome: *${_nome}*` : ""}\n\nSó preciso do seu *CPF* pra continuar (apenas números):`;
             break;
           }
-          updates.conversation_step = "confirmando_dados_doc";
-          const merged = { ...customer, ...updates };
-          await sendOptions(remoteJid, buildConfirmacaoDoc(merged), [
-            { id: "sim_doc", title: "✅ SIM" }, { id: "nao_doc", title: "❌ NÃO" }, { id: "editar_doc", title: "✏️ EDITAR" },
-          ]);
-          reply = "";
+          reply = await autoAdvanceAfterDocOcr({
+            customer,
+            updates,
+            remoteJid,
+            sendOptions,
+          });
           break;
         }
         // RG → pede verso
@@ -5068,17 +5097,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           break;
         }
         updates.conversation_step = "confirmando_dados_doc";
-        const nome = updates.name || customer.name || "—";
-        const cpf = updates.cpf || customer.cpf || "—";
-        const rg = updates.rg || customer.rg || "—";
-        const nasc = updates.data_nascimento || customer.data_nascimento || "_(será preenchido pelo portal via CPF)_";
-        const chnConfirmMsg = `📋 *Dados extraídos da CNH:*\n\n👤 Nome: *${nome}*\n🆔 CPF: *${cpf}*\n🪪 RG: *${rg}*\n🎂 Nascimento: *${nasc}*\n\nEstá tudo correto?`;
-        await sendOptions(remoteJid, chnConfirmMsg, [
-          { id: "sim_doc", title: "✅ SIM" },
-          { id: "nao_doc", title: "❌ NÃO" },
-          { id: "editar_doc", title: "✏️ EDITAR" },
-        ]);
-        reply = "";
+        reply = await autoAdvanceAfterDocOcr({
+          customer,
+          updates,
+          remoteJid,
+          sendOptions,
+        });
         break;
       }
       updates.conversation_step = "aguardando_doc_verso";
@@ -5171,35 +5195,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           }
 
           updates.conversation_step = "confirmando_dados_doc";
-
-          // 🧪 testMode: pula a fila de revisão do consultor e envia a confirmação direto
-          if (isCustomerSandbox(customer)) {
-            const merged = { ...customer, ...updates };
-            await sendOptions(remoteJid, buildConfirmacaoDoc(merged), [
-              { id: "sim_doc", title: "✅ SIM" },
-              { id: "nao_doc", title: "❌ NÃO" },
-              { id: "editar_doc", title: "✏️ EDITAR" },
-            ]);
-            reply = "";
-            break;
-          }
-
-          // 📌 REGRA DE NEGÓCIO (2026-06-19): capture_mode='manual' descontinuado.
-          // Todos os leads seguem direto pra confirmação automática.
-
-
-          console.log(`[ocr-doc/whapi] 🤖 [auto] enviando confirmação direto pro cliente (customer=${customer.id})`);
-          const mergedDoc = { ...customer, ...updates };
-          await sendOptions(remoteJid, buildConfirmacaoDoc(mergedDoc), [
-            { id: "sim_doc", title: "✅ SIM" },
-            { id: "nao_doc", title: "❌ NÃO" },
-            { id: "editar_doc", title: "✏️ EDITAR" },
-          ]);
-          updates.doc_data_confirmation_by = "awaiting_client";
-          reply = "";
+          reply = await autoAdvanceAfterDocOcr({
+            customer,
+            updates,
+            remoteJid,
+            sendOptions,
+          });
           break;
-
-          reply = "";
         } else {
           console.error("❌ OCR doc falhou:", ocrData.erro);
           const tries = (customer.ocr_doc_attempts || 0) + 1;
@@ -5208,7 +5210,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               supabase, customer, updates, remoteJid, sendText, sendMedia,
               stepType: "capture_documento",
               attempts: tries,
-              defaultRetryText: "⚠️ Não consegui ler o documento. Envie uma foto mais nítida do *VERSO*.",
+              defaultRetryText: OCR_RETRY_DOC_SHORT,
               nomeRepresentante,
               conversationStep: "aguardando_doc_verso",
               pauseReason: "ocr_doc_max_retries",
@@ -5222,7 +5224,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               supabase, customer, updates, remoteJid, sendText, sendMedia,
               stepType: "capture_documento",
               attempts: tries,
-              defaultRetryText: "⚠️ Erro ao processar o documento. Tente enviar novamente.",
+              defaultRetryText: OCR_RETRY_DOC_SHORT,
               nomeRepresentante,
               conversationStep: "aguardando_doc_verso",
               pauseReason: "ocr_doc_max_retries",
@@ -5232,6 +5234,7 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     // ─── 6. CONFIRMANDO DADOS DOC ─────────
+    // Legado: caminho feliz não entra mais aqui (auto-advance pós-OCR).
     case "confirmando_dados_doc": {
       const resp = isButton ? buttonId : messageText.toLowerCase().trim();
       if (resp === "sim_doc" || resp === "sim" || resp === "s" || resp === "1" || resp === "ok" || resp === "correto" || resp === "✅") {
@@ -5367,12 +5370,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       if (v.length < 3) { reply = "❌ Nome muito curto. Digite o *nome completo*:"; break; }
       updates.name = v;
       updates.name_source = "user_confirmed";
-      updates.conversation_step = "confirmando_dados_conta";
-      const merged = { ...customer, ...updates };
-      await sendOptions(remoteJid, `✅ Nome atualizado: *${v}*\n\n` + buildConfirmacaoConta(merged), [
-        { id: "sim_conta", title: "✅ SIM" }, { id: "nao_conta", title: "❌ NÃO" }, { id: "editar_conta", title: "✏️ EDITAR" },
-      ]);
-      reply = "";
+      reply = await autoAdvanceBillAfterFieldEdit({
+        customer,
+        updates,
+        dispatchStep: (k, vars) => dispatchStepFromFlow(k, vars),
+        logPrefix: "edit-conta-nome/whapi",
+      });
       break;
     }
 
@@ -5499,12 +5502,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const val = (parseMoneyBR(messageText) ?? NaN);
       if (isNaN(val) || val < 30) { reply = "❌ Valor inválido. Digite um número (ex: 350,50):"; break; }
       updates.electricity_bill_value = val;
-      updates.conversation_step = "confirmando_dados_conta";
-      const merged = { ...customer, ...updates };
-      await sendOptions(remoteJid, `✅ Valor: *R$ ${formatBRL(val)}*\n\n` + buildConfirmacaoConta(merged), [
-        { id: "sim_conta", title: "✅ SIM" }, { id: "nao_conta", title: "❌ NÃO" }, { id: "editar_conta", title: "✏️ EDITAR" },
-      ]);
-      reply = "";
+      reply = await autoAdvanceBillAfterFieldEdit({
+        customer,
+        updates,
+        dispatchStep: (k, vars) => dispatchStepFromFlow(k, vars),
+        logPrefix: "edit-conta-valor/whapi",
+      });
       break;
     }
 
@@ -5614,6 +5617,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       if (cpfClean.length !== 11) { reply = "❌ CPF inválido. Digite os *11 números*:"; break; }
       if (!validarCPFDigitos(cpfClean)) { reply = "❌ CPF inválido. Verifique os números:"; break; }
       updates.cpf = cpfClean;
+      // OCR doc já veio, só faltava CPF → avança sem SIM (evita resume em confirmando_dados_doc).
+      const _docFront = String(customer.document_front_url || updates.document_front_url || "").trim();
+      if (_docFront && _docFront !== "evolution-media:pending") {
+        reply = await autoAdvanceAfterDocOcr({
+          customer,
+          updates,
+          remoteJid,
+          sendOptions,
+        });
+        break;
+      }
       const merged = { ...customer, ...updates };
       const next = await autoResolveCepIfNeeded(merged, updates);
       updates.conversation_step = next;
