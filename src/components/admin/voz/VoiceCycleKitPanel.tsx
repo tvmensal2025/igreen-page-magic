@@ -179,7 +179,7 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
       (supabase as any).from("daily_reheat_kit").select("*").eq("consultant_id", consultantId).maybeSingle(),
       supabase
         .from("voice_audio_clips")
-        .select("id, name, velip_audio_id, is_call_body, voice_id")
+        .select("id, name, velip_audio_id, is_call_body, voice_id, consultant_id")
         .in("consultant_id", clipOwners)
         .order("updated_at", { ascending: false })
         .limit(50),

@@ -71,13 +71,16 @@ export function ScheduleCallButton({
     const owners = await sofiaClipOwnerIds(consultantId);
     const { data } = await (supabase as any)
       .from("voice_audio_clips")
-      .select("id, name, duration_sec, voice_id")
+      .select("id, name, duration_sec, voice_id, consultant_id, is_call_body")
       .in("consultant_id", owners)
       .order("created_at", { ascending: false })
       .limit(40);
 
     const rows = ((data as ClipRow[]) ?? []).filter(
-      (c) => !c.voice_id || c.voice_id === VOICE_SOFIA,
+      (c) =>
+        (!c.voice_id || c.voice_id === VOICE_SOFIA) &&
+        // corpo de ligação de outro dono diz o nome dele — nunca oferecer
+        !((c as any).is_call_body && (c as any).consultant_id !== consultantId),
     );
     setClips(rows);
     if (!clipId && rows[0]) setClipId(rows[0].id);
