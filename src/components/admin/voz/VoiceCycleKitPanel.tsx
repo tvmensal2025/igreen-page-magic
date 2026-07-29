@@ -172,14 +172,16 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
 
   const load = useCallback(async () => {
     setLoading(true);
+    const clipOwners = await sofiaClipOwnerIds(consultantId);
     const [kitRes, clipsRes, toggleRes, settingsRes] = await Promise.all([
       (supabase as any).from("daily_reheat_kit").select("*").eq("consultant_id", consultantId).maybeSingle(),
       supabase
         .from("voice_audio_clips")
         .select("id, name, velip_audio_id, is_call_body, voice_id")
-        .eq("consultant_id", consultantId)
+        .in("consultant_id", clipOwners)
         .order("updated_at", { ascending: false })
         .limit(50),
+
       supabase.from("automation_toggles").select("enabled").eq("key", "daily_reheat").maybeSingle(),
       (supabase as any)
         .from("daily_reheat_settings")
