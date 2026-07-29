@@ -46,7 +46,6 @@ import {
 import { HelpHint } from "@/components/ui/help-hint";
 import { Badge } from "@/components/ui/badge";
 
-
 type Format = "a4" | "banner";
 
 export type BannerSpot = {
@@ -625,30 +624,96 @@ export function ConsultantBannerDownloadModal({
               </div>
             </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={mode === "spot" ? "default" : "outline"}
-                onClick={() => setMode("spot")}
-              >
-                Local (rastreio)
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={mode === "root" ? "default" : "outline"}
-                onClick={() => setMode("root")}
-              >
-                Banner geral (sem local)
-              </Button>
+            {/* ESCOLHA DE TIPO DE BANNER — EXPLICAÇÃO VISUAL */}
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Label className="text-sm">Qual tipo de banner você quer?</Label>
+                <HelpHint
+                  size={14}
+                  title="Banner geral ou banner com local?"
+                  summary="Escolha se quer rastrear de onde veio o lead"
+                  details={
+                    "Banner Geral: um único QR para tudo. Você sabe que o lead veio do banner, mas não sabe de qual lugar.\n\n" +
+                    "Banner com Local: um QR para cada ponto (posto, padaria, feira). Você sabe exatamente qual lugar trouxe cada lead.\n\n" +
+                    "Dica: use local sempre que quiser saber qual ponto de divulgação vale mais a pena."
+                  }
+                  example="Banner geral: igreen.cloud/rfd/130392 | Banner Posto Shell: igreen.cloud/rfd/130392/posto-shell"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Card: Banner com local */}
+                <button
+                  type="button"
+                  onClick={() => setMode("spot")}
+                  className={`text-left rounded-xl border p-3 transition-all ${
+                    mode === "spot"
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "border-border bg-card hover:border-primary/40"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="rounded-lg bg-primary/10 p-1.5">
+                        <MapPin className="h-4 w-4 text-primary" />
+                      </div>
+                      <span className="font-medium text-sm">Com local</span>
+                    </div>
+                    {mode === "spot" && (
+                      <Badge variant="default" className="text-[10px] h-5 px-1.5">
+                        selecionado
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Crie um QR para cada ponto físico: posto, padaria, feira,
+                    condomínio. Assim você sabe exatamente qual lugar trouxe cada
+                    lead.
+                  </p>
+                  <p className="text-[10px] font-mono text-primary mt-2 break-all">
+                    {`igreen.cloud/${initials || "rfd"}/${igreenId || "130392"}/posto-shell`}
+                  </p>
+                </button>
+
+                {/* Card: Banner geral */}
+                <button
+                  type="button"
+                  onClick={() => setMode("root")}
+                  className={`text-left rounded-xl border p-3 transition-all ${
+                    mode === "root"
+                      ? "border-primary bg-primary/5 ring-1 ring-primary"
+                      : "border-border bg-card hover:border-primary/40"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="rounded-lg bg-muted p-1.5">
+                        <LayoutGrid className="h-4 w-4 text-muted-foreground" />
+                      </div>
+                      <span className="font-medium text-sm">Geral</span>
+                    </div>
+                    {mode === "root" && (
+                      <Badge variant="default" className="text-[10px] h-5 px-1.5">
+                        selecionado
+                      </Badge>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground leading-relaxed">
+                    Um único QR para todos os lugares. Você sabe que o lead veio
+                    do banner, mas não sabe de qual ponto exato.
+                  </p>
+                  <p className="text-[10px] font-mono text-primary mt-2 break-all">
+                    {`igreen.cloud/${initials || "rfd"}/${igreenId || "130392"}`}
+                  </p>
+                </button>
+              </div>
             </div>
 
             {mode === "spot" ? (
               <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/30 p-3">
-                <Label className="text-sm flex items-center gap-1.5">
-                  <MapPin className="h-3.5 w-3.5" /> Locais cadastrados
-                </Label>
+                <div className="flex items-center gap-1.5 mb-1">
+                  <Store className="h-3.5 w-3.5 text-primary" />
+                  <Label className="text-sm">Locais cadastrados</Label>
+                </div>
                 {spots.length > 0 ? (
                   <div className="flex flex-wrap gap-1.5">
                     {spots.map((s) => (
@@ -675,7 +740,7 @@ export function ConsultantBannerDownloadModal({
 
                 <div className="grid gap-2 sm:grid-cols-2 pt-1">
                   <div>
-                    <Label className="text-[11px]">Palavra-chave / local</Label>
+                    <Label className="text-[11px]">Nome do local</Label>
                     <Input
                       value={newKeyword}
                       onChange={(e) => {
@@ -684,13 +749,16 @@ export function ConsultantBannerDownloadModal({
                           setNewCode(slugifyBannerSpotCode(e.target.value));
                         }
                       }}
-                      placeholder="Posto Shell Centro"
+                      placeholder="Ex.: Posto Shell Centro"
                       className="h-8 text-xs"
                     />
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      Esse nome aparece para você identificar de onde veio o lead.
+                    </p>
                   </div>
                   <div>
                     <Label className="text-[11px]">
-                      Código na URL (não mude depois)
+                      Código fixo na URL (não mude depois de imprimir)
                     </Label>
                     <Input
                       value={newCode}
@@ -700,6 +768,9 @@ export function ConsultantBannerDownloadModal({
                       placeholder="posto-shell-centro"
                       className="h-8 text-xs font-mono"
                     />
+                    <p className="text-[10px] text-muted-foreground mt-1">
+                      É o endereço do QR. Impresso uma vez, não muda mais.
+                    </p>
                   </div>
                 </div>
                 <Button
@@ -729,6 +800,10 @@ export function ConsultantBannerDownloadModal({
                       rows={3}
                       className="text-xs resize-none"
                     />
+                    <p className="text-[10px] text-muted-foreground">
+                      Mensagem que aparece no WhatsApp do cliente ao escanear.
+                      Pode editar depois sem reimprimir.
+                    </p>
                     <Button
                       type="button"
                       size="sm"
