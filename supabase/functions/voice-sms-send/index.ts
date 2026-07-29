@@ -108,11 +108,12 @@ Deno.serve(async (req) => {
   if (!consultantPhone) {
     const { data: c } = await admin
       .from("consultants")
-      .select("phone, whatsapp, notification_phone")
+      .select("phone, notification_phone")
       .eq("id", consultantId)
       .maybeSingle();
-    const row = (c ?? {}) as { phone?: string; whatsapp?: string; notification_phone?: string };
-    consultantPhone = normalizeWaPhoneDigits(row.whatsapp || row.phone || row.notification_phone);
+    const row = (c ?? {}) as { phone?: string; notification_phone?: string };
+    consultantPhone = normalizeWaPhoneDigits(row.phone || row.notification_phone);
+
     if (!consultantPhone) {
       console.warn("[voice-sms-send] consultor sem telefone — SMS sem link wa.me", consultantId);
     }
