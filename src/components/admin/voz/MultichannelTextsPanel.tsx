@@ -81,6 +81,7 @@ import {
   publishCadenceLibrary,
 } from "@/lib/syncCadenceToBotFlow";
 import { CadenceMissingAlert } from "@/components/admin/CadenceMissingAlert";
+import { ConsultantIdentityWizard } from "@/components/admin/ConsultantIdentityWizard";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -1446,6 +1447,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
 
   return (
     <div className="space-y-3">
+      <ConsultantIdentityWizard />
       <CadenceMissingAlert />
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border/50 pb-3">
         <div className="min-w-0">
