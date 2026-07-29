@@ -78,11 +78,14 @@ async function ensureVelipAudioForClip(
 ): Promise<{ audio_id: string; audio_url: string } | { error: string }> {
   const { data: clip } = await admin
     .from("voice_audio_clips")
-    .select("id, audio_url, name, velip_audio_id, consultant_id")
+    .select("id, audio_url, name, velip_audio_id, consultant_id, is_call_body")
     .eq("id", clipId)
     .maybeSingle();
   if (!clip?.audio_url) return { error: "clip_not_found" };
   if (clip.consultant_id && clip.consultant_id !== consultantId) {
+    // Corpo de ligação carrega a identidade gravada (nome do consultor).
+    // Nunca usar o de outro dono — bug "Abel ligou e a voz falou Rafael".
+    if (clip.is_call_body) return { error: "clip_identity_other_owner" };
     const { data: superRow } = await admin
       .from("settings")
       .select("value")
@@ -91,6 +94,7 @@ async function ensureVelipAudioForClip(
     const superId = String((superRow as { value?: string } | null)?.value || "");
     if (clip.consultant_id !== superId) return { error: "clip_not_found" };
   }
+
 
   if (clip.velip_audio_id) {
     return { audio_id: clip.velip_audio_id, audio_url: clip.audio_url };
