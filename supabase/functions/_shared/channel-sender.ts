@@ -245,8 +245,11 @@ export function isUnavailable(
 }
 
 /**
- * Resolve canal do lead; se origem offline, tenta failover Evolution↔Whapi
- * do mesmo consultor (plano Zero Lead Perdido — não perder o toque do dia).
+ * Resolve canal do lead; se origem offline, tenta failover **só no mesmo consultor**.
+ *
+ * NUNCA usa o token Whapi da plataforma (número do superadmin/Rafael) para
+ * consultor Evolution comum — isso vazava identidade no Zap errado
+ * (bug 2026-07-30: cadência da Sirlene → Lucas saiu no Whapi do Rafael).
  */
 export async function resolveChannelForCustomerWithFailover(
   supabase: any,
@@ -266,7 +269,7 @@ export async function resolveChannelForCustomerWithFailover(
 
   const originKind = (c?.origin_channel as string | null) || null;
 
-  // Failover → Evolution saudável do consultor
+  // Failover → Evolution saudável do **mesmo** consultor
   if (originKind !== "evolution" && env.evolutionUrl && env.evolutionKey) {
     const { data: inst } = await supabase
       .from("whatsapp_instances")
@@ -278,6 +281,7 @@ export async function resolveChannelForCustomerWithFailover(
     const status = String(inst?.status || "").toLowerCase();
     if (
       inst?.instance_name &&
+      !String(inst.instance_name).startsWith("whapi") &&
       !inst.manual_review_required &&
       !(inst.fatal_lock_until && new Date(inst.fatal_lock_until) > new Date()) &&
       (!status || HEALTHY_STATUSES.has(status))
@@ -294,16 +298,33 @@ export async function resolveChannelForCustomerWithFailover(
     }
   }
 
-  // Failover → Whapi
+  // Failover → Whapi SOMENTE se o consultor tiver instância whapi* própria.
+  // Token compartilhado = número do superadmin — proibido para terceiros.
   if (originKind !== "whapi" && env.whapiToken) {
-    const adapter = getAdapter({
-      kind: "whapi",
-      input: { apiToken: env.whapiToken, instanceName: "whapi-failover" },
-    });
-    return { kind: "whapi", instanceName: "whapi-failover", adapter };
+    const { data: whapiInst } = await supabase
+      .from("whatsapp_instances")
+      .select("instance_name, status, manual_review_required, fatal_lock_until")
+      .eq("consultant_id", consultantId)
+      .like("instance_name", "whapi%")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const status = String(whapiInst?.status || "").toLowerCase();
+    if (
+      whapiInst?.instance_name &&
+      !whapiInst.manual_review_required &&
+      !(whapiInst.fatal_lock_until && new Date(whapiInst.fatal_lock_until) > new Date()) &&
+      (!status || HEALTHY_STATUSES.has(status) || status === "auth")
+    ) {
+      const adapter = getAdapter({
+        kind: "whapi",
+        input: { apiToken: env.whapiToken, instanceName: whapiInst.instance_name },
+      });
+      return { kind: "whapi", instanceName: whapiInst.instance_name, adapter };
+    }
   }
 
-  // Sem origin: tentar qualquer canal saudável
+  // Sem origin: tentar canal saudável do próprio consultor (sem Whapi alheio)
   if (!originKind) {
     const legacy = await resolveChannel(supabase, consultantId, env);
     if (legacy) return legacy;
