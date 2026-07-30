@@ -2,12 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Loader2, QrCode } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import {
-  BannerNamesTable,
-  buildBannerNameRows,
-} from "@/components/admin/parceiros/BannerNamesTable";
+import { buildBannerNameRows } from "@/components/admin/parceiros/BannerNamesTable";
 import { buildPartnerPublicShortLink } from "@/lib/partnerShortLink";
-import { Card, CardContent } from "@/components/ui/card";
+import {
+  classifyPartnerCycleLeads,
+  type PartnerPortalCycleLeadRaw,
+} from "@/lib/partnerPortalCycle";
+import { PartnerPortalShell } from "@/components/parceiros-portal/PartnerPortalShell";
+import { PartnerPortalHero } from "@/components/parceiros-portal/PartnerPortalHero";
+import { PartnerPortalKpis } from "@/components/parceiros-portal/PartnerPortalKpis";
+import { PartnerPortalCycleSection } from "@/components/parceiros-portal/PartnerPortalCycleSection";
+import { PartnerPortalBanners } from "@/components/parceiros-portal/PartnerPortalBanners";
 
 type SpotRow = {
   id: string;
@@ -17,8 +22,8 @@ type SpotRow = {
 };
 
 /**
- * Página pública do parceiro — só os banners dele (token opaco).
- * Rota: /p/:token — dados via RPC SECURITY DEFINER (sem PII).
+ * Página pública do parceiro — pizzas A/B/C + banners.
+ * Rota: /p/:token — RPC SECURITY DEFINER (PII só com token secreto).
  */
 export default function PartnerBannerPortalPage() {
   const { token } = useParams<{ token: string }>();
@@ -31,6 +36,7 @@ export default function PartnerBannerPortalPage() {
   const [rootScans, setRootScans] = useState(0);
   const [scanByCode, setScanByCode] = useState<Record<string, number>>({});
   const [leadByKw, setLeadByKw] = useState<Record<string, number>>({});
+  const [cycleRaw, setCycleRaw] = useState<PartnerPortalCycleLeadRaw[]>([]);
 
   useEffect(() => {
     const t = String(token || "").trim();
@@ -55,6 +61,7 @@ export default function PartnerBannerPortalPage() {
           spots?: SpotRow[];
           scans?: Array<{ event_target?: string }>;
           leads?: Array<{ referral_keyword_matched?: string | null }>;
+          cycle_leads?: PartnerPortalCycleLeadRaw[];
         } | null;
         if (!payload?.ok) {
           setError(
@@ -69,6 +76,7 @@ export default function PartnerBannerPortalPage() {
         setShortCode(String(payload.partner?.short_code || ""));
         setRefLabel(String(payload.ref || ""));
         setSpots(Array.isArray(payload.spots) ? payload.spots : []);
+        setCycleRaw(Array.isArray(payload.cycle_leads) ? payload.cycle_leads : []);
 
         const short = String(payload.partner?.short_code || "");
         let root = 0;
@@ -102,6 +110,47 @@ export default function PartnerBannerPortalPage() {
     };
   }, [token]);
 
+  useEffect(() => {
+    const prevTitle = document.title;
+    const existing = document.querySelector('meta[name="robots"]');
+    const prevRobots = existing?.getAttribute("content");
+    let createdMeta = false;
+    let meta = existing;
+    if (!meta) {
+      meta = document.createElement("meta");
+      meta.setAttribute("name", "robots");
+      document.head.appendChild(meta);
+      createdMeta = true;
+    }
+    document.title = partnerName
+      ? `${partnerName} · Portal Parceiro iGreen`
+      : "Portal Parceiro iGreen";
+    meta.setAttribute("content", "noindex, nofollow");
+    return () => {
+      document.title = prevTitle;
+      if (createdMeta) {
+        meta?.remove();
+      } else if (prevRobots != null) {
+        meta?.setAttribute("content", prevRobots);
+      } else {
+        meta?.removeAttribute("content");
+      }
+    };
+  }, [partnerName]);
+
+  const cycleLeads = useMemo(
+    () => classifyPartnerCycleLeads(cycleRaw),
+    [cycleRaw],
+  );
+
+  const countA = cycleLeads.filter((l) => l.group === "A").length;
+  const countB = cycleLeads.filter((l) => l.group === "B").length;
+  const countC = cycleLeads.filter((l) => l.group === "C").length;
+
+  const totalLeituras =
+    rootScans + Object.values(scanByCode).reduce((a, b) => a + b, 0);
+  const totalLeads = Object.values(leadByKw).reduce((a, b) => a + b, 0);
+
   const rows = useMemo(
     () =>
       buildBannerNameRows({
@@ -110,9 +159,7 @@ export default function PartnerBannerPortalPage() {
         scanByCode,
         leadByKeyword: leadByKw,
       }).map((r) =>
-        r.kind === "geral"
-          ? { ...r, name: `Geral · ${partnerName}` }
-          : r,
+        r.kind === "geral" ? { ...r, name: `Geral · ${partnerName}` } : r,
       ),
     [rootScans, spots, scanByCode, leadByKw, partnerName],
   );
@@ -124,65 +171,48 @@ export default function PartnerBannerPortalPage() {
 
   if (loading) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center text-muted-foreground gap-2">
-        <Loader2 className="h-5 w-5 animate-spin" />
-        Carregando seus banners…
-      </div>
+      <PartnerPortalShell>
+        <div className="min-h-[70vh] flex items-center justify-center text-emerald-100/60 gap-2">
+          <Loader2 className="h-5 w-5 animate-spin text-emerald-400" />
+          Carregando seu portal…
+        </div>
+      </PartnerPortalShell>
     );
   }
 
   if (error) {
     return (
-      <div className="min-h-[60vh] flex items-center justify-center p-6">
-        <Card className="max-w-md w-full">
-          <CardContent className="p-6 text-center space-y-2">
-            <QrCode className="h-8 w-8 mx-auto text-muted-foreground" />
-            <p className="font-semibold">{error}</p>
-            <p className="text-sm text-muted-foreground">
+      <PartnerPortalShell>
+        <div className="min-h-[70vh] flex items-center justify-center p-6">
+          <div className="max-w-md w-full rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center space-y-3">
+            <QrCode className="h-8 w-8 mx-auto text-emerald-400/70" />
+            <p className="font-heading font-semibold text-white text-lg">{error}</p>
+            <p className="text-sm text-emerald-100/50">
               Peça um novo link ao seu consultor iGreen.
             </p>
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
+      </PartnerPortalShell>
     );
   }
 
   return (
-    <div className="min-h-[100dvh] bg-background">
-      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
-        <div>
-          <h1 className="text-xl font-heading font-bold flex items-center gap-2">
-            <QrCode className="h-5 w-5 text-primary" />
-            Banners de {partnerName}
-          </h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Só os seus resultados. QR vivo — o consultor pode mudar a frase sem
-            reimprimir.
-          </p>
-          {rootUrl && (
-            <p className="text-[11px] font-mono text-muted-foreground mt-2 break-all">
-              {rootUrl}
-            </p>
-          )}
-        </div>
-
-        <BannerNamesTable
-          rows={rows}
-          title="Nome | leituras | leads"
-          emptyHint="Ainda sem leituras. Divulgue seu QR."
-        />
-
-        <Card>
-          <CardContent className="p-4 text-xs text-muted-foreground space-y-1">
-            <p>
-              Locais nomeados (
-              {spots.filter((s) => s.is_active !== false).length}): o consultor
-              cria na Central de Banners.
-            </p>
-            <p>Arquivados continuam no histórico e não somem.</p>
-          </CardContent>
-        </Card>
-      </div>
-    </div>
+    <PartnerPortalShell>
+      <PartnerPortalHero partnerName={partnerName} />
+      <PartnerPortalKpis
+        leituras={totalLeituras}
+        leads={totalLeads}
+        countA={countA}
+        countB={countB}
+        countC={countC}
+      />
+      <PartnerPortalCycleSection leads={cycleLeads} />
+      <PartnerPortalBanners rows={rows} />
+      {rootUrl && (
+        <p className="pb-10 px-4 text-center text-[10px] font-mono text-emerald-100/30 break-all">
+          QR vivo · {rootUrl}
+        </p>
+      )}
+    </PartnerPortalShell>
   );
 }

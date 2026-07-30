@@ -116,7 +116,12 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
 - Meus: Geral + `consultant_banner_spots` + `BannersDashboard` + tabela Nome|leituras|leads.
 - Parceiros: `PartnerBannersPanel` + tabela `referral_partner_banner_spots` (nome obrigatório, arquivar, CSV, link `/p/{portal_token}`).
 - Ranking: `BannersRanking` unifica seus + parceiros.
-- Página do parceiro: `PartnerBannerPortalPage` + RPC `get_partner_banner_portal`.
+- Página do parceiro: `PartnerBannerPortalPage` (`/p/{portal_token}`) + RPC `get_partner_banner_portal`.
+  - Visual dark premium (`src/components/parceiros-portal/*`): hero, KPIs, **pizzas A/B/C**, banners.
+  - RPC devolve `cycle_leads` **só elegíveis** (filtros SQL ≈ `isCycleLeadEligible` + exige stage ou fila do dia) com nome, `phone_whatsapp`, stage, fila (`queue_queue`/`queue_step`), pós-venda.
+  - Classificação: `src/lib/partnerPortalCycle.ts` (fila diária prioriza; sem stage/fila → fora da pizza).
+  - Clique na fatia: nome + telefone (`tel:`) + **aviso da etapa** (+ próximo toque).
+  - Meta `noindex,nofollow` com cleanup no unmount. Aviso “Link privado — não compartilhe”.
 - Telemetria `qr-redirect`: `banner_root` / `banner_spot:{code}` / `partner:{short}` / `partner:{short}:{spot}`.
 - Keywords espelho em `consultants.banner_keywords` e `referral_partners.keywords` — sync **une** (nunca remove histórico ao arquivar).
 - Limiar `banner_alert_threshold` no parceiro (0=off) — base para alerta WA futuro.
