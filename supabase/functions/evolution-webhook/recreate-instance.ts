@@ -32,20 +32,9 @@ export const SAFE_EVOLUTION_INSTANCE_SETTINGS = {
 const SUPABASE_URL_ENV = Deno.env.get("SUPABASE_URL") || "";
 const WEBHOOK_URL = `${SUPABASE_URL_ENV.replace(/\/+$/, "")}/functions/v1/evolution-webhook`;
 
+/** Nome canônico: `igreen-{12 hex}` — remove sufixo legado `-YYYYMMDDHHmm` se existir. */
 function baseNameOf(instanceName: string): string {
   return instanceName.replace(/-\d{8,14}$/, "");
-}
-
-function newInstanceName(oldName: string): string {
-  const d = new Date();
-  const pad = (n: number) => String(n).padStart(2, "0");
-  const stamp =
-    d.getUTCFullYear().toString() +
-    pad(d.getUTCMonth() + 1) +
-    pad(d.getUTCDate()) +
-    pad(d.getUTCHours()) +
-    pad(d.getUTCMinutes());
-  return `${baseNameOf(oldName)}-${stamp}`;
 }
 
 export async function recreateInstance(
@@ -114,8 +103,13 @@ export async function recreateInstance(
     console.warn(`[recreateInstance] rate-limit check falhou: ${e?.message}`);
   }
 
-  const newName = newInstanceName(oldInstanceName);
-  console.log(`♻️ Recriando instância Evolution: ${oldInstanceName} → ${newName} (trigger=${triggeredBy}, reason=${reason ?? "-"})`);
+  // Nome FIXO (mesmo consultor = mesma instância). Sufixo timestamp gerava
+  // multi-QR / zumbis e acelerava ban (Abel 2026-07-28). Se old já era fresh,
+  // normaliza para base `igreen-{slug}`.
+  const newName = baseNameOf(oldInstanceName);
+  console.log(
+    `♻️ Recriando instância Evolution: ${oldInstanceName} → ${newName} (trigger=${triggeredBy}, reason=${reason ?? "-"}; nome fixo)`,
+  );
 
   try {
     const r = await fetchWithTimeout(`${baseUrl}/instance/delete/${oldInstanceName}`, {
@@ -127,6 +121,21 @@ export async function recreateInstance(
     console.log(`[recreateInstance] DELETE ${oldInstanceName} → ${r.status}`);
   } catch (e: any) {
     console.warn(`[recreateInstance] DELETE falhou (ok, seguindo): ${e?.message}`);
+  }
+
+  // Se normalizou nome (tirou sufixo legado), apaga também o canônico caso exista zumbi.
+  if (newName !== oldInstanceName) {
+    try {
+      const r = await fetchWithTimeout(`${baseUrl}/instance/delete/${newName}`, {
+        method: "DELETE",
+        headers,
+        timeout: 10_000,
+      });
+      await r.text().catch(() => "");
+      console.log(`[recreateInstance] DELETE canônico ${newName} → ${r.status}`);
+    } catch (e: any) {
+      console.warn(`[recreateInstance] DELETE canônico falhou (ok): ${e?.message}`);
+    }
   }
 
   let createBody: any = null;

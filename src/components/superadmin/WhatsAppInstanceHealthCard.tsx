@@ -56,7 +56,10 @@ export function WhatsAppInstanceHealthCard() {
   };
 
   const recreate = async (instance: string) => {
-    if (!confirm(`Deletar a instância ${instance} no WhatsApp e criar uma NOVA (mesmo consultor)? O usuário precisará escanear um novo QR.`)) return;
+    if (!confirm(
+      `Recriar ${instance} com o MESMO nome (apaga sessão no Evolution e gera QR novo)? ` +
+      `Use só se o chip estiver saudável no app oficial. Após ban/403, NÃO reconecte — aguarde e peça admin_clear_fatal_lock.`,
+    )) return;
     setBusy(instance);
     const { data, error } = await supabase.functions.invoke("evolution-instance-reconnect", {
       body: { instanceName: instance, recreate: true },
@@ -65,8 +68,8 @@ export function WhatsAppInstanceHealthCard() {
     if (error) toast({ title: "Falha ao recriar", description: error.message, variant: "destructive" });
     else {
       toast({
-        title: "Instância recriada",
-        description: `Nova: ${(data as any)?.new_instance_name ?? "?"}. Peça ao consultor para escanear o QR.`,
+        title: "Instância recriada (nome fixo)",
+        description: `${(data as any)?.new_instance_name ?? instance}. Peça ao consultor para escanear o QR.`,
       });
       load();
     }

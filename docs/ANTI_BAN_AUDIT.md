@@ -113,6 +113,8 @@ O sistema está no padrão usado por empresas grandes que vendem **Evolution/Bai
 
 **2026-07-30:** restaurado hard-lock fatal (camadas 2+8) após regressão de 04/07 que fazia `recreateInstance` automático em 403. Princípio: **número do consultor (anos) > UX de reconnect**. Create de instância passa settings seguros (`rejectCall`, `groupsIgnore`, sem `syncFullHistory` / `alwaysOnline`). **Sem proxy Evomi** no Evolution (custo GB contínuo); proteção principal = não loop de QR.
 
+**2026-07-30 (varredura):** `createAndConnect` e `recreateInstance(manual_admin)` usam **nome fixo** `igreen-{slug}` (sem sufixo timestamp). Zumbis multi-instância no host Evolution foram apagados; settings seguros aplicados nas que restaram.
+
 Próximo nível de proteção só existe abandonando a stack atual e indo para WhatsApp Cloud API oficial — decisão de produto, não de engenharia.
 
 ## 8. Caps outreach A/B/C (2026-07)
