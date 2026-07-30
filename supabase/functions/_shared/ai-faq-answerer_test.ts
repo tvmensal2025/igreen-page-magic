@@ -3,8 +3,8 @@
 // que decide a igualdade. O caminho com `supabase` é mockado em testes
 // de integração no nível do webhook (PBT 2.32 do bugfix.md).
 
-import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { normalizeFaqQuestion } from "./ai-faq-answerer.ts";
+import { assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import { normalizeFaqQuestion, buildFaqSystemPrompt } from "./ai-faq-answerer.ts";
 
 Deno.test("normalizeFaqQuestion: lowercase + trim", () => {
   assertEquals(normalizeFaqQuestion("  Quanto Custa  "), "quanto custa");
@@ -46,8 +46,6 @@ Deno.test("normalizeFaqQuestion: case + diacríticos juntos", () => {
   // "É caro?" deve casar com "e caro" se cadastrado.
   assertEquals(normalizeFaqQuestion("É caro?"), "e caro");
 });
-
-import { buildFaqSystemPrompt } from "./ai-faq-answerer.ts";
 
 Deno.test("buildFaqSystemPrompt: usa a identidade do consultor, nunca 'Rafael' fixo", () => {
   const p = buildFaqSystemPrompt({ assistantName: "Bia", consultantLabel: "Abel" });
