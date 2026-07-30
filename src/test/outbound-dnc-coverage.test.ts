@@ -31,12 +31,20 @@ const REQUIRED = [
   "voice-sms-send/index.ts",
   "voice-dialer-enqueue/index.ts",
   "_shared/bot/outbound-gate.ts",
+  // AUD-005 buracos fechados 2026-07-30
+  "finalize-capture/index.ts",
+  "recover-stuck-otp/index.ts",
+  "worker-callback/index.ts",
+  "pos-venda-auto-progress/index.ts",
 ] as const;
 
 function hasGate(src: string): boolean {
   return (
     src.includes("assertCanContact") ||
-    src.includes("assertBotOutboundAllowed")
+    src.includes("assertBotOutboundAllowed") ||
+    // Pós-venda: isPausedByPhone já cobre do_not_contact (+ humano).
+    // NÃO exige assertBotOutboundAllowed (pós-venda ignora bot_global).
+    src.includes("isPausedByPhone")
   );
 }
 

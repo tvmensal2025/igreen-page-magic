@@ -3,6 +3,7 @@ import { createEvolutionSender } from "../_shared/evolution-api.ts";
 import { createWhapiSender } from "../_shared/whapi-api.ts";
 import { toWhatsAppChatId } from "../_shared/resolve-whatsapp-chat-id.ts";
 import { captureError } from "../_shared/sentry.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -92,7 +93,19 @@ Deno.serve(async (req) => {
     if (phone && !phone.startsWith("55")) phone = "55" + phone;
     const remoteJid = toWhatsAppChatId(phone);
 
-    async function sendWhatsApp(message: string) {
+    async function sendWhatsApp(message: string, idempotencyKey: string) {
+      // Só DNC — não bot_global (portal/OTP/facial não pode morrer no kill switch).
+      const suppression = await assertCanContact(supabase, {
+        customerId: customer_id,
+        consultantId: customer.consultant_id,
+        phone,
+        channel: "whatsapp",
+      });
+      if (!suppression.allowed) {
+        console.warn(`[worker-callback] blocked key=${idempotencyKey}: ${suppression.reason}`);
+        return;
+      }
+
       // Tentar Evolution API primeiro
       if (evolutionUrl && evolutionKey && instanceName) {
         const _raw = createEvolutionSender(evolutionUrl, evolutionKey, instanceName);
@@ -101,6 +114,8 @@ Deno.serve(async (req) => {
         const ok = await sendText(remoteJid, message, {
           supabase,
           customerId: customer_id,
+          consultantId: customer.consultant_id || undefined,
+          idempotencyKey,
         } as any);
         if (ok) return;
       }
@@ -117,6 +132,7 @@ Deno.serve(async (req) => {
             supabase,
             customerId: customer_id,
             consultantId: customer.consultant_id || undefined,
+            idempotencyKey,
           } as any,
         });
         if (!ok) console.error("❌ Whapi sendText retornou false");
@@ -129,13 +145,19 @@ Deno.serve(async (req) => {
 
     switch (action) {
       case "otp_required": {
+        // Callback repetido do worker: já em aguardando_otp → não reenvia.
+        if (customer.conversation_step === "aguardando_otp") {
+          console.log("[worker-callback] otp_required dedup — já em aguardando_otp");
+          break;
+        }
         updates.status = "awaiting_otp";
         updates.conversation_step = "aguardando_otp";
         await supabase.from("customers").update(updates).eq("id", customer_id);
         await sendWhatsApp(
           "📱 *Código de verificação necessário!*\n\n" +
           "Você vai receber um código no seu *WhatsApp*.\n\n" +
-          "Quando receber, *digite o código aqui* para continuarmos o cadastro."
+          "Quando receber, *digite o código aqui* para continuarmos o cadastro.",
+          `worker-cb:otp:${customer_id}`,
         );
         break;
       }
@@ -155,12 +177,20 @@ Deno.serve(async (req) => {
           "🔗 Falta apenas a *validação facial*.\n\n" +
           `Clique no link abaixo e siga as instruções:\n${signing_url}\n\n` +
           "📸 Será necessário tirar uma selfie.\n\n" +
-          "Se tiver dúvidas, responda aqui!"
+          "Se tiver dúvidas, responda aqui!",
+          `worker-cb:sign:${customer_id}:${String(signing_url).slice(-48)}`,
         );
         break;
       }
 
       case "registration_complete": {
+        if (
+          customer.status === "registered_igreen" ||
+          customer.conversation_step === "cadastro_em_analise"
+        ) {
+          console.log("[worker-callback] registration_complete dedup — já concluído");
+          break;
+        }
         updates.status = "registered_igreen";
         updates.conversation_step = "cadastro_em_analise";
         if (body.igreen_code) updates.igreen_code = body.igreen_code;
@@ -171,7 +201,8 @@ Deno.serve(async (req) => {
         await sendWhatsApp(
           "🎉 *Parabéns! Seu cadastro na iGreen Energy foi concluído!*\n\n" +
           "☀️ Em breve você começará a economizar na sua conta de luz.\n\n" +
-          "Um consultor entrará em contato com mais detalhes. Obrigado!"
+          "Um consultor entrará em contato com mais detalhes. Obrigado!",
+          `worker-cb:done:${customer_id}`,
         );
         break;
       }
@@ -209,7 +240,8 @@ Deno.serve(async (req) => {
             ? "Recebi seus dados ✅\n\nA validação pediu uma revisão humana antes de concluir. Um consultor vai te chamar por aqui em breve 👍"
             : "⚠️ Tivemos um problema técnico ao processar seu cadastro.\n\n" +
               "Não se preocupe! Um consultor vai entrar em contato para concluir manualmente.\n\n" +
-              "Obrigado pela paciência! 🙏"
+              "Obrigado pela paciência! 🙏",
+          `worker-cb:error:${customer_id}:${portalHuman ? "human" : "tech"}`,
         );
         break;
       }

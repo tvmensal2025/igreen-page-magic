@@ -13,6 +13,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizePhone } from "../_shared/utils.ts";
 import { createWhapiSender, parseWhapiMessage, resolveInboundConversationMeta } from "../_shared/whapi-api.ts";
 import { checkAndMarkProcessed, logStepTransition, jsonLog } from "../_shared/audit.ts";
+import { isRateLimited, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS } from "./_helpers.ts";
 import { runBotFlow } from "./handlers/bot-flow.ts";
 import { runConversationalFlow, CADASTRO_STEPS } from "./handlers/conversational/index.ts";
 import { normalizeOutgoing, stripPrefix } from "./handlers/step-namespace.ts";
@@ -425,6 +426,21 @@ Deno.serve(async (req) => {
     }
 
     const phone = normalizePhone(remoteJid.replace("@s.whatsapp.net", ""));
+    // Anti-flood (paridade Evolution): >RATE_LIMIT_MAX msgs no WINDOW → silêncio.
+    // Dedup cobre retry do provedor; isto cobre burst com IDs diferentes.
+    if (phone && isRateLimited(phone)) {
+      console.warn(
+        `🚫 [whapi] Rate limited: ${phone} (>${RATE_LIMIT_MAX} msgs em ${RATE_LIMIT_WINDOW_MS}ms)`,
+      );
+      jsonLog("warn", "rate_limit_checked", {
+        phone,
+        channel: "whapi",
+        rate_limited: true,
+      });
+      return new Response(JSON.stringify({ ok: true, msg: "rate_limited" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const phoneLocal = phone.startsWith("55") ? phone.slice(2) : phone;
 
     // ─── Demo pós-venda (Venda da plataforma — só alvos piloto) ─────────

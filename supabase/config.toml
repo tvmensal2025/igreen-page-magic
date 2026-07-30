@@ -373,6 +373,10 @@ verify_jwt = false
 [functions.crm-auto-progress]
 verify_jwt = false
 
+# Recon iGreen — auth híbrida dentro da função (assertCronAuth OU admin JWT).
+[functions.recon-igreen-worker]
+verify_jwt = false
+
 # Venda da plataforma (SuperAdmin) — JWT do usuário; dry_run default.
 [functions.platform-sales-dispatch]
 verify_jwt = false

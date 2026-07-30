@@ -8,6 +8,7 @@ import { dispatchPortalWorker } from "../_shared/portal-worker.ts";
 import { validateForPortal, PORTAL_FIELDS } from "../_shared/portalValidation.ts";
 import { notifyPartnerStep } from "../_shared/notify-consultant.ts";
 import { preflightPortalDocuments } from "../_shared/storage-download.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -37,6 +38,18 @@ async function sendWhatsAppNotice(supabase: any, customer: any) {
 
     const phone = String(customer.whatsapp_chat_id || customer.phone_whatsapp || "").replace(/\D/g, "");
     if (!phone) return;
+    // Só DNC/supressão — NÃO assertBotOutboundAllowed (bot_global não pode
+    // cortar aviso transacional de OTP no meio do portal).
+    const suppression = await assertCanContact(supabase, {
+      customerId: customer.id,
+      phone,
+      consultantId: customer.consultant_id,
+      channel: "whatsapp",
+    });
+    if (!suppression.allowed) {
+      console.warn(`[finalize-capture] notice blocked: ${suppression.reason}`);
+      return;
+    }
     const text =
       "✅ *Todos os dados coletados!* 🎉\n\n" +
       "⏳ Estamos enviando seu cadastro para o portal da iGreen…\n\n" +

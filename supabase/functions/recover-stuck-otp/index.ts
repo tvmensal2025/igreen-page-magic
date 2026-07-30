@@ -4,6 +4,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -124,6 +125,18 @@ Deno.serve(async (req) => {
 
     if (!instance?.instance_name) {
       results.push({ id: lead.id, sent: false, reason: "no_instance" });
+      continue;
+    }
+
+    // DNC do lead — não usa assertBotOutboundAllowed (OTP em cadastro ativo).
+    const suppression = await assertCanContact(supabase, {
+      customerId: lead.id,
+      consultantId: lead.consultant_id,
+      phone: lead.phone_whatsapp,
+      channel: "whatsapp",
+    });
+    if (!suppression.allowed) {
+      results.push({ id: lead.id, sent: false, reason: suppression.reason ?? "blocked" });
       continue;
     }
 
