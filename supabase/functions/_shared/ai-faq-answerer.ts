@@ -18,6 +18,10 @@ import { aiChatCascade } from "./ai-gateway.ts";
 import { trackAIUsage } from "./ai-cost-tracker.ts";
 import { formatFaqReply, withSoftFlowClose } from "./format-reply.ts";
 import { resolveFlowId } from "./resolve-flow.ts";
+import {
+  resolveConsultantPresentationLabel,
+  resolveAssistantDisplayName,
+} from "./consultant-public-label.ts";
 
 export interface FaqAnswer {
   text: string;
@@ -31,9 +35,28 @@ interface KnowledgeSection {
   content: string;
 }
 
-const SYSTEM_PROMPT = `Você é o Rafael, atendente sênior da iGreen Energy respondendo dúvidas de leads no WhatsApp. Sua missão é esclarecer a dúvida com precisão e elegância — sem pressão comercial.
+/**
+ * Persona do FAQ — SEMPRE dinâmica.
+ *
+ * Bug 2026-07: o prompt fixava "Você é o Rafael", então a IA de QUALQUER
+ * consultor (Abel, Janete, Silvia…) se apresentava como Rafael ao lead.
+ * Agora a identidade vem do próprio consultor: nome da IA (`assistant_name`)
+ * + label público seguro (`resolveConsultantPresentationLabel`).
+ */
+export function buildFaqSystemPrompt(opts: {
+  assistantName?: string | null;
+  consultantLabel?: string | null;
+}): string {
+  const assistant = resolveAssistantDisplayName(opts.assistantName);
+  const consultant = String(opts.consultantLabel || "").trim();
+  const identidade = consultant
+    ? `Você é ${assistant}, assistente de ${consultant} na iGreen Energy`
+    : `Você é ${assistant}, assistente da iGreen Energy`;
+
+  return `${identidade}, respondendo dúvidas de leads no WhatsApp. Sua missão é esclarecer a dúvida com precisão e elegância — sem pressão comercial.
 
 REGRAS RÍGIDAS:
+0. IDENTIDADE: você se chama *${assistant}*${consultant ? ` e atende em nome de *${consultant}*` : ""}. NUNCA use outro nome próprio para se apresentar, nem invente o nome do consultor.
 1. Responda APENAS com base no CONHECIMENTO fornecido + no contexto da conversa. NUNCA invente preços, prazos, taxas, distribuidoras, números ou benefícios que não estejam ali.
 2. Resposta clara e completa: 2 a 4 frases curtas. Separe ideias com quebra de linha (use \\n\\n entre parágrafos). No máximo 1 emoji simples — preferível nenhum.
 3. Formatação WhatsApp: use *negrito* só em 1–2 termos importantes (ex.: *iGreen*, *sem fidelidade*). NÃO use markdown de título (#), listas longas nem links desnecessários.
@@ -44,6 +67,36 @@ REGRAS RÍGIDAS:
 8. NUNCA mencione áudio, vídeo ou que vai "mandar de novo" o material. Você está respondendo só com texto.
 
 Retorne JSON: {"text": "...", "confidence": 0.0-1.0, "shouldHandoff": true|false}`;
+}
+
+/**
+ * Carrega identidade do consultor (IA + label público). Fail-open: erro de
+ * banco vira persona genérica, nunca a persona de outro consultor.
+ */
+export async function resolveFaqPersona(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  consultantId?: string | null,
+): Promise<{ assistantName: string; consultantLabel: string }> {
+  if (!consultantId) {
+    return { assistantName: resolveAssistantDisplayName(null), consultantLabel: "" };
+  }
+  try {
+    const { data } = await supabase
+      .from("consultants")
+      .select("name, display_name, assistant_name")
+      .eq("id", consultantId)
+      .maybeSingle();
+    return {
+      assistantName: resolveAssistantDisplayName(data?.assistant_name),
+      consultantLabel: resolveConsultantPresentationLabel(data?.name, data?.display_name),
+    };
+  } catch (e) {
+    console.warn("[ai-faq-answerer] persona lookup failed:", (e as Error).message);
+    return { assistantName: resolveAssistantDisplayName(null), consultantLabel: "" };
+  }
+}
+
 
 
 /**
