@@ -9,6 +9,7 @@ import { ChatView } from "./ChatView";
 import { DragResizer } from "@/components/layout/DragResizer";
 import { WhapiConnectionPanel } from "./WhapiConnectionPanel";
 import { WhapiBillingBanner } from "./WhapiBillingBanner";
+import { WhatsAppConnectGate } from "./WhatsAppConnectGate";
 import { useWhapiHealth } from "@/hooks/useWhapiHealth";
 import { supabase } from "@/integrations/supabase/client";
 
@@ -126,6 +127,8 @@ export function WhatsAppTab({
 
   const whapiHealth = useWhapiHealth(!!isWhapi);
   const [forceWhapiPanel, setForceWhapiPanel] = useState(false);
+  const [whapiGateQr, setWhapiGateQr] = useState<string | null>(null);
+  const [whapiGateBusy, setWhapiGateBusy] = useState(false);
 
   const {
     templates,
@@ -186,8 +189,30 @@ export function WhatsAppTab({
 
   // Whapi reconectou → some o force do painel
   useEffect(() => {
-    if (whapiHealth.status === "AUTH") setForceWhapiPanel(false);
+    if (whapiHealth.status === "AUTH") {
+      setForceWhapiPanel(false);
+      setWhapiGateQr(null);
+    }
   }, [whapiHealth.status]);
+
+  const requestWhapiQr = useCallback(async () => {
+    setWhapiGateBusy(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("whapi-proxy", {
+        body: { action: "reauth", payload: {} },
+      });
+      if (error) throw error;
+      const raw = (data as { qr?: string } | null)?.qr || null;
+      if (raw) {
+        setWhapiGateQr(raw.startsWith("data:") ? raw : `data:image/png;base64,${raw}`);
+      }
+      await whapiHealth.refresh();
+    } catch {
+      /* gate ainda permite tentar de novo */
+    } finally {
+      setWhapiGateBusy(false);
+    }
+  }, [whapiHealth]);
 
   const [selectedChatJid, setSelectedChatJid] = useState<string | null>(null);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
@@ -274,10 +299,46 @@ export function WhatsAppTab({
   const whapiDown = !!isWhapi && whapiHealth.lastCheckedAt !== null && whapiHealth.status !== "AUTH";
   const showWhapiPanel = !!isWhapi && (whapiDown || forceWhapiPanel);
 
+  // Gate: só libera o módulo WhatsApp depois que o canal estiver realmente ligado.
+  // Whapi AUTH = ok; Evolution/Baileys = connectionStatus connected.
+  const channelReady = isWhapi
+    ? whapiHealth.status === "AUTH"
+    : connectionStatus === "connected";
+  const showConnectGate = !channelReady;
+
+  // Se pediu "conectar outro número", força o gate (Whapi) a pedir QR.
+  useEffect(() => {
+    if (!autoConnectOnMount || !isWhapi || fatalLocked) return;
+    if (whapiHealth.status === "AUTH" && !forceWhapiPanel) return;
+    void requestWhapiQr();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoConnectOnMount, isWhapi]);
+
   return (
-    <div className="flex flex-col gap-0 flex-1 min-h-0 min-w-0 overflow-hidden">
+    <div className="relative flex flex-col gap-0 flex-1 min-h-0 min-w-0 overflow-hidden">
+      <WhatsAppConnectGate
+        open={showConnectGate}
+        isWhapi={!!isWhapi}
+        connectionStatus={connectionStatus}
+        qrCode={qrCode}
+        isLoading={isLoading || whapiGateBusy || (!!isWhapi && whapiHealth.lastCheckedAt === null)}
+        error={error}
+        fatalLocked={fatalLocked}
+        phoneNumber={phoneNumber}
+        whapiStatusLabel={isWhapi ? whapiHealth.status : null}
+        whapiQrImage={whapiGateQr}
+        onConnect={createAndConnect}
+        onRefreshQr={refreshQr}
+        onWhapiReauth={requestWhapiQr}
+      />
+
+      {/* Enquanto o gate está aberto, não mostra abas/chat — só o QR. */}
+      {showConnectGate ? (
+        <div className="flex-1 min-h-[50vh]" aria-hidden />
+      ) : (
+      <>
       {/* Status só quando NÃO conectado — economiza 32px no dia a dia */}
-      {!immersiveChat && !isConnected && (
+      {!immersiveChat && !isConnected && !isWhapi && (
       <div className="flex items-center justify-between px-3 py-1.5 bg-gradient-to-r from-destructive/5 via-card to-card border border-border/60 rounded-t-xl shrink-0 h-8">
         <div className="flex items-center gap-2 min-w-0">
           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-destructive/10 border border-destructive/25">
@@ -293,11 +354,11 @@ export function WhatsAppTab({
             if (!fatalLocked && hasInstance && connectionStatus === "disconnected") createAndConnect();
           }}
           disabled={isLoading || fatalLocked}
-          title={fatalLocked ? "Número em revisão manual — não reconecte aqui" : undefined}
+          title={fatalLocked ? "Aguardando liberação do suporte" : undefined}
           className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold text-primary bg-primary/10 hover:bg-primary/20 border border-primary/20 transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {fatalLocked
-            ? "Em revisão"
+            ? "Aguardando"
             : isLoading || connectionStatus === "connecting" ? "Conectando…" : "Conectar →"}
         </button>
       </div>
@@ -424,19 +485,19 @@ export function WhatsAppTab({
                   <div className={`h-1.5 w-1.5 rounded-full animate-pulse shrink-0 ${fatalLocked ? "bg-destructive" : "bg-warning"}`} />
                   <span className="truncate">
                     {fatalLocked
-                      ? "Número em revisão — não escaneie QR. Só troque de chip se for outro número."
+                      ? "Aguardando liberação do suporte — ainda dá para ver o histórico"
                       : connectionStatus === "connecting"
-                        ? "Reconectando na mesma sessão — você ainda pode ver o histórico"
-                        : "Desconectado — Reconectar mantém a mesma sessão (não desvincula)"}
+                        ? "Conectando… você ainda pode ver o histórico"
+                        : "WhatsApp desconectado — toque em Conectar"}
                   </span>
                   {!fatalLocked && (
                     <button
                       onClick={() => createAndConnect()}
                       disabled={isLoading}
                       className="ml-auto text-warning hover:underline font-medium shrink-0"
-                      title="Reconecta na mesma instância, sem logout"
+                      title="Conectar WhatsApp"
                     >
-                      {isLoading ? "..." : "Reconectar"}
+                      {isLoading ? "..." : "Conectar"}
                     </button>
                   )}
                 </div>
@@ -608,6 +669,8 @@ export function WhatsAppTab({
         )}
 
       </div>
+      </>
+      )}
     </div>
   );
 }
