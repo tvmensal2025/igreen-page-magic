@@ -17,11 +17,13 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { resolveIgreenSyncWorker } from "../_shared/igreen-sync-worker.ts";
+import { assertCronAuth } from "../_shared/cron-auth.ts";
+import { resolveCaller } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-internal-secret, x-service-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -34,6 +36,20 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+
+    // Auth híbrida: cron (secret) OU admin JWT.
+    // Sem isso, anon/JWT comum lia senha portal + disparava IA/worker.
+    const cronAuth = await assertCronAuth(req, supabase);
+    if (!cronAuth.ok) {
+      const caller = await resolveCaller(req, supabase);
+      if (caller instanceof Response) return caller;
+      if (caller.mode !== "jwt" || !caller.isAdmin) {
+        return new Response(JSON.stringify({ ok: false, error: "forbidden" }), {
+          status: 403,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // 1) Resolver credenciais
     let email = body.portal_email ? String(body.portal_email) : "";

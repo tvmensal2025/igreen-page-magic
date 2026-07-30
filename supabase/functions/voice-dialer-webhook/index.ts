@@ -26,6 +26,7 @@ import {
   voiceFallbackSmsKey,
 } from "../_shared/journey-effects.ts";
 import { debitSmsSent, debitVoiceAnswered } from "../_shared/voice-sms-billing.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 /** Hash estável do callback p/ dedup (sem timestamp — retries Velip idênticos). */
 async function eventHash(parts: (string | number)[]): Promise<string> {
@@ -582,6 +583,25 @@ Deno.serve(async (req) => {
       });
       if (!eff.canSend) {
         return json(200, { ok: true, matched: true, outcome, retry: shouldRetry, sms_skipped: `effect_${eff.status}` });
+      }
+      // DNC / voice_dnc — reserva já consumiu slot; se bloqueado, suppressed (não gasta Velip).
+      const suppression = await assertCanContact(admin, {
+        customerId: target.customer_id ?? undefined,
+        phone: smsDest,
+        consultantId: consultantId ?? undefined,
+        channel: "sms",
+      });
+      if (!suppression.allowed) {
+        await finishOutboundEffect(admin, eff.effectId, "suppressed", {
+          errorCode: String(suppression.reason || "dnc").slice(0, 120),
+        });
+        return json(200, {
+          ok: true,
+          matched: true,
+          outcome,
+          retry: shouldRetry,
+          sms_skipped: `suppressed_${suppression.reason || "dnc"}`,
+        });
       }
       try {
         await markEffectSending(admin, eff.effectId);

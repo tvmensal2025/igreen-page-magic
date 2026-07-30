@@ -377,6 +377,12 @@ verify_jwt = false
 [functions.recon-igreen-worker]
 verify_jwt = false
 
+[functions.recon-igreen-seed]
+verify_jwt = false
+
+[functions.recon-igreen-endpoints]
+verify_jwt = false
+
 # Venda da plataforma (SuperAdmin) — JWT do usuário; dry_run default.
 [functions.platform-sales-dispatch]
 verify_jwt = false

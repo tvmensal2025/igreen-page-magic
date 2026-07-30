@@ -14,6 +14,11 @@ import { normalizePhone } from "../_shared/utils.ts";
 import { createWhapiSender, parseWhapiMessage, resolveInboundConversationMeta } from "../_shared/whapi-api.ts";
 import { checkAndMarkProcessed, logStepTransition, jsonLog } from "../_shared/audit.ts";
 import { isRateLimited, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS } from "./_helpers.ts";
+import {
+  getFlowReliabilityV2,
+  isV2Active,
+  isV2Enabled,
+} from "../_shared/feature-flag.ts";
 import { runBotFlow } from "./handlers/bot-flow.ts";
 import { runConversationalFlow, CADASTRO_STEPS } from "./handlers/conversational/index.ts";
 import { normalizeOutgoing, stripPrefix } from "./handlers/step-namespace.ts";
@@ -426,15 +431,53 @@ Deno.serve(async (req) => {
     }
 
     const phone = normalizePhone(remoteJid.replace("@s.whatsapp.net", ""));
-    // Anti-flood (paridade Evolution): >RATE_LIMIT_MAX msgs no WINDOW → silêncio.
-    // Dedup cobre retry do provedor; isto cobre burst com IDs diferentes.
-    if (phone && isRateLimited(phone)) {
+    // Anti-flood (paridade Evolution): legacy in-memory + RPC `try_acquire_rate_limit`
+    // sob flow_reliability_v2 (dark=log; canary/on=autoritativo).
+    const legacyRateLimited = !!(phone && isRateLimited(phone));
+    let rateLimited = legacyRateLimited;
+    const v2Flag = await getFlowReliabilityV2(supabase as any, superAdminConsultantId);
+    if (phone && isV2Enabled(v2Flag)) {
+      try {
+        const { data: rpcOk, error: rpcErr } = await supabase.rpc(
+          "try_acquire_rate_limit",
+          {
+            p_phone: phone,
+            p_window_ms: RATE_LIMIT_WINDOW_MS,
+            p_max_count: RATE_LIMIT_MAX,
+          },
+        );
+        if (rpcErr) {
+          jsonLog("warn", "rate_limit_rpc_failed", {
+            phone, channel: "whapi", v2_flag: v2Flag, error: rpcErr.message,
+          });
+        } else {
+          const rpcRateLimited = rpcOk === false;
+          if (rpcRateLimited !== legacyRateLimited) {
+            jsonLog("info", "rate_limit_disagreement", {
+              phone, channel: "whapi", v2_flag: v2Flag,
+              legacy_rate_limited: legacyRateLimited,
+              v2_rate_limited: rpcRateLimited,
+            });
+          }
+          if (isV2Active(v2Flag)) {
+            rateLimited = rpcRateLimited;
+          }
+        }
+      } catch (e) {
+        jsonLog("warn", "rate_limit_rpc_exception", {
+          phone, channel: "whapi", v2_flag: v2Flag,
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
+    }
+    if (rateLimited) {
       console.warn(
         `🚫 [whapi] Rate limited: ${phone} (>${RATE_LIMIT_MAX} msgs em ${RATE_LIMIT_WINDOW_MS}ms)`,
       );
       jsonLog("warn", "rate_limit_checked", {
         phone,
         channel: "whapi",
+        v2_flag: v2Flag,
         rate_limited: true,
       });
       return new Response(JSON.stringify({ ok: true, msg: "rate_limited" }), {

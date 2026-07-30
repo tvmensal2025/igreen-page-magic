@@ -9,10 +9,12 @@ import { validateForPortal, PORTAL_FIELDS } from "../_shared/portalValidation.ts
 import { notifyPartnerStep } from "../_shared/notify-consultant.ts";
 import { preflightPortalDocuments } from "../_shared/storage-download.ts";
 import { assertCanContact } from "../_shared/contact-suppression.ts";
+import { resolveCaller, assertOwnership } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type, x-service-secret",
 };
 
 const SELECT_FIELDS = PORTAL_FIELDS.map((f) => f.key).join(", ") +
@@ -140,21 +142,14 @@ Deno.serve(async (req) => {
     const sendNoticeRaw = body?.sendNotice;
     if (!customerId) return jres({ error: "customerId obrigatório" }, 400);
 
-    // Identifica quem apertou (best-effort)
-    let finalizedBy: string | null = null;
-    try {
-      const authHeader = req.headers.get("Authorization") || "";
-      const token = authHeader.replace(/^Bearer\s+/i, "");
-      if (token) {
-        const userClient = createClient(
-          Deno.env.get("SUPABASE_URL")!,
-          Deno.env.get("SUPABASE_ANON_KEY")!,
-          { global: { headers: { Authorization: `Bearer ${token}` } } },
-        );
-        const { data: u } = await userClient.auth.getUser();
-        finalizedBy = u?.user?.id || null;
-      }
-    } catch (_) {}
+    // Auth + posse: JWT do consultor dono (ou admin) OU x-service-secret.
+    // Sem isso, qualquer autenticado com customerId alheio disparava Portal 2 (IDOR).
+    const caller = await resolveCaller(req, supabase);
+    if (caller instanceof Response) return caller;
+    const deny = await assertOwnership(caller, { customerId }, supabase);
+    if (deny) return deny;
+
+    const finalizedBy = caller.mode === "jwt" ? caller.consultantId : null;
 
     const { data: customer, error: fetchErr } = await supabase
       .from("customers")
