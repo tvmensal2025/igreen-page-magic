@@ -242,11 +242,15 @@ function looksLikeVerb(word: string): boolean {
   if (/(ando|endo|indo)$/.test(w) && w.length >= 6) return true;
   // infinitivo: entender, participar, assinar, receber, decidir
   if (/(ar|er|ir)$/.test(w) && w.length >= 6) return true;
-  // futuro / condicional: mandarei, gostaria, faria, poderiam
-  if (/(arei|erei|irei|aria|eria|iria|ariam|eriam|iriam)$/.test(w)) return true;
+  // futuro / condicional: mandarei, gostaria, poderiam
+  // (-aria com ≤6 letras é nome: Maria, Ilaria, Rosaria → não bloqueia)
+  if (/(arei|erei|irei|ariam|eriam|iriam)$/.test(w)) return true;
+  if (/(aria|eria|iria)$/.test(w) && w.length >= 7) return true;
   // pretérito 1ª/3ª pessoa: mandei, recebi, pensou, chegaram
   if (/(ei|ou)$/.test(w) && w.length >= 6) return true;
-  if (/(aram|eram|iram|amos|emos|imos)$/.test(w)) return true;
+  if (/(aram|eram|iram)$/.test(w)) return true;
+  // -amos/-emos: sobrenomes Ramos/Lemos têm 5 letras; verbo real é maior
+  if (/(amos|emos|imos)$/.test(w) && w.length >= 7) return true;
   return false;
 }
 
