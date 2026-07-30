@@ -346,7 +346,7 @@ PERGUNTA DO LEAD: "${q.slice(0, 600)}"`;
         },
       },
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       signal: opts.signal || ctrl.signal,
