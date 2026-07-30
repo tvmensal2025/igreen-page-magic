@@ -48,11 +48,33 @@ export function WhatsAppInstanceHealthCard() {
   };
 
   const clearBan = async (instance: string) => {
+    const reason = window.prompt(
+      `Motivo da liberação de ${instance} (mín. 5 caracteres).\n` +
+        `Só libere se o chip estiver ok no WhatsApp oficial do celular.`,
+      "Chip validado no app oficial — liberar QR",
+    );
+    if (reason == null) return;
+    if (reason.trim().length < 5) {
+      toast({ title: "Motivo obrigatório", description: "Escreva pelo menos 5 caracteres.", variant: "destructive" });
+      return;
+    }
     setBusy(instance);
-    const { data, error } = await supabase.rpc("admin_clear_ban", { p_instance: instance });
+    // admin_clear_fatal_lock limpa manual_review + fatal_lock_until e registra auditoria.
+    const { error: fatalErr } = await supabase.rpc("admin_clear_fatal_lock", {
+      p_instance: instance,
+      p_reason: reason.trim(),
+    });
+    if (fatalErr) {
+      // Fallback: admin_clear_ban também zera o hard-lock (painel legado).
+      const { error } = await supabase.rpc("admin_clear_ban", { p_instance: instance });
+      setBusy(null);
+      if (error) toast({ title: "Falha", description: fatalErr.message || error.message, variant: "destructive" });
+      else { toast({ title: "Instância destravada" }); load(); }
+      return;
+    }
     setBusy(null);
-    if (error) toast({ title: "Falha", description: error.message, variant: "destructive" });
-    else { toast({ title: "Instância destravada" }); load(); }
+    toast({ title: "Hard-lock liberado", description: "Consultor pode gerar QR (Reconectar / Conectar)." });
+    load();
   };
 
   const recreate = async (instance: string) => {
@@ -139,9 +161,10 @@ export function WhatsAppInstanceHealthCard() {
                     variant="outline"
                     onClick={() => clearBan(r.instance_name)}
                     disabled={busy === r.instance_name}
+                    title="Libera hard-lock (403/ban) para o consultor poder gerar QR de novo"
                   >
                     <ShieldCheck className="w-3.5 h-3.5 mr-1" />
-                    Destravar
+                    Liberar QR
                   </Button>
                 ) : (
                   <Button
