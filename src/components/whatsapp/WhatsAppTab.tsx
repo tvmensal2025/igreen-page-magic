@@ -159,34 +159,6 @@ export function WhatsAppTab({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSubTab]);
 
-  // Configurações → "Conectar outro WhatsApp": abre QR sem precisar clicar de novo.
-  useEffect(() => {
-    if (!autoConnectOnMount || fatalLocked || isLoading) return;
-    if (isWhapi) {
-      setActiveSubTab("dashboard");
-      setForceWhapiPanel(true);
-      void (async () => {
-        try {
-          await supabase.functions.invoke("whapi-proxy", {
-            body: { action: "reauth", payload: {} },
-          });
-          await whapiHealth.refresh();
-        } catch {
-          /* painel Whapi ainda permite pedir QR manual */
-        } finally {
-          onAutoConnectConsumed?.();
-        }
-      })();
-      return;
-    }
-    if (connectionStatus === "connected") {
-      onAutoConnectConsumed?.();
-      return;
-    }
-    void createAndConnect().finally(() => onAutoConnectConsumed?.());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoConnectOnMount]);
-
   // Whapi reconectou → some o force do painel
   useEffect(() => {
     if (whapiHealth.status === "AUTH") {
@@ -195,11 +167,12 @@ export function WhatsAppTab({
     }
   }, [whapiHealth.status]);
 
-  const requestWhapiQr = useCallback(async () => {
+  /** Pede QR sem logout. Canal já em QR/INIT/OFFLINE. */
+  const requestWhapiQrSafe = useCallback(async () => {
     setWhapiGateBusy(true);
     try {
       const { data, error } = await supabase.functions.invoke("whapi-proxy", {
-        body: { action: "reauth", payload: {} },
+        body: { action: "request_qr", payload: {} },
       });
       if (error) throw error;
       const raw = (data as { qr?: string } | null)?.qr || null;
@@ -213,6 +186,37 @@ export function WhatsAppTab({
       setWhapiGateBusy(false);
     }
   }, [whapiHealth]);
+
+  // Configurações → "Conectar WhatsApp" (desconectado): pede QR sem logout.
+  useEffect(() => {
+    if (!autoConnectOnMount || fatalLocked || isLoading) return;
+    if (isWhapi) {
+      setActiveSubTab("dashboard");
+      setForceWhapiPanel(true);
+      void (async () => {
+        try {
+          const status = await whapiHealth.refresh();
+          // Se já AUTH, não mexe no canal — só abriu a aba.
+          if (status === "AUTH") {
+            setForceWhapiPanel(false);
+            return;
+          }
+          await requestWhapiQrSafe();
+        } catch {
+          /* gate ainda permite pedir QR manual */
+        } finally {
+          onAutoConnectConsumed?.();
+        }
+      })();
+      return;
+    }
+    if (connectionStatus === "connected") {
+      onAutoConnectConsumed?.();
+      return;
+    }
+    void createAndConnect().finally(() => onAutoConnectConsumed?.());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoConnectOnMount]);
 
   const [selectedChatJid, setSelectedChatJid] = useState<string | null>(null);
   const [pendingMessage, setPendingMessage] = useState<string | null>(null);
@@ -301,18 +305,11 @@ export function WhatsAppTab({
 
   // Gate: só libera o módulo WhatsApp depois que o canal estiver realmente ligado.
   // Whapi AUTH = ok; Evolution/Baileys = connectionStatus connected.
+  // Enquanto o 1º health_check não voltou, NÃO bloqueia com gate (evita flicker + QR loop).
   const channelReady = isWhapi
-    ? whapiHealth.status === "AUTH"
+    ? whapiHealth.status === "AUTH" || whapiHealth.lastCheckedAt === null
     : connectionStatus === "connected";
   const showConnectGate = !channelReady;
-
-  // Se pediu "conectar outro número", força o gate (Whapi) a pedir QR.
-  useEffect(() => {
-    if (!autoConnectOnMount || !isWhapi || fatalLocked) return;
-    if (whapiHealth.status === "AUTH" && !forceWhapiPanel) return;
-    void requestWhapiQr();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoConnectOnMount, isWhapi]);
 
   return (
     <div className="relative flex flex-col gap-0 flex-1 min-h-0 min-w-0 overflow-hidden">
@@ -321,15 +318,15 @@ export function WhatsAppTab({
         isWhapi={!!isWhapi}
         connectionStatus={connectionStatus}
         qrCode={qrCode}
-        isLoading={isLoading || whapiGateBusy || (!!isWhapi && whapiHealth.lastCheckedAt === null)}
+        isLoading={isLoading || whapiGateBusy}
         error={error}
         fatalLocked={fatalLocked}
-        phoneNumber={phoneNumber}
+        phoneNumber={isWhapi ? (whapiHealth.phone || phoneNumber) : phoneNumber}
         whapiStatusLabel={isWhapi ? whapiHealth.status : null}
         whapiQrImage={whapiGateQr}
         onConnect={createAndConnect}
         onRefreshQr={refreshQr}
-        onWhapiReauth={requestWhapiQr}
+        onWhapiReauth={requestWhapiQrSafe}
       />
 
       {/* Enquanto o gate está aberto, não mostra abas/chat — só o QR. */}
@@ -463,7 +460,11 @@ export function WhatsAppTab({
       {/* Content area */}
       <div className={`flex-1 min-h-0 min-w-0 border border-border overflow-hidden bg-background flex flex-col ${isConnected || immersiveChat ? "rounded-lg" : "border-t-0 rounded-b-lg"}`}>
         {/* Banner global de billing Whapi — aparece em qualquer sub-aba quando o canal está bloqueado por pagamento */}
-        <WhapiBillingBanner enabled={!!isWhapi} />
+        <WhapiBillingBanner
+          enabled={!!isWhapi}
+          reasonCode={whapiHealth.reasonCode}
+          helpUrl={whapiHealth.helpUrl}
+        />
         {activeSubTab === "dashboard" && (
           <div className="p-3 space-y-3 overflow-y-auto h-full min-h-0 min-w-0">
             {showWhapiPanel && <WhapiConnectionPanel visible={true} />}

@@ -36,7 +36,8 @@ export interface WhapiHealth {
   lastOutboundStatus: string | null;
 }
 
-const POLL_MS = 30_000;
+const POLL_MS_AUTH = 60_000;
+const POLL_MS_DOWN = 30_000;
 
 function normalize(raw: any): WhapiHealthStatus {
   const s = String(raw?.status || "").toUpperCase();
@@ -49,7 +50,9 @@ function normalize(raw: any): WhapiHealthStatus {
   return "UNKNOWN";
 }
 
-export function useWhapiHealth(enabled: boolean): WhapiHealth & { refresh: () => Promise<void> } {
+export function useWhapiHealth(enabled: boolean): WhapiHealth & {
+  refresh: () => Promise<WhapiHealthStatus | null>;
+} {
   const [health, setHealth] = useState<WhapiHealth>({
     status: "UNKNOWN",
     statusCode: null,
@@ -73,17 +76,18 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & { refresh: () =>
   });
   const mountedRef = useRef(true);
 
-  const refresh = useCallback(async () => {
-    if (!enabled) return;
+  const refresh = useCallback(async (): Promise<WhapiHealthStatus | null> => {
+    if (!enabled) return null;
     setHealth((h) => ({ ...h, checking: true, error: null }));
     try {
       const { data, error } = await supabase.functions.invoke("whapi-proxy", {
         body: { action: "health_check", payload: {} },
       });
       if (error) throw error;
-      if (!mountedRef.current) return;
+      if (!mountedRef.current) return null;
+      const status = normalize(data);
       setHealth({
-        status: normalize(data),
+        status,
         statusCode: typeof data?.statusCode === "number" ? data.statusCode : null,
         statusText: data?.statusText ?? null,
         phone: data?.phone ?? null,
@@ -103,8 +107,9 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & { refresh: () =>
         lastOutboundAt: typeof data?.last_outbound_at === "number" ? data.last_outbound_at : null,
         lastOutboundStatus: data?.last_outbound_status ?? null,
       });
+      return status;
     } catch (e: any) {
-      if (!mountedRef.current) return;
+      if (!mountedRef.current) return null;
       setHealth((h) => ({
         ...h,
         status: "OFFLINE",
@@ -112,6 +117,7 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & { refresh: () =>
         lastCheckedAt: Date.now(),
         error: e?.message || "Falha ao consultar canal WhatsApp",
       }));
+      return "OFFLINE";
     }
   }, [enabled]);
 
@@ -119,10 +125,20 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & { refresh: () =>
     mountedRef.current = true;
     if (!enabled) return () => { mountedRef.current = false; };
     void refresh();
-    const t = setInterval(() => { void refresh(); }, POLL_MS);
+    // Intervalo adapta: AUTH = mais raro (menos carga); fora = 30s.
+    let timer: ReturnType<typeof setInterval> | null = null;
+    const arm = (ms: number) => {
+      if (timer) clearInterval(timer);
+      timer = setInterval(() => {
+        void refresh().then((status) => {
+          arm(status === "AUTH" ? POLL_MS_AUTH : POLL_MS_DOWN);
+        });
+      }, ms);
+    };
+    arm(POLL_MS_DOWN);
     return () => {
       mountedRef.current = false;
-      clearInterval(t);
+      if (timer) clearInterval(timer);
     };
   }, [enabled, refresh]);
 

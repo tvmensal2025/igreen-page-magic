@@ -722,7 +722,17 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
             setHasInstance(true);
             setInstanceName("whapi-superadmin");
             setStatus("connected");
-            setPhoneNumber("+55 11 99009-2401");
+            // Número real vem de settings / health — nunca inventar chip antigo.
+            try {
+              const { data: phoneRows } = await supabase
+                .from("settings")
+                .select("key, value")
+                .eq("key", "whapi_connected_phone")
+                .maybeSingle();
+              setPhoneNumber(phoneRows?.value || null);
+            } catch {
+              setPhoneNumber(null);
+            }
             setError(null);
             setIsLoading(false);
             setHealth("healthy");
@@ -748,7 +758,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
 
         if (settings.superadmin_consultant_id === consultantId) {
           isSuperAdmin = true;
-          setPhoneNumber(settings.whapi_connected_phone || "+55 11 99009-2401");
+          setPhoneNumber(settings.whapi_connected_phone || null);
         }
 
         if (!isSuperAdmin) {
@@ -759,7 +769,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
             const { data: isSuper } = await supabase.rpc("is_super_admin", { _user_id: user.id });
             if (isSuper === true) {
               isSuperAdmin = true;
-              setPhoneNumber(settings.whapi_connected_phone || "+55 11 99009-2401");
+              setPhoneNumber(settings.whapi_connected_phone || null);
               addLog("ℹ️ Super admin reconhecido pelo papel (settings indisponíveis)");
             }
           }
@@ -788,7 +798,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
               setHasInstance(true);
               setInstanceName("whapi-superadmin");
               setStatus("connected");
-              setPhoneNumber("+55 11 99009-2401");
+              setPhoneNumber(null);
               setError(null);
               setIsLoading(false);
               addLog("✅ Conectado via WhatsApp (Super Admin, fallback por papel)");

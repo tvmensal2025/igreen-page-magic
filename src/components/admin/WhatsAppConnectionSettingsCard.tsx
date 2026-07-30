@@ -22,8 +22,12 @@ interface Props {
   connectionStatus: ConnectionStatus;
   phoneNumber: string | null;
   isLoading?: boolean;
+  /** Só consulta saúde Whapi enquanto o sheet de Configurações está aberto. */
+  healthEnabled?: boolean;
   onDisconnect: () => Promise<void>;
-  /** Fecha Configurações e abre a aba WhatsApp para escanear o QR. */
+  /** Fecha Configurações e só abre a aba WhatsApp (sem logout/QR). */
+  onGoWhatsApp?: () => void;
+  /** Fecha Configurações e abre a aba WhatsApp para escanear o QR (trocar chip). */
   onGoConnectAnother: () => void;
 }
 
@@ -36,11 +40,13 @@ export function WhatsAppConnectionSettingsCard({
   connectionStatus,
   phoneNumber,
   isLoading,
+  healthEnabled = true,
   onDisconnect,
+  onGoWhatsApp,
   onGoConnectAnother,
 }: Props) {
   const { toast } = useToast();
-  const whapiHealth = useWhapiHealth(isWhapi);
+  const whapiHealth = useWhapiHealth(isWhapi && healthEnabled);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -141,11 +147,16 @@ export function WhatsAppConnectionSettingsCard({
           variant={connected ? "ghost" : "default"}
           className="gap-2"
           disabled={busy || isLoading}
-          onClick={onGoConnectAnother}
+          onClick={() => {
+            // Conectado: só navega. Desconectado: pede QR.
+            // Nunca chamar reauth/logout só por “abrir” a aba.
+            if (connected) (onGoWhatsApp ?? onGoConnectAnother)();
+            else onGoConnectAnother();
+          }}
           style={!connected ? { background: "var(--gradient-green)" } : undefined}
         >
           <QrCode className="h-4 w-4" />
-          {connected ? "Abrir conexão WhatsApp" : "Conectar outro WhatsApp"}
+          {connected ? "Abrir WhatsApp" : "Conectar WhatsApp"}
         </Button>
       </div>
 
@@ -156,7 +167,7 @@ export function WhatsAppConnectionSettingsCard({
             <AlertDialogDescription>
               Isso encerra a sessão neste painel para você poder conectar outro número.
               O WhatsApp no celular não é apagado. Depois use{" "}
-              <strong>Conectar outro WhatsApp</strong> e escaneie o QR com o chip novo.
+              <strong>Conectar WhatsApp</strong> e escaneie o QR com o chip novo.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

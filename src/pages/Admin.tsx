@@ -655,7 +655,7 @@ const AdminContent = () => {
           {userId && activeTab === "whatsapp" && (
             <WhatsAppErrorBoundary>
               <WhatsAppTab
-                key={`whatsapp-tab-${pendingWhatsAppSub ?? "default"}-${pendingWhatsAppAutoConnect ? "ac" : "n"}`}
+                key={`whatsapp-tab-${pendingWhatsAppSub ?? "default"}`}
                 userId={userId}
                 customers={customers as never[]}
                 pendingChatPhone={pendingChatPhone}
@@ -788,8 +788,15 @@ const AdminContent = () => {
                   connectionStatus={connectionStatus}
                   phoneNumber={waPhoneNumber}
                   isLoading={waLoading}
+                  healthEnabled={settingsOpen}
                   onDisconnect={disconnectWhatsApp}
+                  onGoWhatsApp={() => {
+                    // Só abre a aba — NÃO dispara reauth/logout.
+                    setSettingsOpen(false);
+                    setActiveTab("whatsapp");
+                  }}
                   onGoConnectAnother={() => {
+                    // Trocar chip: só pede QR depois de desconectar (ou se já estiver fora).
                     setSettingsOpen(false);
                     setPendingWhatsAppAutoConnect(true);
                     setActiveTab("whatsapp");

@@ -1,9 +1,12 @@
-import { useWhapiHealth } from "@/hooks/useWhapiHealth";
 import { Button } from "@/components/ui/button";
 import { CreditCard, ExternalLink, AlertTriangle } from "lucide-react";
+import type { WhapiReasonCode } from "@/hooks/useWhapiHealth";
 
 interface Props {
   enabled: boolean;
+  /** Reusa o health do WhatsAppTab — evita segundo poller de whapi-proxy. */
+  reasonCode?: WhapiReasonCode;
+  helpUrl?: string | null;
 }
 
 /**
@@ -12,8 +15,7 @@ interface Props {
  * Visível em qualquer sub-aba (Dashboard, Conversas, Envio em massa, etc.)
  * para o Super Admin não perder tempo trocando token quando o problema é financeiro.
  */
-export function WhapiBillingBanner({ enabled }: Props) {
-  const { reasonCode, helpUrl } = useWhapiHealth(enabled);
+export function WhapiBillingBanner({ enabled, reasonCode = null, helpUrl = null }: Props) {
   if (!enabled) return null;
   if (reasonCode !== "unpaid" && reasonCode !== "channel_not_found") return null;
 
@@ -39,20 +41,14 @@ export function WhapiBillingBanner({ enabled }: Props) {
             ? "Canal WhatsApp bloqueado por falta de pagamento."
             : "Canal WhatsApp foi removido no painel."}
         </b>{" "}
-        <span className="opacity-80">
-          {isUnpaid
-            ? "Nenhuma mensagem será enviada até regularizar a cobrança."
-            : "Crie um canal novo e atualize o token."}
-        </span>
+        {isUnpaid
+          ? "Renove no painel Whapi para voltar a enviar."
+          : "Verifique o canal no painel Whapi."}
       </div>
-      <Button
-        size="sm"
-        variant={isUnpaid ? "destructive" : "outline"}
-        onClick={() => window.open(url, "_blank")}
-        className="shrink-0"
-      >
-        <ExternalLink className="h-3.5 w-3.5 mr-1" />
-        {isUnpaid ? "Abrir billing" : "Abrir painel"}
+      <Button asChild size="sm" variant="outline" className="h-7 shrink-0 gap-1 text-[11px]">
+        <a href={url} target="_blank" rel="noopener noreferrer">
+          Abrir painel <ExternalLink className="h-3 w-3" />
+        </a>
       </Button>
     </div>
   );
