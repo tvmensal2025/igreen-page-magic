@@ -40,6 +40,8 @@ export default function PartnerBannerPortalPage() {
   const [scanByCode, setScanByCode] = useState<Record<string, number>>({});
   const [leadByKw, setLeadByKw] = useState<Record<string, number>>({});
   const [fechamentos, setFechamentos] = useState(0);
+  const [statsLeads, setStatsLeads] = useState(0);
+  const [statsLeituras, setStatsLeituras] = useState(0);
   const [cycleRaw, setCycleRaw] = useState<PartnerPortalCycleLeadRaw[]>([]);
 
   useEffect(() => {
@@ -67,7 +69,11 @@ export default function PartnerBannerPortalPage() {
             igreen_id?: string | null;
             phone?: string | null;
           };
-          stats?: { fechamentos?: number | null };
+          stats?: {
+            fechamentos?: number | null;
+            leads?: number | null;
+            leituras?: number | null;
+          };
           spots?: SpotRow[];
           scans?: Array<{ event_target?: string }>;
           leads?: Array<{ referral_keyword_matched?: string | null }>;
@@ -91,6 +97,8 @@ export default function PartnerBannerPortalPage() {
         );
         setConsultantPhone(String(payload.consultant?.phone || "").trim());
         setFechamentos(Number(payload.stats?.fechamentos) || 0);
+        setStatsLeads(Number(payload.stats?.leads) || 0);
+        setStatsLeituras(Number(payload.stats?.leituras) || 0);
         setSpots(Array.isArray(payload.spots) ? payload.spots : []);
         setCycleRaw(Array.isArray(payload.cycle_leads) ? payload.cycle_leads : []);
 
@@ -164,8 +172,9 @@ export default function PartnerBannerPortalPage() {
   const countC = cycleLeads.filter((l) => l.group === "C").length;
 
   const totalLeituras =
+    statsLeituras ||
     rootScans + Object.values(scanByCode).reduce((a, b) => a + b, 0);
-  const totalLeads = Object.values(leadByKw).reduce((a, b) => a + b, 0);
+  const totalLeads = statsLeads;
 
   const rows = useMemo(
     () =>

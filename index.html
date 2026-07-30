@@ -32,6 +32,8 @@
             if (msg) u.searchParams.set("msg", msg);
             var k = q.get("k");
             if (k) u.searchParams.set("k", k);
+            var s = q.get("s");
+            if (s) u.searchParams.set("s", s);
             location.replace(u.toString());
             return;
           }

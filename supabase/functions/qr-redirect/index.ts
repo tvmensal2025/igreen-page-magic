@@ -171,9 +171,8 @@ Deno.serve(async (req) => {
 
     if (!normalizedPhone || !phoneValid) {
       if (consultant?.id) {
-        supabase
-          .from("page_events")
-          .insert({
+        try {
+          const { error: brokenErr } = await supabase.from("page_events").insert({
             consultant_id: consultant.id,
             event_type: "qr_broken",
             event_target: spotParam
@@ -182,8 +181,13 @@ Deno.serve(async (req) => {
               ? "banner_root"
               : "panfleto",
             page_type: "client",
-          })
-          .then(() => {});
+          });
+          if (brokenErr) {
+            console.warn("[qr-redirect] qr_broken insert failed", brokenErr.message);
+          }
+        } catch (e) {
+          console.warn("[qr-redirect] qr_broken insert exception", e);
+        }
         console.warn("[qr-redirect] phone_invalid", {
           consultant_id: consultant.id,
           phone_raw: phone,
@@ -357,15 +361,19 @@ Deno.serve(async (req) => {
 
     // Telemetria fina (consultor Geral / spot / parceiro / parceiro+local).
     if (consultant?.id) {
-      supabase
-        .from("page_events")
-        .insert({
+      try {
+        const { error: scanErr } = await supabase.from("page_events").insert({
           consultant_id: consultant.id,
           event_type: "qr_scan",
           event_target: eventTarget,
           page_type: "client",
-        })
-        .then(() => {});
+        });
+        if (scanErr) {
+          console.warn("[qr-redirect] qr_scan insert failed", scanErr.message);
+        }
+      } catch (e) {
+        console.warn("[qr-redirect] qr_scan insert exception", e);
+      }
     }
 
     if (wantsJson) {

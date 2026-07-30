@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,11 +14,20 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { FlyerStaticPreview } from "@/components/admin/FlyerStaticPreview";
 import {
-  drawFlyerFooter,
-  clampFooterBand,
-  previewFooterFontSize,
-} from "@/components/admin/flyerFooter";
+  drawImageCover,
+  drawQrWithThinFrame,
+  loadFlyerImage,
+} from "@/components/admin/flyerCanvasDraw";
+import { drawFlyerFooter } from "@/components/admin/flyerFooter";
+import { formatFlyerPhoneDisplay } from "@/components/admin/flyerPhoneDisplay";
+import {
+  FLYER_TEMPLATES,
+  flyerFooterLeft,
+  flyerFooterRight,
+  type FlyerFormatId,
+} from "@/components/admin/flyerTemplates";
 import {
   Download,
   FileText,
@@ -38,8 +46,6 @@ import {
   Eye,
   AlertTriangle,
 } from "lucide-react";
-import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
-import { useIsMobile } from "@/hooks/use-mobile";
 
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
@@ -55,8 +61,6 @@ import {
 } from "./qrPhrase";
 import { HelpHint } from "@/components/ui/help-hint";
 import { Badge } from "@/components/ui/badge";
-
-type Format = "a4" | "banner";
 
 export type BannerSpot = {
   id: string;
@@ -82,117 +86,6 @@ interface Props {
   initialMode?: "root" | "spot";
   /** Spot pré-selecionado (ex.: vindo da hub). */
   initialSpotId?: string;
-}
-
-const TEMPLATES: Record<
-  Format,
-  {
-    bg: string;
-    canvasW: number;
-    canvasH: number;
-    pdfWmm: number;
-    pdfHmm: number;
-    qrX: number;
-    qrY: number;
-    qrSize: number;
-    footerY: number;
-    footerH: number;
-  }
-> = {
-  a4: {
-    bg: "/images/banner-a4.jpg",
-    canvasW: 905,
-    canvasH: 1280,
-    pdfWmm: 210,
-    pdfHmm: 297,
-    qrX: 25,
-    qrY: 91,
-    qrSize: 16,
-    footerY: 99,
-    footerH: 2.6,
-  },
-  banner: {
-    bg: "/images/banner-504x904.jpg",
-    canvasW: 1008,
-    canvasH: 1808,
-    pdfWmm: 504,
-    pdfHmm: 904,
-    qrX: 15,
-    qrY: 89,
-    qrSize: 23,
-    footerY: 100,
-    footerH: 3,
-  },
-};
-
-const PREVIEW_W = 380;
-const PREVIEW_MAX_H = 440;
-const QR_QUIET_PX = 2;
-const QR_BORDER_PX = 1;
-
-function formatBrPhone(raw?: string): string {
-  if (!raw) return "";
-  const digits = raw.replace(/\D/g, "");
-  const local = digits.startsWith("55") ? digits.slice(2) : digits;
-  if (local.length < 10) return raw;
-  const ddd = local.slice(0, 2);
-  const rest = local.slice(2);
-  if (rest.length === 9) return `(${ddd}) ${rest.slice(0, 5)}-${rest.slice(5)}`;
-  return `(${ddd}) ${rest.slice(0, 4)}-${rest.slice(4)}`;
-}
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = (e) => reject(e);
-    img.src = src;
-  });
-}
-
-function drawImageCover(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-) {
-  const scale = Math.max(w / img.width, h / img.height);
-  const sw = w / scale;
-  const sh = h / scale;
-  const sx = (img.width - sw) / 2;
-  const sy = (img.height - sh) / 2;
-  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
-}
-
-function drawQrWithThinFrame(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  cx: number,
-  cy: number,
-  qrPx: number,
-) {
-  const quiet = Math.max(4, Math.round(qrPx * 0.012));
-  const border = Math.max(2, Math.round(qrPx * 0.004));
-  const dx = cx - qrPx / 2;
-  const dy = cy - qrPx / 2;
-  const outerX = dx - quiet;
-  const outerY = dy - quiet;
-  const outerW = qrPx + quiet * 2;
-  const outerH = qrPx + quiet * 2;
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(outerX, outerY, outerW, outerH);
-  ctx.drawImage(img, dx, dy, qrPx, qrPx);
-  ctx.strokeStyle = "#111111";
-  ctx.lineWidth = border;
-  ctx.strokeRect(
-    outerX + border / 2,
-    outerY + border / 2,
-    outerW - border,
-    outerH - border,
-  );
 }
 
 function slugify(s: string): string {
@@ -226,7 +119,7 @@ export function ConsultantBannerDownloadModal({
   const { toast } = useToast();
   const qrSvgWrapperRef = useRef<HTMLDivElement>(null);
 
-  const [format, setFormat] = useState<Format>("a4");
+  const [format, setFormat] = useState<FlyerFormatId>("a4");
   const [mode, setMode] = useState<"root" | "spot">("spot");
   const [selectedSpotId, setSelectedSpotId] = useState<string>("");
   const [newKeyword, setNewKeyword] = useState("");
@@ -241,7 +134,7 @@ export function ConsultantBannerDownloadModal({
   );
   const [loadingCounts, setLoadingCounts] = useState(false);
 
-  const template = TEMPLATES[format];
+  const template = FLYER_TEMPLATES[format];
   const initials = useMemo(
     () => buildConsultantBannerInitials(consultantName),
     [consultantName],
@@ -481,30 +374,12 @@ export function ConsultantBannerDownloadModal({
     }
   };
 
-  const isMobile = useIsMobile();
-  const { width: PREVIEW_W_EFF, height: PREVIEW_H } = useFlyerPreviewSize(
-    template.canvasW,
-    template.canvasH,
-    isMobile ? 240 : PREVIEW_W,
-    isMobile ? 240 : PREVIEW_MAX_H,
+  const footerLeft = flyerFooterLeft(
+    consultantName || "CONSULTOR IGREEN",
+    igreenId,
   );
-
-  const qrCorePxPreview = (template.qrSize / 100) * PREVIEW_W_EFF;
-  const qrFramePxPreview =
-    qrCorePxPreview + QR_QUIET_PX * 2 + QR_BORDER_PX * 2;
-  const nomeUpper = (consultantName || "CONSULTOR IGREEN").toUpperCase();
-  const idLabel = igreenId ? ` • ID ${igreenId}` : "";
-  const phoneFmt = formatBrPhone(consultantPhone) || "FALE COMIGO";
-  const footerLeft = `LICENCIADO: ${nomeUpper}${idLabel}`;
-  const footerRight = `WHATSAPP: +55 ${phoneFmt}`;
-  const { bandTop: footerTopPreview, bandHeight: footerHPreview } =
-    clampFooterBand(PREVIEW_H, template.footerY, template.footerH);
-  const footerFontPreview = previewFooterFontSize(
-    PREVIEW_W_EFF,
-    footerHPreview,
-    footerLeft,
-    footerRight,
-    "900",
+  const footerRight = flyerFooterRight(
+    formatFlyerPhoneDisplay(consultantPhone) || "FALE COMIGO",
   );
 
   const renderToCanvas = async (): Promise<HTMLCanvasElement | null> => {
@@ -520,7 +395,7 @@ export function ConsultantBannerDownloadModal({
     ctx.fillStyle = "#0a3d2c";
     ctx.fillRect(0, 0, CW, CH);
     try {
-      const bg = await loadImage(template.bg);
+      const bg = await loadFlyerImage(template.bg);
       drawImageCover(ctx, bg, 0, 0, CW, CH);
     } catch {
       /* ignore */
@@ -670,57 +545,19 @@ export function ConsultantBannerDownloadModal({
 
         <div className="grid gap-4 sm:gap-6 md:grid-cols-[auto_1fr] py-2 min-w-0">
           <div className="flex flex-col items-center gap-3 w-full min-w-0 max-w-full">
-            <div
-              className="relative overflow-hidden rounded-xl border bg-primary shadow-sm max-w-full shrink-0"
-              style={{
-                width: PREVIEW_W_EFF,
-                height: PREVIEW_H,
-                backgroundImage: `url(${template.bg})`,
-                backgroundSize: "cover",
-                backgroundRepeat: "no-repeat",
-                backgroundPosition: "center",
-              }}
-            >
-              <div
-                ref={qrSvgWrapperRef}
-                className="absolute select-none bg-white box-border border border-neutral-900"
-                style={{
-                  left: `calc(${template.qrX}% - ${qrFramePxPreview / 2}px)`,
-                  top: `calc(${template.qrY}% - ${qrFramePxPreview / 2}px)`,
-                  width: qrFramePxPreview,
-                  height: qrFramePxPreview,
-                  padding: QR_QUIET_PX,
-                  borderWidth: QR_BORDER_PX,
-                }}
-              >
-                <QRCodeSVG
-                  value={qrUrl}
-                  size={qrCorePxPreview}
-                  level="H"
-                  includeMargin={false}
-                  style={{ display: "block" }}
-                />
-              </div>
-              <div
-                className="absolute left-0 right-0 select-none leading-none px-2 py-0 flex items-center justify-between overflow-hidden whitespace-nowrap"
-                style={{
-                  top: footerTopPreview,
-                  height: footerHPreview,
-                  minHeight: footerHPreview,
-                  maxHeight: footerHPreview,
-                  fontSize: footerFontPreview,
-                  color: "#ffd700",
-                  fontWeight: 900,
-                  background: "#0d3b1f",
-                }}
-              >
-                <span>{footerLeft}</span>
-                <span className="shrink-0 pl-1">{footerRight}</span>
-              </div>
-            </div>
+            <FlyerStaticPreview
+              format={format}
+              liveUrl={qrUrl}
+              consultantName={consultantName || "CONSULTOR IGREEN"}
+              consultantIgreenId={igreenId}
+              consultantPhone={consultantPhone}
+              qrSvgRef={qrSvgWrapperRef}
+              previewMaxW={380}
+              previewMaxH={440}
+            />
             <p className="text-xs text-muted-foreground text-center max-w-[320px] flex items-center gap-1.5 justify-center">
               <Wifi className="h-3.5 w-3.5" />
-              WhatsApp = o número conectado agora no seu celular
+              WhatsApp = chip vivo (Whapi ou Evolution conectado)
             </p>
             <p className="text-[10px] font-mono text-muted-foreground break-all text-center max-w-[320px]">
               {qrUrl}

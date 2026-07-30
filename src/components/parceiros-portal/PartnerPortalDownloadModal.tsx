@@ -1,5 +1,4 @@
 import { useMemo, useRef, useState } from "react";
-import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
 import {
   Dialog,
@@ -11,142 +10,24 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Download, FileText, Loader2, QrCode } from "lucide-react";
-import { useIsMobile } from "@/hooks/use-mobile";
-import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
+import { FlyerStaticPreview } from "@/components/admin/FlyerStaticPreview";
 import {
-  clampFooterBand,
-  drawFlyerFooter,
-  previewFooterFontSize,
-} from "@/components/admin/flyerFooter";
+  drawImageCover,
+  drawQrWithThinFrame,
+  loadFlyerImage,
+} from "@/components/admin/flyerCanvasDraw";
+import { drawFlyerFooter } from "@/components/admin/flyerFooter";
+import { formatFlyerPhoneDisplay } from "@/components/admin/flyerPhoneDisplay";
+import {
+  FLYER_TEMPLATES,
+  flyerFooterLeft,
+  flyerFooterRight,
+  type FlyerFormatId,
+} from "@/components/admin/flyerTemplates";
 import { buildPartnerPublicShortLink } from "@/lib/partnerShortLink";
 import { useToast } from "@/hooks/use-toast";
 
-type FormatId = "a4" | "banner";
-
-const TEMPLATES: Record<
-  FormatId,
-  {
-    label: string;
-    bg: string;
-    canvasW: number;
-    canvasH: number;
-    pdfWmm: number;
-    pdfHmm: number;
-    qrX: number;
-    qrY: number;
-    qrSize: number;
-    footerY: number;
-    footerH: number;
-  }
-> = {
-  a4: {
-    label: "Folha A4",
-    bg: "/images/banner-a4.jpg",
-    canvasW: 1240,
-    canvasH: 1754,
-    pdfWmm: 210,
-    pdfHmm: 297,
-    qrX: 25,
-    qrY: 91,
-    qrSize: 16,
-    footerY: 99,
-    footerH: 2.6,
-  },
-  banner: {
-    label: "Banner 504×904mm",
-    bg: "/images/banner-504x904.jpg",
-    canvasW: 1008,
-    canvasH: 1808,
-    pdfWmm: 504,
-    pdfHmm: 904,
-    qrX: 15,
-    qrY: 89,
-    qrSize: 23,
-    footerY: 100,
-    footerH: 3,
-  },
-};
-
-const PREVIEW_W = 320;
-const PREVIEW_MAX_H = 440;
-const QR_QUIET_PX = 2;
-const QR_BORDER_PX = 1;
-
-function formatPhoneDisplay(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  const noCountry = digits.startsWith("55") ? digits.slice(2) : digits;
-  if (noCountry.length === 11) {
-    return `+55 (${noCountry.slice(0, 2)}) ${noCountry.slice(2, 7)}-${noCountry.slice(7)}`;
-  }
-  if (noCountry.length === 10) {
-    return `+55 (${noCountry.slice(0, 2)}) ${noCountry.slice(2, 6)}-${noCountry.slice(6)}`;
-  }
-  return phone || "";
-}
-
-function drawQrWithThinFrame(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  cx: number,
-  cy: number,
-  qrPx: number,
-) {
-  const quiet = Math.max(4, Math.round(qrPx * 0.012));
-  const border = Math.max(2, Math.round(qrPx * 0.004));
-  const dx = cx - qrPx / 2;
-  const dy = cy - qrPx / 2;
-  const outerX = dx - quiet;
-  const outerY = dy - quiet;
-  const outerW = qrPx + quiet * 2;
-  const outerH = qrPx + quiet * 2;
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(outerX, outerY, outerW, outerH);
-  ctx.drawImage(img, dx, dy, qrPx, qrPx);
-  ctx.strokeStyle = "#111111";
-  ctx.lineWidth = border;
-  ctx.strokeRect(
-    outerX + border / 2,
-    outerY + border / 2,
-    outerW - border,
-    outerH - border,
-  );
-}
-
-function drawImageCover(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-) {
-  const scale = Math.max(w / img.width, h / img.height);
-  const sw = w / scale;
-  const sh = h / scale;
-  const sx = (img.width - sw) / 2;
-  const sy = (img.height - sh) / 2;
-  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
-}
-
-function loadImage(src: string): Promise<HTMLImageElement> {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Falha ao carregar arte"));
-    img.src = src;
-  });
-}
-
-export type PortalDownloadTarget = {
-  /** geral | local */
-  kind: "geral" | "local";
-  name: string;
-  code?: string | null;
-  keyword?: string | null;
-};
-
-interface Props {
+type Props = {
   open: boolean;
   onClose: () => void;
   partnerName: string;
@@ -155,12 +36,17 @@ interface Props {
   consultantName: string;
   consultantIgreenId: string;
   consultantPhone: string;
-  target: PortalDownloadTarget | null;
-}
+  target: {
+    kind: "geral" | "local";
+    name: string;
+    code?: string;
+    keyword?: string;
+  } | null;
+};
 
 /**
  * Modal só-download no portal público do parceiro.
- * Calibração 1:1 com PartnerQrCode (A4 + Banner 504×904).
+ * Calibração 1:1 via FLYER_TEMPLATES + FlyerStaticPreview.
  */
 export function PartnerPortalDownloadModal({
   open,
@@ -174,18 +60,11 @@ export function PartnerPortalDownloadModal({
   target,
 }: Props) {
   const { toast } = useToast();
-  const isMobile = useIsMobile();
-  const [format, setFormat] = useState<FormatId>("a4");
+  const [format, setFormat] = useState<FlyerFormatId>("a4");
   const [busy, setBusy] = useState<"png" | "pdf" | "both" | null>(null);
   const qrSvgRef = useRef<HTMLDivElement>(null);
 
-  const template = TEMPLATES[format];
-  const { width: previewW, height: previewH } = useFlyerPreviewSize(
-    template.canvasW,
-    template.canvasH,
-    isMobile ? 240 : PREVIEW_W,
-    isMobile ? 240 : PREVIEW_MAX_H,
-  );
+  const template = FLYER_TEMPLATES[format];
 
   const liveUrl = useMemo(() => {
     if (!refLabel || !shortCode || !target) return "";
@@ -198,29 +77,12 @@ export function PartnerPortalDownloadModal({
     return buildPartnerPublicShortLink(refLabel, shortCode);
   }, [refLabel, shortCode, target]);
 
-  const qrCorePx = (template.qrSize / 100) * previewW;
-  const qrFramePx = qrCorePx + QR_QUIET_PX * 2 + QR_BORDER_PX * 2;
-
-  const footerLeft = consultantName
-    ? `LICENCIADO: ${consultantName.toUpperCase()}${consultantIgreenId ? ` • ID ${consultantIgreenId}` : ""}`
-    : "LICENCIADO: CONSULTOR IGREEN";
-  const footerRight = consultantPhone
-    ? `WHATSAPP: ${formatPhoneDisplay(consultantPhone)}`
-    : "WHATSAPP: —";
-  const { bandTop: footerTop, bandHeight: footerHPx } = clampFooterBand(
-    previewH,
-    template.footerY,
-    template.footerH,
-  );
-  const footerFont = previewFooterFontSize(
-    previewW,
-    footerHPx,
-    footerLeft,
-    footerRight,
-    "700",
+  const footerLeft = flyerFooterLeft(consultantName, consultantIgreenId);
+  const footerRight = flyerFooterRight(
+    formatFlyerPhoneDisplay(consultantPhone),
   );
 
-  const fileSlug = () => {
+  const fileSlug = (formatId: FlyerFormatId = format) => {
     const spot =
       target?.kind === "local"
         ? String(target.code || target.name || "local")
@@ -236,15 +98,15 @@ export function PartnerPortalDownloadModal({
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-|-$/g, "")
       .slice(0, 40);
-    return `${format}-${partner || "parceiro"}-${spot}`;
+    return `${formatId}-${partner || "parceiro"}-${spot}`;
   };
 
   const renderFormatToCanvas = async (
-    formatId: FormatId,
+    formatId: FlyerFormatId,
   ): Promise<HTMLCanvasElement | null> => {
     const svgEl = qrSvgRef.current?.querySelector("svg");
     if (!svgEl || !liveUrl) return null;
-    const t = TEMPLATES[formatId];
+    const t = FLYER_TEMPLATES[formatId];
     const CW = t.canvasW;
     const CH = t.canvasH;
     const canvas = document.createElement("canvas");
@@ -255,7 +117,7 @@ export function PartnerPortalDownloadModal({
     ctx.fillStyle = "#0a3d2c";
     ctx.fillRect(0, 0, CW, CH);
     try {
-      const bg = await loadImage(t.bg);
+      const bg = await loadFlyerImage(t.bg);
       drawImageCover(ctx, bg, 0, 0, CW, CH);
     } catch {
       /* keep green */
@@ -294,26 +156,11 @@ export function PartnerPortalDownloadModal({
     return canvas;
   };
 
-  const downloadPngOf = async (formatId: FormatId) => {
+  const downloadPngOf = async (formatId: FlyerFormatId) => {
     const canvas = await renderFormatToCanvas(formatId);
     if (!canvas) return false;
     const a = document.createElement("a");
-    const spot =
-      target?.kind === "local"
-        ? String(target.code || target.name || "local")
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-|-$/g, "")
-            .slice(0, 40)
-        : "geral";
-    const partner = partnerName
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-|-$/g, "")
-      .slice(0, 40);
-    a.download = `${formatId}-${partner || "parceiro"}-${spot}.png`;
+    a.download = `${fileSlug(formatId)}.png`;
     a.href = canvas.toDataURL("image/png");
     a.click();
     return true;
@@ -324,7 +171,11 @@ export function PartnerPortalDownloadModal({
     try {
       const ok = await downloadPngOf(format);
       if (ok) toast({ title: "PNG baixado!" });
-      else toast({ title: "Não foi possível gerar o PNG", variant: "destructive" });
+      else
+        toast({
+          title: "Não foi possível gerar o PNG",
+          variant: "destructive",
+        });
     } finally {
       setBusy(null);
     }
@@ -335,7 +186,10 @@ export function PartnerPortalDownloadModal({
     try {
       const canvas = await renderFormatToCanvas(format);
       if (!canvas) {
-        toast({ title: "Não foi possível gerar o PDF", variant: "destructive" });
+        toast({
+          title: "Não foi possível gerar o PDF",
+          variant: "destructive",
+        });
         return;
       }
       const { pdfWmm: wmm, pdfHmm: hmm } = template;
@@ -390,7 +244,7 @@ export function PartnerPortalDownloadModal({
 
         <div className="flex flex-col items-center gap-3 py-1">
           <div className="flex flex-wrap gap-1.5 justify-center">
-            {(Object.keys(TEMPLATES) as FormatId[]).map((id) => (
+            {(Object.keys(FLYER_TEMPLATES) as FlyerFormatId[]).map((id) => (
               <Button
                 key={id}
                 type="button"
@@ -400,57 +254,19 @@ export function PartnerPortalDownloadModal({
                 onClick={() => setFormat(id)}
                 disabled={!!busy}
               >
-                {TEMPLATES[id].label}
+                {FLYER_TEMPLATES[id].label}
               </Button>
             ))}
           </div>
 
-          <div
-            className="relative max-w-full shrink-0 overflow-hidden rounded-xl border bg-primary shadow-sm"
-            style={{ width: previewW, height: previewH }}
-          >
-            <div
-              className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-              style={{ backgroundImage: `url(${template.bg})` }}
-            />
-            {liveUrl ? (
-              <div
-                ref={qrSvgRef}
-                className="absolute z-[2] box-border select-none border border-neutral-900 bg-white"
-                style={{
-                  left: `calc(${template.qrX}% - ${qrFramePx / 2}px)`,
-                  top: `calc(${template.qrY}% - ${qrFramePx / 2}px)`,
-                  width: qrFramePx,
-                  height: qrFramePx,
-                  padding: QR_QUIET_PX,
-                  borderWidth: QR_BORDER_PX,
-                }}
-              >
-                <QRCodeSVG
-                  value={liveUrl}
-                  size={qrCorePx}
-                  level="M"
-                  includeMargin={false}
-                  style={{ display: "block" }}
-                />
-              </div>
-            ) : null}
-            <div
-              className="absolute left-0 right-0 z-[2] flex items-center justify-between overflow-hidden whitespace-nowrap bg-primary/95 px-2 py-0 leading-none select-none"
-              style={{
-                top: footerTop,
-                height: footerHPx,
-                minHeight: footerHPx,
-                maxHeight: footerHPx,
-                fontSize: footerFont,
-                color: "#fff200",
-                fontWeight: 700,
-              }}
-            >
-              <span>{footerLeft}</span>
-              <span className="shrink-0 pl-1">{footerRight}</span>
-            </div>
-          </div>
+          <FlyerStaticPreview
+            format={format}
+            liveUrl={liveUrl}
+            consultantName={consultantName}
+            consultantIgreenId={consultantIgreenId}
+            consultantPhone={consultantPhone}
+            qrSvgRef={qrSvgRef}
+          />
 
           <p className="max-w-[320px] break-all text-center font-mono text-[10px] text-muted-foreground">
             {liveUrl || "Link indisponível"}

@@ -120,15 +120,21 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
 - Parceiros: `PartnerBannersPanel` + tabela `referral_partner_banner_spots` (nome obrigatório, arquivar, CSV, link `/p/{portal_token}`).
 - Ranking: `BannersRanking` unifica seus + parceiros.
 - Página do parceiro: `PartnerBannerPortalPage` (`/p/{portal_token}`) + RPC `get_partner_banner_portal`.
-  - Visual dark premium (`src/components/parceiros-portal/*`): hero, KPIs (**Fechamentos** = `pos_venda_stage = 'Aprovado'`), **pizzas A/B/C**, banners.
+  - Visual dark premium (`src/components/parceiros-portal/*`): hero, KPIs, **pizzas A/B/C**, banners.
+  - **KPIs canônicos (não reabrir):**
+    - `stats.leads` = **todos** `customers` com `referral_partner_id` (Meta rodízio + QR/`#R`/keyword).
+    - `stats.leituras` = só `page_events.qr_scan` com `event_target` `partner:{short}` (+ spots). **Meta CTWA não conta leitura.**
+    - `stats.fechamentos` = `pos_venda_stage = 'Aprovado'`.
+  - **Telefone no rodapé do flyer:** chip vivo via RPC — Whapi (`settings.whapi_connected_phone` se superadmin) **ou** Evolution/`whatsapp_instances` com status `connected|online|open`; fallback `consultants.phone`. Nunca `notification_phone`. Admin UI usa o mesmo critério em `resolveConsultantWaPhoneForUi` (`isWhapi` + instância saudável).
   - Clique na linha do banner → `PartnerPortalDownloadModal` (só baixar A4/Banner PNG·PDF; sem editar frase).
-  - RPC devolve `consultant.{name,igreen_id,phone}` para rodapé do flyer + `cycle_leads` **só elegíveis** (filtros SQL ≈ `isCycleLeadEligible` + exige stage ou fila do dia) com nome, `phone_whatsapp`, stage, fila (`queue_queue`/`queue_step`), pós-venda.
+  - Preview/impressão compartilham `FLYER_TEMPLATES` + `FlyerStaticPreview` (`src/components/admin/flyerTemplates.ts`) — PartnerQrCode / LiveModal / PortalDownload / ConsultantBanner.
+  - RPC devolve `consultant.{name,igreen_id,phone}` + `cycle_leads` **só elegíveis** (filtros SQL ≈ `isCycleLeadEligible` + exige stage ou fila do dia) com nome, `phone_whatsapp`, stage, fila (`queue_queue`/`queue_step`), pós-venda.
   - Classificação: `src/lib/partnerPortalCycle.ts` (fila diária prioriza; sem stage/fila → fora da pizza).
   - Clique na fatia: nome + telefone (`tel:`) + **aviso da etapa** (+ próximo toque).
   - Meta `noindex,nofollow` com cleanup no unmount. Aviso “Link privado — não compartilhe”.
 - Limiar `banner_alert_threshold` no parceiro (0=off). Cron `partner-banner-alerts-cron` (15 min) conta leads/24h; se >= limiar, avisa consultor (e parceiro se tiver `notification_phone`). Dedup `banner_alert_last_at`.
 - `notifyPartnerNewLead` **pula** lead com `do_not_contact` (salvo `force`).
-- Telemetria `qr-redirect`: `banner_root` / `banner_spot:{code}` / `partner:{short}` / `partner:{short}:{spot}`.
+- Telemetria `qr-redirect`: `banner_root` / `banner_spot:{code}` / `partner:{short}` / `partner:{short}:{spot}`. Insert de `qr_scan` é **await** (não fire-and-forget). Canal WA do redirect = Whapi **ou** Evolution via `resolveConsultantConnectedWaPhone`.
 - Keywords espelho em `consultants.banner_keywords` e `referral_partners.keywords` — sync **une** (nunca remove histórico ao arquivar).
 
 ---

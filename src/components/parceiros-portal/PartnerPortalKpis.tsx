@@ -35,12 +35,14 @@ export function PartnerPortalKpis({
     {
       label: "Leituras QR",
       value: leituras,
+      hint: "Só QR impresso — anúncio Meta não conta",
       Icon: QrCode,
       accent: "from-emerald-500/20 to-transparent",
     },
     {
       label: "Leads",
       value: leads,
+      hint: "Atribuídos a você (Meta + QR/keyword)",
       Icon: Users,
       accent: "from-lime-500/20 to-transparent",
     },

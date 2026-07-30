@@ -21,6 +21,19 @@ import {
   previewFooterFontSize,
 } from "@/components/admin/flyerFooter";
 import {
+  drawImageCover,
+  drawQrWithThinFrame,
+} from "@/components/admin/flyerCanvasDraw";
+import { formatFlyerPhoneDisplay } from "@/components/admin/flyerPhoneDisplay";
+import {
+  FLYER_PREVIEW_MAX_H,
+  FLYER_PREVIEW_W,
+  FLYER_QR_BORDER_PX,
+  FLYER_QR_QUIET_PX,
+  FLYER_TEMPLATES,
+  type FlyerFormatId,
+} from "@/components/admin/flyerTemplates";
+import {
   resolveQrMessage,
   buildDefaultQrPhrase,
   QR_PHRASE_MAX,
@@ -78,11 +91,9 @@ function buildShortLink(
 }
 
 /**
- * Modelos de impressão com arte oficial (limpo — só o que existe de fato):
- *  - a4:     210×297mm   (folha sulfite)
- *  - banner: 504×904mm   (banner 360imprimir / gráfica360)
+ * Modelos de impressão — fonte: FLYER_TEMPLATES (A4 + Banner 504×904).
  */
-type TemplateId = "a4" | "banner";
+type TemplateId = FlyerFormatId;
 
 const TEMPLATES: Record<
   TemplateId,
@@ -93,29 +104,26 @@ const TEMPLATES: Record<
     qrY: number;
     qrSize: number;
     footerY: number;
-    /** Altura da faixa de rodapé (% da altura do canvas). */
     footerH?: number;
   }
 > = {
   a4: {
-    label: "Folha A4",
-    src: "/images/banner-a4.jpg",
-    // Calibrado no preview (travado — bate 1:1 com impressão).
-    qrX: 25,
-    qrY: 91,
-    qrSize: 16,
-    footerY: 99,
-    footerH: 2.6,
+    label: FLYER_TEMPLATES.a4.label,
+    src: FLYER_TEMPLATES.a4.bg,
+    qrX: FLYER_TEMPLATES.a4.qrX,
+    qrY: FLYER_TEMPLATES.a4.qrY,
+    qrSize: FLYER_TEMPLATES.a4.qrSize,
+    footerY: FLYER_TEMPLATES.a4.footerY,
+    footerH: FLYER_TEMPLATES.a4.footerH,
   },
   banner: {
-    label: "Banner 504×904mm",
-    src: "/images/banner-504x904.jpg",
-    // Calibrado no preview (travado — bate 1:1 com impressão).
-    qrX: 15,
-    qrY: 89,
-    qrSize: 23,
-    footerY: 100,
-    footerH: 3,
+    label: FLYER_TEMPLATES.banner.label,
+    src: FLYER_TEMPLATES.banner.bg,
+    qrX: FLYER_TEMPLATES.banner.qrX,
+    qrY: FLYER_TEMPLATES.banner.qrY,
+    qrSize: FLYER_TEMPLATES.banner.qrSize,
+    footerY: FLYER_TEMPLATES.banner.footerY,
+    footerH: FLYER_TEMPLATES.banner.footerH,
   },
 };
 const DEFAULT_TEMPLATE_ID: TemplateId = "a4";
@@ -149,21 +157,7 @@ function buildWaMeUrl(
   return `https://wa.me/${normalized}?text=${encodeURIComponent(message)}`;
 }
 
-/**
- * Format a Brazilian phone in E.164-ish digits to "+55 (XX) XXXXX-XXXX".
- * Defensive: returns whatever the user typed if it's clearly malformed.
- */
-function formatPhoneDisplay(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  const noCountry = digits.startsWith("55") ? digits.slice(2) : digits;
-  if (noCountry.length === 11) {
-    return `+55 (${noCountry.slice(0, 2)}) ${noCountry.slice(2, 7)}-${noCountry.slice(7)}`;
-  }
-  if (noCountry.length === 10) {
-    return `+55 (${noCountry.slice(0, 2)}) ${noCountry.slice(2, 6)}-${noCountry.slice(6)}`;
-  }
-  return phone || "";
-}
+const formatPhoneDisplay = formatFlyerPhoneDisplay;
 
 /**
  * Dimensões físicas e de canvas por template. O canvas usa a proporção
@@ -173,61 +167,24 @@ const TEMPLATE_DIMS: Record<
   TemplateId,
   { canvasW: number; canvasH: number; pdfWmm: number; pdfHmm: number }
 > = {
-  a4: { canvasW: 1240, canvasH: 1754, pdfWmm: 210, pdfHmm: 297 }, // 210×297mm
-  banner: { canvasW: 1008, canvasH: 1808, pdfWmm: 504, pdfHmm: 904 }, // 504×904mm (360imprimir)
+  a4: {
+    canvasW: FLYER_TEMPLATES.a4.canvasW,
+    canvasH: FLYER_TEMPLATES.a4.canvasH,
+    pdfWmm: FLYER_TEMPLATES.a4.pdfWmm,
+    pdfHmm: FLYER_TEMPLATES.a4.pdfHmm,
+  },
+  banner: {
+    canvasW: FLYER_TEMPLATES.banner.canvasW,
+    canvasH: FLYER_TEMPLATES.banner.canvasH,
+    pdfWmm: FLYER_TEMPLATES.banner.pdfWmm,
+    pdfHmm: FLYER_TEMPLATES.banner.pdfHmm,
+  },
 };
-const PREVIEW_W = 320;
-const PREVIEW_MAX_H = 440;
+const PREVIEW_W = FLYER_PREVIEW_W;
+const PREVIEW_MAX_H = FLYER_PREVIEW_MAX_H;
 /** Margem branca interna + moldura fina ao redor do QR (preview, px). */
-const QR_QUIET_PX = 2;
-const QR_BORDER_PX = 1;
-
-/** Desenha QR com faixa branca fina + contorno escuro para leitura limpa na arte. */
-function drawQrWithThinFrame(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  cx: number,
-  cy: number,
-  qrPx: number,
-) {
-  const quiet = Math.max(4, Math.round(qrPx * 0.012));
-  const border = Math.max(2, Math.round(qrPx * 0.004));
-  const dx = cx - qrPx / 2;
-  const dy = cy - qrPx / 2;
-  const outerX = dx - quiet;
-  const outerY = dy - quiet;
-  const outerW = qrPx + quiet * 2;
-  const outerH = qrPx + quiet * 2;
-
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(outerX, outerY, outerW, outerH);
-  ctx.drawImage(img, dx, dy, qrPx, qrPx);
-  ctx.strokeStyle = "#111111";
-  ctx.lineWidth = border;
-  ctx.strokeRect(
-    outerX + border / 2,
-    outerY + border / 2,
-    outerW - border,
-    outerH - border,
-  );
-}
-
-function drawImageCover(
-  ctx: CanvasRenderingContext2D,
-  img: HTMLImageElement,
-  x: number,
-  y: number,
-  w: number,
-  h: number,
-) {
-  const scale = Math.max(w / img.width, h / img.height);
-  const sw = w / scale;
-  const sh = h / scale;
-  const sx = (img.width - sw) / 2;
-  const sy = (img.height - sh) / 2;
-  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
-}
-
+const QR_QUIET_PX = FLYER_QR_QUIET_PX;
+const QR_BORDER_PX = FLYER_QR_BORDER_PX;
 
 /**
  * Editable flyer with draggable QR + footer band.
