@@ -472,6 +472,127 @@ Deno.serve(async (req) => {
     results.push({ key: "outreach_cap_hot", fired: false, detail: `n=${capN}` });
   }
 
+  // ── 7b) Falhas reais de envio na cadência (24h) ───────────────────
+  // Dispara quando `identity_missing:*` (consultor sem nome/telefone/chip) ou
+  // falhas de envio (whapi/evolution/voz/sms) passam do teto configurado.
+  // Tetos: settings.alert_identity_missing_24h / settings.alert_send_failed_24h
+  {
+    const identityLimit = Math.max(
+      1,
+      Number(settings.alert_identity_missing_24h || "") || 10,
+    );
+    const sendFailLimit = Math.max(
+      1,
+      Number(settings.alert_send_failed_24h || "") || 30,
+    );
+
+    const { data: failRows } = await supabase
+      .from("cadence_action_log")
+      .select("consultant_id, channel, detail")
+      .eq("status", "failed")
+      .gte("created_at", since24h)
+      .limit(3000);
+
+    type FailRow = {
+      consultant_id: string | null;
+      channel: string | null;
+      detail: Record<string, unknown> | null;
+    };
+
+    const identityByConsultant = new Map<string, number>();
+    const sendFailByConsultant = new Map<string, number>();
+    const identityReasons = new Map<string, number>();
+    let identityTotal = 0;
+    let sendFailTotal = 0;
+
+    for (const r of (failRows as FailRow[] | null) || []) {
+      const dispatch = String((r.detail as any)?.dispatch || "");
+      if (!dispatch) continue;
+      const cid = String(r.consultant_id || "system");
+      if (dispatch.startsWith("identity_missing")) {
+        identityTotal++;
+        identityByConsultant.set(cid, (identityByConsultant.get(cid) || 0) + 1);
+        const reason = dispatch.split(":")[1] || "?";
+        identityReasons.set(reason, (identityReasons.get(reason) || 0) + 1);
+      } else if (
+        dispatch.startsWith("send_failed") ||
+        dispatch.includes("send_returned_false") ||
+        dispatch.startsWith("send_error")
+      ) {
+        sendFailTotal++;
+        sendFailByConsultant.set(cid, (sendFailByConsultant.get(cid) || 0) + 1);
+      }
+    }
+
+    const idsToName = [
+      ...identityByConsultant.keys(),
+      ...sendFailByConsultant.keys(),
+    ].filter((v) => v && v !== "system");
+    const nameById = new Map<string, string>();
+    if (idsToName.length > 0) {
+      const { data: cons } = await supabase
+        .from("consultants")
+        .select("id, name, display_name")
+        .in("id", Array.from(new Set(idsToName)));
+      for (const c of (cons as { id: string; name?: string; display_name?: string }[] | null) || []) {
+        nameById.set(c.id, String(c.display_name || c.name || c.id).trim());
+      }
+    }
+
+    const topLines = (m: Map<string, number>, max = 4) =>
+      Array.from(m.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, max)
+        .map(([cid, n]) => `• ${nameById.get(cid) || (cid === "system" ? "sem consultor" : cid)} — ${n}`)
+        .join("\n");
+
+    if (identityTotal >= identityLimit) {
+      const reasons = Array.from(identityReasons.entries())
+        .sort((a, b) => b[1] - a[1])
+        .map(([k, n]) => `${k}=${n}`)
+        .join(", ");
+      await fire(
+        "cadence_identity_missing_spike",
+        "critical",
+        `🚨 *Leads travados por consultor sem identidade*\n\n` +
+          `${identityTotal} envio(s) falharam nas últimas 24h por dados faltando ` +
+          `(limite: ${identityLimit}).\n` +
+          `Faltando: ${reasons || "?"}\n\n` +
+          `${topLines(identityByConsultant)}\n\n` +
+          `Corrija: telefone do consultor + chip WhatsApp conectado. ` +
+          `Enquanto isso a pizza desses leads não anda.`,
+        180,
+      );
+    } else {
+      results.push({
+        key: "cadence_identity_missing_spike",
+        fired: false,
+        detail: `n=${identityTotal} limite=${identityLimit}`,
+      });
+    }
+
+    if (sendFailTotal >= sendFailLimit) {
+      await fire(
+        "cadence_send_failed_spike",
+        "critical",
+        `🚨 *Muitas falhas de envio na cadência*\n\n` +
+          `${sendFailTotal} falha(s) nas últimas 24h (limite: ${sendFailLimit}).\n\n` +
+          `${topLines(sendFailByConsultant)}\n\n` +
+          `Normalmente é chip WhatsApp caído/deslogado ou token do canal. ` +
+          `Confira o painel do WhatsApp desses consultores.`,
+        180,
+      );
+    } else {
+      results.push({
+        key: "cadence_send_failed_spike",
+        fired: false,
+        detail: `n=${sendFailTotal} limite=${sendFailLimit}`,
+      });
+    }
+  }
+
+
+
   // ── 8) Whapi health (AUTH) ────────────────────────────────────────
   const whapiToken = settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "";
   const whapiBase = (settings.whapi_api_url || "https://gate.whapi.cloud").replace(/\/+$/, "");
