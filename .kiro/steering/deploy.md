@@ -11,16 +11,48 @@ caminho sempre — não ficar tentando outras formas que não funcionam.
 
 ## Edge Functions (Supabase)
 
-O deploy NÃO é feito localmente pelo CLI do Supabase. Ele roda pelo
-**GitHub Actions**, no workflow `.github/workflows/deploy-edge-functions.yml`.
+Caminho **canônico**: **GitHub Actions**, workflow
+`.github/workflows/deploy-edge-functions.yml`.
 
-- O CLI local do Supabase **não está logado** e não há `SUPABASE_ACCESS_TOKEN`
-  no ambiente. Não adiantar `supabase functions deploy` direto.
 - O workflow usa o secret `SUPABASE_ACCESS_TOKEN` e faz checkout do código
   **do repositório remoto** (branch `main`). Commit + push ANTES do dispatch.
 - `project-ref`: `zlzasfhcxcznaprrragl`.
 - **Repo:** `tvmensal2025/igreen-page-magic` (não usar o antigo
   `igreen-official-portal` parado).
+
+### Minutos Actions esgotados (`startup_failure` / `BuildFailed`)
+
+Repo **privado** consome a cota Free (~**2000 min/mês**). Com spending limit
+**$0**, o Actions para de iniciar jobs (0s, `startup_failure`).
+
+| Sinal | Leitura |
+|---|---|
+| Último CI verde (este ciclo) | ~2026-07-30 **14:55 UTC** |
+| Primeiro `startup_failure` | ~2026-07-30 **15:53 UTC** |
+| Liberação esperada da cota | **01/08/2026 ~00:00** (reset mensal Free — docs GitHub) |
+| Confirmar no browser | [Billing → Actions](https://github.com/settings/billing) → “Next reset” / included minutes |
+| Liberar **agora** | Subir spending limit acima de $0 (mesma tela) ou plano Pro |
+
+Conta `tvmensal2025` criada em **2025-07-21** — se o ciclo for aniversário e não
+calendário, o reset pode ser **21/08**. Confiar no “Next reset” do Billing.
+
+Enquanto Actions estiver morto: **não** ficar disparando workflow (só gasta
+tentativa). Usar emergência abaixo.
+
+### Emergência — CLI Supabase (só com Actions morto)
+
+Token em `.env.mcp.local` (`SUPABASE_ACCESS_TOKEN`) — **nunca** commitado.
+
+```bash
+set -a; source <(grep -E '^(SUPABASE_ACCESS_TOKEN|SUPABASE_PROJECT_REF)=' .env.mcp.local); set +a
+# uma função:
+supabase functions deploy evolution-webhook --project-ref "$SUPABASE_PROJECT_REF"
+# se o CLI disser "No change" mas a edge responde INVALID_ENTRYPOINT:
+# acrescente uma linha no index.ts, deploy, depois git checkout -- esse arquivo
+```
+
+Smoke: `OPTIONS` na URL da function → **200** (não `INVALID_ENTRYPOINT`).
+Voltar ao caminho Actions assim que a cota liberar.
 
 ### Gates do workflow (2026-07 — endurecido)
 

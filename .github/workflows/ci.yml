@@ -6,7 +6,18 @@ permissions:
 on:
   push:
     branches: [main]
+    # Economiza cota Actions (repo privado Free ~2000 min/mês).
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".kiro/**"
+      - ".cursor/**"
   pull_request:
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+      - ".kiro/**"
+      - ".cursor/**"
   workflow_dispatch:
 
 # Concurrency: cancela build anterior do mesmo branch quando um novo é pushed.
