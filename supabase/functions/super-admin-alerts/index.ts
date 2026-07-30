@@ -15,6 +15,7 @@
  *  5) SMS: pico UNDELIV/REJECTD/EXPIRED
  *  6) Portal 2: muitos leads em worker_offline
  *  7) Caps outreach no limite (automation_skip_log)
+ *  7b) Falhas de envio 24h: identity_missing + send_failed (teto configurável)
  *  8) Whapi health (AUTH) — NÃO alerta Evolution needs_reconnect
  *  9) Resumo diário “tudo ok” (1×/24h)
  */
