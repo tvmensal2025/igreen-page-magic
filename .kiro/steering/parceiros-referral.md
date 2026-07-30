@@ -56,7 +56,9 @@ Lead escaneia QR → edge qr-redirect
 
 Lead manda WA → whapi-webhook / evolution-webhook (inbound)
     IF campanha Meta + pool rodízio ativo → NÃO faz keyword-match
-        (blockKeywordForMetaLead; lead vai para needs_manual_review)
+        (blockKeywordForMetaLead; RPC rodízio atribui parceiro)
+        Se RPC falhar → needs_manual_review
+    ELSE sem campanha/parceiro/keyword → lead do consultor dono (sem revisão)
     ELSE (janela de detecção: < 3 msgs inbound):
         1) extractShortCodeMarker(text)   ← prioridade 1 (determinístico)
         2) matchKeyword(text, partners)   ← prioridade 2 (token exato, SEM fuzzy)
@@ -100,7 +102,8 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
 - **Front e Deno DEVEM ficar idênticos.** Se editar `qrPhrase.ts`, editar `_shared/qr-phrase.ts` no mesmo commit. `qrPhraseParity.test.ts` trava divergência.
 - **`short_code` tem prioridade sobre keyword** no matcher — é o marcador determinístico que sobrevive a texto natural do lead.
 - **Marcador `#R{code}` prevalece sobre o limite de 90 chars** da frase (`QR_PHRASE_MAX`). Nunca cortar o marcador para caber.
-- **Lead de campanha Meta com rodízio ativo NÃO cai em keyword-match.** Vai para `needs_manual_review` até a RPC de rodízio resolver.
+- **Lead de campanha Meta com rodízio ativo NÃO cai em keyword-match.** A RPC de rodízio atribui o parceiro. Se a RPC falhar (`rodizio_rpc_error` / conflito de bind / ad_id mismatch) → `needs_manual_review`.
+- **Sem campanha com parceiros (nem keyword/`#R`):** lead fica **direto com o consultor dono** — **não** entra em fila de revisão (`no_campaign_ctwa_phrase`, `strong_meta_unmapped`, `meta_lead_no_campaign_or_pool`, `rodizio_pool_empty`). Ver `OWNER_ONLY_NO_REVIEW_REASONS` em `_shared/rodizio-cas.ts`.
 - **`cli` nunca é do parceiro.** Sempre o ID iGreen do consultor dono/abonador. Métrica soma dois IDs (dono + `partner_igreen_id`) sem trocar o dono.
 - **`notifyPartnerNewLead` não notifica lead `is_sandbox`.** Manter esse guard.
 - **Só notificar parceiro depois do UPDATE de `referral_partner_id` sem erro** (Whapi e Evolution). Nunca setar só em memória e avisar.

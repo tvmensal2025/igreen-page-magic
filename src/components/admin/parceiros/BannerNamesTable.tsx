@@ -15,6 +15,8 @@ interface Props {
   loading?: boolean;
   emptyHint?: string;
   title?: string;
+  /** Clique na linha → abre o mesmo modal de baixar/editar frase (Geral ou local). */
+  onRowClick?: (row: BannerNameRow) => void;
 }
 
 /**
@@ -26,6 +28,7 @@ export function BannerNamesTable({
   loading = false,
   emptyHint = "Nenhum banner nomeado ainda. Crie um local com nome para rastrear.",
   title = "Por nome do banner",
+  onRowClick,
 }: Props) {
   return (
     <div className="bg-card rounded-2xl border border-border overflow-hidden">
@@ -34,7 +37,9 @@ export function BannerNamesTable({
           {title}
         </p>
         <p className="text-[11px] text-muted-foreground mt-0.5">
-          Cada nome identifica de onde veio a leitura e o lead.
+          {onRowClick
+            ? "Clique no nome para abrir o modal e mudar a frase (sem reimprimir)."
+            : "Cada nome identifica de onde veio a leitura e o lead."}
         </p>
       </div>
 
@@ -66,36 +71,73 @@ export function BannerNamesTable({
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => (
-                <tr
-                  key={r.key}
-                  className="border-b border-border/40 last:border-0 hover:bg-muted/20"
-                >
-                  <td className="px-4 py-2.5 min-w-0">
-                    <p className="font-medium text-foreground truncate">{r.name}</p>
-                    {r.code ? (
-                      <p className="text-[10px] font-mono text-muted-foreground truncate">
-                        /{r.code}
+              {rows.map((r) => {
+                const clickable =
+                  !!onRowClick &&
+                  r.kind !== "arquivado" &&
+                  (r.kind === "geral" || !r.key.startsWith("kw:"));
+                return (
+                  <tr
+                    key={r.key}
+                    className={`border-b border-border/40 last:border-0 ${
+                      clickable
+                        ? "hover:bg-primary/5 cursor-pointer focus-within:bg-primary/5"
+                        : "hover:bg-muted/20"
+                    }`}
+                    onClick={clickable ? () => onRowClick?.(r) : undefined}
+                    onKeyDown={
+                      clickable
+                        ? (e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              onRowClick?.(r);
+                            }
+                          }
+                        : undefined
+                    }
+                    tabIndex={clickable ? 0 : undefined}
+                    role={clickable ? "button" : undefined}
+                    title={
+                      clickable
+                        ? r.kind === "geral"
+                          ? "Abrir Banner Geral — baixar / editar frase"
+                          : `Abrir “${r.name}” — baixar / editar frase`
+                        : undefined
+                    }
+                  >
+                    <td className="px-4 py-2.5 min-w-0">
+                      <p className="font-medium text-foreground truncate">
+                        {r.name}
+                        {clickable ? (
+                          <span className="ml-1.5 text-[10px] font-normal text-primary">
+                            editar frase
+                          </span>
+                        ) : null}
                       </p>
-                    ) : r.kind === "geral" ? (
-                      <p className="text-[10px] text-muted-foreground">
-                        QR raiz · sem ponto específico
-                      </p>
-                    ) : null}
-                    {r.kind === "arquivado" && (
-                      <p className="text-[10px] text-amber-700 dark:text-amber-400">
-                        arquivado
-                      </p>
-                    )}
-                  </td>
-                  <td className="px-3 py-2.5 text-right font-semibold tabular-nums">
-                    {r.leituras.toLocaleString("pt-BR")}
-                  </td>
-                  <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
-                    {r.leads.toLocaleString("pt-BR")}
-                  </td>
-                </tr>
-              ))}
+                      {r.code ? (
+                        <p className="text-[10px] font-mono text-muted-foreground truncate">
+                          /{r.code}
+                        </p>
+                      ) : r.kind === "geral" ? (
+                        <p className="text-[10px] text-muted-foreground">
+                          QR raiz · sem ponto específico
+                        </p>
+                      ) : null}
+                      {r.kind === "arquivado" && (
+                        <p className="text-[10px] text-amber-700 dark:text-amber-400">
+                          arquivado
+                        </p>
+                      )}
+                    </td>
+                    <td className="px-3 py-2.5 text-right font-semibold tabular-nums">
+                      {r.leituras.toLocaleString("pt-BR")}
+                    </td>
+                    <td className="px-4 py-2.5 text-right font-semibold tabular-nums">
+                      {r.leads.toLocaleString("pt-BR")}
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

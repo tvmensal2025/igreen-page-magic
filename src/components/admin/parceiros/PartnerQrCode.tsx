@@ -53,6 +53,8 @@ interface PartnerQrCodeProps {
   license?: string | null;
   /** Código numérico do parceiro (gerado no banco) — vai na URL curta. */
   shortCode?: string | null;
+  /** Código do local (?s=) — banner nomeado do parceiro. */
+  spotCode?: string | null;
   /** Ao baixar com keyword nova, persiste no parceiro. */
   onSaveKeyword?: (keyword: string) => Promise<void>;
 }
@@ -67,37 +69,20 @@ function buildShortLink(
   consultantIgreenId?: string | null,
   keyword?: string | null,
   msg?: string | null,
+  spot?: string | null,
 ): string | null {
   const ref = (consultantIgreenId ?? "").trim() || (license ?? "").trim();
   const code = (shortCode ?? "").trim();
   if (!ref || !code) return null;
-  return buildPartnerPublicShortLink(ref, code, { keyword, msg });
+  return buildPartnerPublicShortLink(ref, code, { keyword, msg, spot });
 }
 
 /**
- * Modelos de impressão. Cada modelo tem proporção física FIXA: a arte enviada
- * é sempre recortada (cover) para caber exatamente no tamanho de impressão, sem
- * distorcer e sem mudar a proporção. O PDF sai no tamanho físico real (mm).
- *
- *  - a4:       210×297mm   (folha sulfite, arte oficial)
- *  - banner:   504×904mm   (banner 360imprimir / gráfica360)
- *  - faixa200: 2000×800mm  (2,00×0,80m, faixa horizontal — envie sua arte)
- *  - faixa110: 1100×800mm  (1,10×0,80m, faixa horizontal — envie sua arte)
+ * Modelos de impressão com arte oficial (limpo — só o que existe de fato):
+ *  - a4:     210×297mm   (folha sulfite)
+ *  - banner: 504×904mm   (banner 360imprimir / gráfica360)
  */
-type TemplateId =
-  | "a4"
-  | "banner"
-  | "banner60x90"
-  | "banner80x120"
-  | "banner90x120"
-  | "banner100x150"
-  | "rollup80x200"
-  | "faixa200"
-  | "faixa110"
-  | "faixa100x70"
-  | "faixa300x100"
-  | "story"
-  | "post";
+type TemplateId = "a4" | "banner";
 
 const TEMPLATES: Record<
   TemplateId,
@@ -132,119 +117,15 @@ const TEMPLATES: Record<
     footerY: 100,
     footerH: 3,
   },
-  // ---- Banners verticais (envie sua arte) ----
-  banner60x90: {
-    label: "Banner 60×90cm",
-    src: null,
-    qrX: 50,
-    qrY: 80,
-    qrSize: 28,
-    footerY: 95,
-  },
-  banner80x120: {
-    label: "Banner 80×120cm",
-    src: null,
-    qrX: 50,
-    qrY: 80,
-    qrSize: 26,
-    footerY: 95,
-  },
-  banner90x120: {
-    label: "Banner 90×120cm",
-    src: null,
-    qrX: 50,
-    qrY: 78,
-    qrSize: 28,
-    footerY: 94,
-  },
-  banner100x150: {
-    label: "Banner 100×150cm",
-    src: null,
-    qrX: 50,
-    qrY: 80,
-    qrSize: 26,
-    footerY: 95,
-  },
-  rollup80x200: {
-    label: "Roll-up 80×200cm",
-    src: null,
-    qrX: 50,
-    qrY: 75,
-    qrSize: 24,
-    footerY: 93,
-  },
-  // ---- Faixas horizontais (envie sua arte) ----
-  faixa200: {
-    label: "Faixa 2,00×0,80m",
-    src: null,
-    qrX: 88,
-    qrY: 50,
-    qrSize: 20,
-    footerY: 90,
-  },
-  faixa110: {
-    label: "Faixa 1,10×0,80m",
-    src: null,
-    qrX: 84,
-    qrY: 52,
-    qrSize: 28,
-    footerY: 90,
-  },
-  faixa100x70: {
-    label: "Faixa 1,00×0,70m",
-    src: null,
-    qrX: 80,
-    qrY: 50,
-    qrSize: 30,
-    footerY: 92,
-  },
-  faixa300x100: {
-    label: "Faixa 3,00×1,00m",
-    src: null,
-    qrX: 90,
-    qrY: 50,
-    qrSize: 16,
-    footerY: 92,
-  },
-  // ---- Digitais (story / post — envie sua arte) ----
-  story: {
-    label: "Story / Status 9:16",
-    src: null,
-    qrX: 50,
-    qrY: 78,
-    qrSize: 26,
-    footerY: 95,
-  },
-  post: {
-    label: "Post Instagram 1:1",
-    src: null,
-    qrX: 50,
-    qrY: 70,
-    qrSize: 32,
-    footerY: 93,
-  },
 };
 const DEFAULT_TEMPLATE_ID: TemplateId = "a4";
 
 /**
  * Layouts com arte oficial começam travados (impresso bate 1:1 com o preview).
- * As faixas são de upload do usuário, então começam destravadas para posicionar
- * o QR e a faixa de rodapé livremente.
  */
 const DEFAULT_LOCKED: Record<TemplateId, boolean> = {
   a4: true,
   banner: true,
-  banner60x90: false,
-  banner80x120: false,
-  banner90x120: false,
-  banner100x150: false,
-  rollup80x200: false,
-  faixa200: false,
-  faixa110: false,
-  faixa100x70: false,
-  faixa300x100: false,
-  story: false,
-  post: false,
 };
 
 /**
@@ -292,22 +173,8 @@ const TEMPLATE_DIMS: Record<
   TemplateId,
   { canvasW: number; canvasH: number; pdfWmm: number; pdfHmm: number }
 > = {
-  a4: { canvasW: 1240, canvasH: 1754, pdfWmm: 210, pdfHmm: 297 }, // 210×297mm — canvas na proporção EXATA da folha (0,707): fundo cobre tudo, sem barra lateral nem distorção
+  a4: { canvasW: 1240, canvasH: 1754, pdfWmm: 210, pdfHmm: 297 }, // 210×297mm
   banner: { canvasW: 1008, canvasH: 1808, pdfWmm: 504, pdfHmm: 904 }, // 504×904mm (360imprimir)
-  // Banners verticais (proporção física travada; canvas escalado ~1.18px/mm).
-  banner60x90: { canvasW: 708, canvasH: 1063, pdfWmm: 600, pdfHmm: 900 }, // 60×90cm
-  banner80x120: { canvasW: 945, canvasH: 1417, pdfWmm: 800, pdfHmm: 1200 }, // 80×120cm
-  banner90x120: { canvasW: 1063, canvasH: 1417, pdfWmm: 900, pdfHmm: 1200 }, // 90×120cm
-  banner100x150: { canvasW: 1181, canvasH: 1772, pdfWmm: 1000, pdfHmm: 1500 }, // 100×150cm
-  rollup80x200: { canvasW: 945, canvasH: 2362, pdfWmm: 800, pdfHmm: 2000 }, // 80×200cm
-  // Faixas horizontais (landscape).
-  faixa200: { canvasW: 2000, canvasH: 800, pdfWmm: 2000, pdfHmm: 800 }, // 2,00×0,80m
-  faixa110: { canvasW: 1375, canvasH: 1000, pdfWmm: 1100, pdfHmm: 800 }, // 1,10×0,80m
-  faixa100x70: { canvasW: 1181, canvasH: 827, pdfWmm: 1000, pdfHmm: 700 }, // 1,00×0,70m
-  faixa300x100: { canvasW: 2362, canvasH: 787, pdfWmm: 3000, pdfHmm: 1000 }, // 3,00×1,00m
-  // Digitais (px reais; PDF em mm só pra manter o fluxo — uso real é o PNG).
-  story: { canvasW: 1080, canvasH: 1920, pdfWmm: 108, pdfHmm: 192 }, // 1080×1920px (9:16)
-  post: { canvasW: 1080, canvasH: 1080, pdfWmm: 108, pdfHmm: 108 }, // 1080×1080px (1:1)
 };
 const PREVIEW_W = 320;
 const PREVIEW_MAX_H = 440;
@@ -383,6 +250,7 @@ export function PartnerQrCode({
   qrPhrase,
   license,
   shortCode,
+  spotCode = null,
   onSaveKeyword,
 }: PartnerQrCodeProps) {
   const keywordOptions = Array.from(
@@ -435,6 +303,7 @@ export function PartnerQrCode({
     consultantIgreenId,
     activeKeyword,
     useCustomPhrase ? phrase : null,
+    spotCode,
   );
   const url =
     shortLink ??

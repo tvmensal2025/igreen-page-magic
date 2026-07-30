@@ -2,20 +2,31 @@
 // Remote Support — RemoteSupportProvider
 // =============================================================================
 // Monte uma única vez em App.tsx (dentro do Router).
-// Fica invisível quando não há sessão; exibe banner + botão flutuante quando
-// o usuário está autenticado.
+// Banner/dialog de sessão ativa: qualquer tela autenticada.
+// Botão flutuante "pedir ajuda": só no Dashboard (/admin + aba dashboard).
 // v4: passa prop reconnecting para o banner.
 // =============================================================================
 
 import { useEffect, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { LifeBuoy } from "lucide-react";
 import { useRequesterSession } from "./useRequesterSession";
 import { ActiveSessionBanner } from "./ActiveSessionBanner";
 import { IncomingOperatorRequestDialog } from "./IncomingOperatorRequestDialog";
 import { supabase } from "@/integrations/supabase/client";
+import { ADMIN_TAB_CHANGED_EVENT, isAdminDashboardSurface } from "@/lib/adminDashboardSurface";
 
 export function RemoteSupportProvider() {
+  const location = useLocation();
   const [userId, setUserId] = useState<string | null>(null);
+  const [onDashboard, setOnDashboard] = useState(() => isAdminDashboardSurface(location.pathname));
+
+  useEffect(() => {
+    const refresh = () => setOnDashboard(isAdminDashboardSurface(location.pathname));
+    refresh();
+    window.addEventListener(ADMIN_TAB_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(ADMIN_TAB_CHANGED_EVENT, refresh);
+  }, [location.pathname]);
 
   useEffect(() => {
     supabase.auth.getSession()
@@ -75,8 +86,8 @@ export function RemoteSupportProvider() {
         onResolved={() => setRefreshKey(k => k + 1)}
       />
 
-      {/* Botão discreto de ajuda — visível apenas quando não há sessão ativa */}
-      {!session && (
+      {/* Botão só no Dashboard — banner/dialog de sessão ativa continuam em qualquer tela */}
+      {!session && onDashboard && (
         <button
           type="button"
           onClick={request}

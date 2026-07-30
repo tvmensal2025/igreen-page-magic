@@ -33,6 +33,8 @@ import {
 interface Props {
   consultantId: string;
   spots: BannerSpot[];
+  /** Clique na tabela Nome|leituras|leads abre o modal Geral/local. */
+  onOpenDownload?: (opts: { mode: "root" | "spot"; spotId?: string }) => void;
 }
 
 type Period = 7 | 30 | 90 | "all";
@@ -143,7 +145,7 @@ function weekdayInBrt(iso: string): number {
   }
 }
 
-export function BannersDashboard({ consultantId, spots }: Props) {
+export function BannersDashboard({ consultantId, spots, onOpenDownload }: Props) {
   const [period, setPeriod] = useState<Period>("all");
   const [scans, setScans] = useState<ScanRow[]>([]);
   const [leads, setLeads] = useState<LeadRow[]>([]);
@@ -434,6 +436,17 @@ export function BannersDashboard({ consultantId, spots }: Props) {
             rows={metrics.nameRows}
             title="Nome | leituras | leads"
             emptyHint="Crie banners com nome (Com local) para separar cada ponto nesta tabela."
+            onRowClick={
+              onOpenDownload
+                ? (row) => {
+                    if (row.kind === "geral") {
+                      onOpenDownload({ mode: "root" });
+                      return;
+                    }
+                    onOpenDownload({ mode: "spot", spotId: row.key });
+                  }
+                : undefined
+            }
           />
 
           <ChartCard title="Leituras por dia" icon={<TrendingUp className="w-4 h-4" />}>

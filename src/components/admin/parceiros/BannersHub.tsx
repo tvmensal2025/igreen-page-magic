@@ -52,6 +52,7 @@ interface Props {
   consultantId: string;
   consultantName?: string;
   consultantIgreenId?: string;
+  consultantPhone?: string;
   license?: string | null;
   defaultPhrase?: string | null;
   spots: BannerSpot[];
@@ -61,13 +62,17 @@ interface Props {
   onBack: () => void;
   /** Abre o modal de download/edição. mode: root | spot; spotId opcional. */
   onOpenDownload: (opts: { mode: "root" | "spot"; spotId?: string }) => void;
-  onOpenPartnerQr: (partner: ReferralPartner) => void;
+  onOpenPartnerQr: (
+    partner: ReferralPartner,
+    ctx?: { keyword?: string; spotCode?: string; phrase?: string | null },
+  ) => void;
 }
 
 export function BannersHub({
   consultantId,
   consultantName = "",
   consultantIgreenId = "",
+  consultantPhone = "",
   license = "",
   defaultPhrase = null,
   spots,
@@ -349,7 +354,9 @@ export function BannersHub({
                   partner={selectedPartner}
                   license={license}
                   consultantIgreenId={consultantIgreenId}
-                  onOpenPartnerQr={() => onOpenPartnerQr(selectedPartner)}
+                  consultantName={consultantName}
+                  consultantPhone={consultantPhone}
+                  onOpenPartnerQr={(ctx) => onOpenPartnerQr(selectedPartner, ctx)}
                   onPartnerUpdated={onPartnersChanged}
                 />
               )}
@@ -386,7 +393,11 @@ export function BannersHub({
       </div>
 
       {tab === "resultados" ? (
-        <BannersDashboard consultantId={consultantId} spots={spots} />
+        <BannersDashboard
+          consultantId={consultantId}
+          spots={spots}
+          onOpenDownload={onOpenDownload}
+        />
       ) : (
         <div className="space-y-4">
           <Alert className="border-primary/20 bg-primary/5">
@@ -419,6 +430,13 @@ export function BannersHub({
             loading={loadingCounts}
             title="Nome | leituras | leads"
             emptyHint="Crie um local com nome (ex.: Posto Shell) para rastrear cada ponto."
+            onRowClick={(row) => {
+              if (row.kind === "geral") {
+                onOpenDownload({ mode: "root" });
+                return;
+              }
+              onOpenDownload({ mode: "spot", spotId: row.key });
+            }}
           />
 
           {/* Card Geral */}

@@ -15,7 +15,6 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -36,12 +35,12 @@ import {
 import {
   buildDefaultQrPhrase,
   isGenericKeyword,
-  QR_PHRASE_MAX,
 } from "./qrPhrase";
 import {
   BannerNamesTable,
   buildBannerNameRows,
 } from "./BannerNamesTable";
+import { PartnerBannerLiveModal } from "./PartnerBannerLiveModal";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
 
 export type PartnerBannerSpot = {
@@ -60,7 +59,14 @@ interface Props {
   };
   license?: string | null;
   consultantIgreenId?: string;
-  onOpenPartnerQr: () => void;
+  consultantName?: string;
+  consultantPhone?: string;
+  /** Abre download QR. ctx.spot = local nomeado; sem ctx = geral. */
+  onOpenPartnerQr: (ctx?: {
+    keyword?: string;
+    spotCode?: string;
+    phrase?: string | null;
+  }) => void;
   onPartnerUpdated: () => void;
 }
 
@@ -69,6 +75,8 @@ export function PartnerBannersPanel({
   partner,
   license = "",
   consultantIgreenId = "",
+  consultantName = "",
+  consultantPhone = "",
   onOpenPartnerQr,
   onPartnerUpdated,
 }: Props) {
@@ -84,8 +92,8 @@ export function PartnerBannersPanel({
   const [leadCounts, setLeadCounts] = useState<Record<string, number>>({});
   const [archivingId, setArchivingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [editPhraseId, setEditPhraseId] = useState<string | null>(null);
-  const [editPhrase, setEditPhrase] = useState("");
+  const [liveOpen, setLiveOpen] = useState(false);
+  const [liveSpot, setLiveSpot] = useState<PartnerBannerSpot | null>(null);
   const [alertThreshold, setAlertThreshold] = useState(
     Number(partner.banner_alert_threshold || 0),
   );
@@ -281,30 +289,9 @@ export function PartnerBannersPanel({
     }
   };
 
-  const savePhrase = async (spot: PartnerBannerSpot) => {
-    setBusyId(spot.id);
-    try {
-      const phrase = editPhrase.trim().slice(0, QR_PHRASE_MAX + 40) || null;
-      const { error: err } = await supabase
-        .from("referral_partner_banner_spots" as never)
-        .update({
-          phrase,
-          updated_at: new Date().toISOString(),
-        } as never)
-        .eq("id", spot.id);
-      if (err) throw err;
-      setEditPhraseId(null);
-      await load();
-      toast({ title: "Frase salva (QR vivo)" });
-    } catch (e: unknown) {
-      toast({
-        title: "Erro ao salvar frase",
-        description: e instanceof Error ? e.message : "Falha",
-        variant: "destructive",
-      });
-    } finally {
-      setBusyId(null);
-    }
+  const openLive = (spot: PartnerBannerSpot | null) => {
+    setLiveSpot(spot);
+    setLiveOpen(true);
   };
 
   const ensurePortalToken = async () => {
@@ -413,10 +400,10 @@ export function PartnerBannersPanel({
             type="button"
             size="sm"
             className="h-8 gap-1"
-            onClick={onOpenPartnerQr}
+            onClick={() => openLive(null)}
           >
             <ExternalLink className="h-3.5 w-3.5" />
-            Baixar QR geral
+            Baixar / editar Geral
           </Button>
         </div>
       </div>
@@ -425,6 +412,15 @@ export function PartnerBannersPanel({
         rows={nameRows}
         loading={loading}
         title={`Nome | leituras | leads — ${partner.nome}`}
+        onRowClick={(row) => {
+          if (row.kind === "geral") {
+            openLive(null);
+            return;
+          }
+          const spot = spots.find((s) => s.id === row.key);
+          if (!spot || spot.is_active === false) return;
+          openLive(spot);
+        }}
       />
 
       <Card>
@@ -504,60 +500,26 @@ export function PartnerBannersPanel({
                 <p className="text-[10px] text-muted-foreground">
                   {scanCounts[s.code] || 0} leitura(s)
                 </p>
-                {editPhraseId === s.id ? (
-                  <div className="space-y-1.5">
-                    <Textarea
-                      rows={2}
-                      className="text-xs"
-                      value={editPhrase}
-                      onChange={(e) => setEditPhrase(e.target.value)}
-                    />
-                    <div className="flex gap-1.5">
-                      <Button
-                        size="sm"
-                        className="h-7 text-xs"
-                        disabled={busyId === s.id}
-                        onClick={() => void savePhrase(s)}
-                      >
-                        Salvar frase
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        className="h-7 text-xs"
-                        onClick={() => setEditPhraseId(null)}
-                      >
-                        Cancelar
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs gap-1"
-                      onClick={() => {
-                        setEditPhraseId(s.id);
-                        setEditPhrase(
-                          s.phrase || buildDefaultQrPhrase(s.keyword),
-                        );
-                      }}
-                    >
-                      <Pencil className="h-3 w-3" />
-                      Frase
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="h-7 text-xs gap-1 text-destructive"
-                      onClick={() => setArchivingId(s.id)}
-                    >
-                      <Trash2 className="h-3 w-3" />
-                      Excluir
-                    </Button>
-                  </div>
-                )}
+                <div className="flex flex-wrap gap-1.5">
+                  <Button
+                    size="sm"
+                    variant="default"
+                    className="h-7 text-xs gap-1"
+                    onClick={() => openLive(s)}
+                  >
+                    <Pencil className="h-3 w-3" />
+                    Baixar / editar frase
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs gap-1 text-destructive"
+                    onClick={() => setArchivingId(s.id)}
+                  >
+                    <Trash2 className="h-3 w-3" />
+                    Excluir
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           );
@@ -644,6 +606,32 @@ export function PartnerBannersPanel({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <PartnerBannerLiveModal
+        open={liveOpen}
+        onClose={() => setLiveOpen(false)}
+        partner={partner}
+        spot={liveSpot}
+        license={license}
+        consultantIgreenId={consultantIgreenId}
+        consultantName={consultantName}
+        consultantPhone={consultantPhone}
+        onSaved={() => {
+          void load();
+          onPartnerUpdated();
+        }}
+        onDownloadQr={(currentPhrase) => {
+          if (liveSpot) {
+            onOpenPartnerQr({
+              keyword: liveSpot.keyword,
+              spotCode: liveSpot.code,
+              phrase: currentPhrase,
+            });
+          } else {
+            onOpenPartnerQr({ phrase: currentPhrase });
+          }
+        }}
+      />
     </div>
   );
 }

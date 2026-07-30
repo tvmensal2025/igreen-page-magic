@@ -59,8 +59,9 @@ const ERROR_LABEL: Record<string, string> = {
 
 /**
  * Card na aba Parceiros: leads que caíram na fila de revisão manual
- * (customers.needs_manual_review = true). O consultor escolhe o parceiro
- * — o sistema nunca chuta sozinho nesses casos.
+ * (customers.needs_manual_review = true). Só entra quando há campanha/pool
+ * com parceiros e a atribuição falhou — sem campanha/parceiro/keyword o
+ * lead já fica com o consultor dono (sem fila).
  */
 export function ManualReviewQueueCard({ consultantId }: { consultantId: string }) {
   const [assigningId, setAssigningId] = useState<string | null>(null);
@@ -281,8 +282,9 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
               Fila de revisão · {leads.length} lead{leads.length > 1 ? "s" : ""}
             </h3>
             <p className="text-xs text-muted-foreground">
-              Estes leads vieram de anúncio, mas o sistema não identificou a campanha
-              com segurança. Escolha o parceiro certo — assim ninguém recebe lead errado.
+              Campanha com parceiros na pool, mas o sistema não conseguiu
+              escolher com segurança. Sem campanha/parceiro/keyword o lead
+              já fica com você — sem passar por esta fila.
             </p>
           </div>
         </div>

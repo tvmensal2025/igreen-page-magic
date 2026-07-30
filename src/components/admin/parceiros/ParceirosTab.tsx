@@ -45,6 +45,11 @@ export function ParceirosTab({
     null,
   );
   const [qrPartner, setQrPartner] = useState<ReferralPartner | null>(null);
+  const [qrPartnerCtx, setQrPartnerCtx] = useState<{
+    keyword?: string;
+    spotCode?: string;
+    phrase?: string | null;
+  } | null>(null);
   const [view, setView] = useState<"rede" | "banners">("rede");
   const [bannerOpen, setBannerOpen] = useState(false);
   const [bannerDownloadOpts, setBannerDownloadOpts] =
@@ -57,6 +62,8 @@ export function ParceirosTab({
   const { partners, create, update, remove, isLoading } = useReferralPartners();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const [focusPartnerId, setFocusPartnerId] = useState<string | null>(null);
 
   const refreshPartners = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["referral-partners"] });
@@ -120,9 +127,10 @@ export function ParceirosTab({
       );
     } else {
       create.mutate(data, {
-        onSuccess: () => {
+        onSuccess: (created) => {
           toast({ title: "Parceiro criado com sucesso!" });
           handleCloseForm();
+          if (created?.id) setFocusPartnerId(String(created.id));
         },
         onError: (err: any) =>
           toast({
@@ -152,6 +160,19 @@ export function ParceirosTab({
     setEditingPartner(null);
   };
 
+  const openPartnerQr = (
+    partner: ReferralPartner,
+    ctx?: { keyword?: string; spotCode?: string; phrase?: string | null },
+  ) => {
+    setQrPartner(partner);
+    setQrPartnerCtx(ctx ?? null);
+  };
+
+  const closePartnerQr = () => {
+    setQrPartner(null);
+    setQrPartnerCtx(null);
+  };
+
   const handleSavePartnerKeyword = async (keyword: string) => {
     if (!qrPartner) return;
     const next = Array.from(
@@ -176,6 +197,7 @@ export function ParceirosTab({
           consultantId={consultantId}
           consultantName={consultantName}
           consultantIgreenId={consultantIgreenId}
+          consultantPhone={liveWaPhone || consultantPhone}
           license={license}
           defaultPhrase={bannerDefaultPhrase}
           spots={bannerSpots}
@@ -186,7 +208,7 @@ export function ParceirosTab({
           onPartnersChanged={refreshPartners}
           onBack={() => setView("rede")}
           onOpenDownload={openBannerDownload}
-          onOpenPartnerQr={setQrPartner}
+          onOpenPartnerQr={openPartnerQr}
         />
 
         <ConsultantBannerDownloadModal
@@ -207,16 +229,22 @@ export function ParceirosTab({
 
         <PartnerQrCode
           open={!!qrPartner}
-          onClose={() => setQrPartner(null)}
+          onClose={closePartnerQr}
           partnerName={qrPartner?.nome ?? ""}
-          keyword={qrPartner?.keywords?.[0]?.trim() || qrPartner?.nome || ""}
+          keyword={
+            qrPartnerCtx?.keyword ||
+            qrPartner?.keywords?.[0]?.trim() ||
+            qrPartner?.nome ||
+            ""
+          }
           keywords={qrPartner?.keywords ?? []}
           consultantPhone={liveWaPhone || consultantPhone}
           consultantName={consultantName}
           consultantIgreenId={consultantIgreenId}
-          qrPhrase={qrPartner?.qr_phrase}
+          qrPhrase={qrPartnerCtx?.phrase ?? qrPartner?.qr_phrase}
           license={license}
           shortCode={qrPartner?.short_code}
+          spotCode={qrPartnerCtx?.spotCode}
           onSaveKeyword={handleSavePartnerKeyword}
         />
       </>
@@ -230,10 +258,20 @@ export function ParceirosTab({
       <PartnerDashboard
         partners={partners}
         isLoading={isLoading}
-        onNew={() => setFormOpen(true)}
+        consultantId={consultantId}
+        license={license}
+        consultantIgreenId={consultantIgreenId}
+        consultantName={consultantName}
+        consultantPhone={liveWaPhone || consultantPhone}
+        onNew={() => {
+          setEditingPartner(null);
+          setFormOpen(true);
+        }}
         onEdit={handleEdit}
         onDelete={handleDelete}
-        onQrCode={setQrPartner}
+        onQrCode={(p, ctx) => openPartnerQr(p, ctx)}
+        onPartnersChanged={refreshPartners}
+        focusPartnerId={focusPartnerId}
         onDownloadBanner={() => {
           void loadConsultantBannerData();
           setView("banners");
@@ -250,16 +288,22 @@ export function ParceirosTab({
 
       <PartnerQrCode
         open={!!qrPartner}
-        onClose={() => setQrPartner(null)}
+        onClose={closePartnerQr}
         partnerName={qrPartner?.nome ?? ""}
-        keyword={qrPartner?.keywords?.[0]?.trim() || qrPartner?.nome || ""}
+        keyword={
+          qrPartnerCtx?.keyword ||
+          qrPartner?.keywords?.[0]?.trim() ||
+          qrPartner?.nome ||
+          ""
+        }
         keywords={qrPartner?.keywords ?? []}
         consultantPhone={liveWaPhone || consultantPhone}
         consultantName={consultantName}
         consultantIgreenId={consultantIgreenId}
-        qrPhrase={qrPartner?.qr_phrase}
+        qrPhrase={qrPartnerCtx?.phrase ?? qrPartner?.qr_phrase}
         license={license}
         shortCode={qrPartner?.short_code}
+        spotCode={qrPartnerCtx?.spotCode}
         onSaveKeyword={handleSavePartnerKeyword}
       />
     </>

@@ -1377,7 +1377,8 @@ Deno.serve(async (req) => {
           // individual e só pode ser definida por esse sinal. Se ainda não
           // mapeamos o AD ID, NÃO pode cair em "campanha quente"/fallback.
           if (!candidateCampaignId && strongMetaSignalPresent) {
-            await markManualReview(supabase, customer.id, "strong_meta_unmapped");
+            // Sem campanha mapeada → lead fica com o consultor dono (sem fila).
+            // Só bloqueia fallback de campanha errada; não marca revisão.
             await logRodizioOutcome(supabase, {
               customerId: customer.id,
               campaignId: null,
@@ -1385,7 +1386,7 @@ Deno.serve(async (req) => {
               outcome: "no_campaign_manual_review",
               messageSample: messageText,
             });
-            console.warn(`[lead-attribution] customer=${customer.id} possui sinal forte Meta sem campanha mapeada — fallback bloqueado`);
+            console.warn(`[lead-attribution] customer=${customer.id} sinal Meta sem campanha — lead do dono (sem revisão)`);
           }
 
           // 2.1) protocolo legado OU frase exata (= initial_message) depois dos sinais fortes.
@@ -1606,7 +1607,10 @@ Deno.serve(async (req) => {
                   messageSample: messageText,
                 });
               } else if (assign.outcome === "customer_missing") {
-                await markManualReview(supabase, customer.id, "rodizio_pool_empty");
+                // Sem parceiro na pool → lead do consultor dono (sem fila).
+                console.log(
+                  `[rodizio] customer=${customer.id} campaign=${resolvedCampaignId} customer_missing/pool — lead do dono`,
+                );
                 await logRodizioOutcome(supabase, {
                   customerId: customer.id,
                   campaignId: resolvedCampaignId,
@@ -1614,17 +1618,6 @@ Deno.serve(async (req) => {
                   outcome: "pool_empty",
                   messageSample: messageText,
                 });
-                notifyOwnerManualReview(
-                  superAdminConsultantId,
-                  {
-                    id: customer.id,
-                    name: (customer as any).name,
-                    name_source: (customer as any).name_source,
-                    phone_whatsapp: (customer as any).phone_whatsapp,
-                    is_sandbox: (customer as any).is_sandbox,
-                  },
-                  "rodizio_pool_empty",
-                ).catch((e) => console.warn("[notify-owner-review] falhou:", (e as Error).message));
               } else {
                 console.warn("[rodizio] rodizio_assign_lead falhou:", assign.errorMessage);
                 await markManualReview(supabase, customer.id, "rodizio_rpc_error");
@@ -1651,8 +1644,7 @@ Deno.serve(async (req) => {
               console.warn("[rodizio] falhou:", (e as Error).message);
             }
           } else if (metaCtwaSignal) {
-            // Frase-âncora bateu mas nenhuma campanha determinística → fila manual.
-            await markManualReview(supabase, customer.id, "no_campaign_ctwa_phrase");
+            // Frase CTWA sem campanha/parceiro → lead do consultor dono (sem fila).
             await logRodizioOutcome(supabase, {
               customerId: customer.id,
               campaignId: null,
@@ -1660,17 +1652,9 @@ Deno.serve(async (req) => {
               outcome: "no_campaign_manual_review",
               messageSample: messageText,
             });
-            notifyOwnerManualReview(
-              superAdminConsultantId,
-              {
-                id: customer.id,
-                name: (customer as any).name,
-                name_source: (customer as any).name_source,
-                phone_whatsapp: (customer as any).phone_whatsapp,
-                is_sandbox: (customer as any).is_sandbox,
-              },
-              "no_campaign_ctwa_phrase",
-            ).catch((e) => console.warn("[notify-owner-review] falhou:", (e as Error).message));
+            console.log(
+              `[lead-attribution] customer=${customer.id} ctwa_phrase sem campanha — lead do dono (sem revisão)`,
+            );
           }
 
         } catch (e) {
@@ -1700,8 +1684,9 @@ Deno.serve(async (req) => {
             matchesMetaCtwaPhrase(messageText));
 
         if (blockKeywordForMetaLead) {
-          await markManualReview(supabase, customer.id, "meta_lead_no_campaign_or_pool");
-          console.warn(`[partner-match] bloqueado para lead Meta sem rodízio customer=${customer.id}`);
+          // Meta sem pool: não chuta keyword de parceiro; lead fica com o dono.
+          // Sem fila de revisão.
+          console.warn(`[partner-match] keyword bloqueada (Meta) customer=${customer.id} — lead do dono`);
         }
 
         const { count: inboundCount } = await supabase
@@ -2546,7 +2531,6 @@ Deno.serve(async (req) => {
         }
 
         if (!sourceCampaignId && strongMetaSignalPresent) {
-          await markManualReview(supabase, customer.id, "strong_meta_unmapped");
           await logRodizioOutcome(supabase, {
             customerId: customer.id,
             campaignId: null,
@@ -2554,7 +2538,7 @@ Deno.serve(async (req) => {
             outcome: "no_campaign_manual_review",
             messageSample: messageText,
           });
-          console.warn(`[lead-source] customer ${customer.id} possui sinal forte Meta sem campanha mapeada — fallback bloqueado`);
+          console.warn(`[lead-source] customer ${customer.id} sinal Meta sem campanha — lead do dono (sem revisão)`);
         }
 
         if (sourceCampaignId) {

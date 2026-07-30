@@ -63,15 +63,36 @@ export async function casAssignPartner(
 }
 
 /**
+ * Motivos em que o lead fica 100% com o consultor dono — SEM fila de revisão.
+ * Só entra em revisão quando há campanha/pool com parceiros e a atribuição
+ * falhou de forma ambígua (rpc_error, ad_id mismatch, conflito de bind).
+ */
+export const OWNER_ONLY_NO_REVIEW_REASONS = new Set([
+  "no_campaign_ctwa_phrase",
+  "meta_lead_no_campaign_or_pool",
+  "strong_meta_unmapped",
+  "rodizio_pool_empty",
+  "no_campaign_generic",
+]);
+
+/**
  * Marca customer como precisando de revisão manual. Sempre grava o motivo
  * mais recente — se o mesmo lead entrou por múltiplos motivos (ex.: pool
  * vazia e depois erro de RPC), o admin vê a razão atual, não a antiga.
+ *
+ * Motivos em `OWNER_ONLY_NO_REVIEW_REASONS` são ignorados (lead do dono).
  */
 export async function markManualReview(
   supabase: SupabaseClient,
   customerId: string,
   reason: string,
 ): Promise<void> {
+  if (OWNER_ONLY_NO_REVIEW_REASONS.has(reason)) {
+    console.log(
+      `[markManualReview] ignorado reason=${reason} customer=${customerId} — lead do consultor dono`,
+    );
+    return;
+  }
   try {
     await supabase
       .from("customers")

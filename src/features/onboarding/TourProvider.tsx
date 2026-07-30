@@ -7,6 +7,7 @@ import { useGuideCoach } from "./GuideCoachProvider";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ADMIN_TAB_CHANGED_EVENT, isAdminDashboardSurface } from "@/lib/adminDashboardSurface";
 
 const INTERNAL_ROUTES = ["/admin", "/ajuda", "/consultor", "/super-admin", "/experiments"];
 const TARGET_PADDING = 8;
@@ -225,6 +226,14 @@ export function TourProvider() {
     return { ...base, left: "50%", bottom: "1.25rem", transform: "translateX(-50%)" };
   }, [cardPlacement, targetRect]);
 
+  const [onDashboard, setOnDashboard] = useState(() => isAdminDashboardSurface(location.pathname));
+  useEffect(() => {
+    const refresh = () => setOnDashboard(isAdminDashboardSurface(location.pathname));
+    refresh();
+    window.addEventListener(ADMIN_TAB_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(ADMIN_TAB_CHANGED_EVENT, refresh);
+  }, [location.pathname]);
+
   const isInternal = INTERNAL_ROUTES.some((route) => location.pathname === route || location.pathname.startsWith(`${route}/`));
   if (!isInternal) return null;
 
@@ -232,7 +241,8 @@ export function TourProvider() {
   const percentage = total > 0 ? ((index + 1) / total) * 100 : 0;
   const isLast = index >= total - 1;
   const guideActive = guide.active;
-  const showFab = !open && !guideActive;
+  // FAB só no Dashboard — nas outras abas/rotas atrapalha o conteúdo
+  const showFab = !open && !guideActive && onDashboard;
 
   return (
     <>

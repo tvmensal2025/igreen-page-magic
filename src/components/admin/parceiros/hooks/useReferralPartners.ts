@@ -88,14 +88,16 @@ export function useReferralPartners() {
       // Retry leve para colisões transitórias do short_code (unique constraint)
       let lastErr: any = null;
       for (let i = 0; i < 3; i++) {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from("referral_partners")
-          .insert(payload);
-        if (!error) return;
+          .insert(payload)
+          .select("*")
+          .single();
+        if (!error && data) return data as unknown as ReferralPartner;
         lastErr = error;
-        const msg = (error.message || "").toLowerCase();
+        const msg = (error?.message || "").toLowerCase();
         const isTransient =
-          error.code === "23505" ||
+          error?.code === "23505" ||
           msg.includes("short_code") ||
           msg.includes("duplicate");
         if (!isTransient) break;

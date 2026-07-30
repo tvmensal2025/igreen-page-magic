@@ -75,7 +75,8 @@ const FinanceiroPanel = lazy(() => import("@/components/admin/financeiro/Finance
 
 import type { ProdutosTabId } from "@/features/produtos/ProdutosModule";
 
-const ADMIN_ACTIVE_TAB_KEY = "igreen_admin_active_tab_v1";
+import { ADMIN_ACTIVE_TAB_KEY, notifyAdminTabChanged } from "@/lib/adminDashboardSurface";
+
 const ADMIN_TAB_IDS: readonly AdminTabId[] = [
   "dashboard", "crm", "crm-clientes", "conversao", "clientes", "financeiro", "produtos",
   "captacao", "parceiros", "whatsapp", "agendamentos", "central-anuncios", "links",
@@ -126,6 +127,7 @@ const AdminContent = () => {
   });
   useEffect(() => {
     try { window.localStorage.setItem(ADMIN_ACTIVE_TAB_KEY, activeTab); } catch {}
+    notifyAdminTabChanged(activeTab);
   }, [activeTab]);
 
   const [pendingAiSubTab, setPendingAiSubTab] = useState<string | null>(() => {
