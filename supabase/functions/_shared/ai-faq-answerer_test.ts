@@ -46,3 +46,18 @@ Deno.test("normalizeFaqQuestion: case + diacríticos juntos", () => {
   // "É caro?" deve casar com "e caro" se cadastrado.
   assertEquals(normalizeFaqQuestion("É caro?"), "e caro");
 });
+
+import { buildFaqSystemPrompt } from "./ai-faq-answerer.ts";
+
+Deno.test("buildFaqSystemPrompt: usa a identidade do consultor, nunca 'Rafael' fixo", () => {
+  const p = buildFaqSystemPrompt({ assistantName: "Bia", consultantLabel: "Abel" });
+  assertStringIncludes(p, "Você é Bia");
+  assertStringIncludes(p, "Abel");
+  if (p.includes("Rafael")) throw new Error("prompt vazou nome fixo Rafael");
+});
+
+Deno.test("buildFaqSystemPrompt: sem consultor cai em persona genérica", () => {
+  const p = buildFaqSystemPrompt({ assistantName: null, consultantLabel: null });
+  assertStringIncludes(p, "assistente da iGreen Energy");
+  if (p.includes("Rafael")) throw new Error("prompt vazou nome fixo Rafael");
+});
