@@ -135,6 +135,9 @@ verify_jwt = false
 [functions.faq-reengagement-nudge]
 verify_jwt = false
 
+[functions.partner-banner-alerts-cron]
+verify_jwt = false
+
 [functions.outbound-media-flush-cron]
 verify_jwt = false
 

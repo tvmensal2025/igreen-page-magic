@@ -10615,6 +10615,7 @@ export type Database = {
       }
       referral_partners: {
         Row: {
+          banner_alert_last_at: string | null
           banner_alert_threshold: number
           cli: string | null
           consultant_id: string
@@ -10633,6 +10634,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          banner_alert_last_at?: string | null
           banner_alert_threshold?: number
           cli?: string | null
           consultant_id: string
@@ -10651,6 +10653,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          banner_alert_last_at?: string | null
           banner_alert_threshold?: number
           cli?: string | null
           consultant_id?: string

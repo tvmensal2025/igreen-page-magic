@@ -7,7 +7,7 @@ import { isCycleLeadEligible, isPausedGroupA } from "@/lib/cycleEligibility";
 import { labelCadenceStage, labelNextCadenceAction } from "@/lib/cadenceStageLabels";
 import { safeFirstNameUi } from "@/lib/cadencePreview";
 import { formatBrazilPhone } from "@/lib/phone";
-import { formatPersonName, isUsableCustomerName } from "@/lib/customerDisplayName";
+import { formatPersonName, isUsableCustomerName, isAddressableNameSource } from "@/lib/customerDisplayName";
 
 export type PartnerCycleGroup = "A" | "B" | "C";
 
@@ -261,10 +261,17 @@ export function displayPartnerLeadName(
   nameSource: string | null | undefined,
 ): string {
   const first = safeFirstNameUi(name, nameSource);
-  if (first) return first;
+  if (first) {
+    // Com fonte confiável, mostra até 2 nomes para o parceiro reconhecer.
+    if (isAddressableNameSource(nameSource) && isUsableCustomerName(name)) {
+      const parts = formatPersonName(String(name).trim()).split(/\s+/).filter(Boolean);
+      return parts.slice(0, 2).join(" ") || first;
+    }
+    return first;
+  }
   if (isUsableCustomerName(name)) {
-    const full = formatPersonName(String(name).trim());
-    return full.split(/\s+/)[0] || "Lead";
+    const parts = formatPersonName(String(name).trim()).split(/\s+/).filter(Boolean);
+    return parts.slice(0, 2).join(" ") || "Lead";
   }
   return "Lead";
 }

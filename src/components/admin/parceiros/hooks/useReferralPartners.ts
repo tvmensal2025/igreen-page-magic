@@ -112,10 +112,9 @@ export function useReferralPartners() {
       id,
       ...patch
     }: Partial<ReferralPartner> & { id: string }) => {
-      // portal_token / banner_alert_threshold já existem no banco; types.ts ainda sem colunas.
       const { error } = await supabase
         .from("referral_partners")
-        .update({ ...patch, updated_at: new Date().toISOString() } as never)
+        .update({ ...patch, updated_at: new Date().toISOString() })
         .eq("id", id);
       if (error) throw error;
     },

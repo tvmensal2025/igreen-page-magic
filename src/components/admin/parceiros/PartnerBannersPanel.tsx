@@ -320,7 +320,7 @@ export function PartnerBannersPanel({
       .update({
         portal_token: token,
         updated_at: new Date().toISOString(),
-      } as never)
+      })
       .eq("id", partner.id);
     if (err) {
       toast({
@@ -343,7 +343,7 @@ export function PartnerBannersPanel({
       .update({
         banner_alert_threshold: n,
         updated_at: new Date().toISOString(),
-      } as never)
+      })
       .eq("id", partner.id);
     if (err) {
       toast({ title: "Erro", description: err.message, variant: "destructive" });

@@ -18,7 +18,7 @@ describe("partnerPortalCycle", () => {
     });
     expect(c?.group).toBe("A");
     expect(c?.sliceId).toBe("ask_name");
-    expect(c?.displayName).toBe("Maria");
+    expect(c?.displayName).toBe("Maria Silva");
     expect(c?.phoneDisplay).toMatch(/11/);
     expect(c?.stageNotice).toMatch(/WhatsApp/i);
   });

@@ -122,15 +122,16 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
   - Classificação: `src/lib/partnerPortalCycle.ts` (fila diária prioriza; sem stage/fila → fora da pizza).
   - Clique na fatia: nome + telefone (`tel:`) + **aviso da etapa** (+ próximo toque).
   - Meta `noindex,nofollow` com cleanup no unmount. Aviso “Link privado — não compartilhe”.
+- Limiar `banner_alert_threshold` no parceiro (0=off). Cron `partner-banner-alerts-cron` (15 min) conta leads/24h; se >= limiar, avisa consultor (e parceiro se tiver `notification_phone`). Dedup `banner_alert_last_at`.
+- `notifyPartnerNewLead` **pula** lead com `do_not_contact` (salvo `force`).
 - Telemetria `qr-redirect`: `banner_root` / `banner_spot:{code}` / `partner:{short}` / `partner:{short}:{spot}`.
 - Keywords espelho em `consultants.banner_keywords` e `referral_partners.keywords` — sync **une** (nunca remove histórico ao arquivar).
-- Limiar `banner_alert_threshold` no parceiro (0=off) — base para alerta WA futuro.
 
 ---
 
 ## 5. Riscos abertos (documentar antes de "consertar")
 
-- **DNC/opt-out do lead não é checado antes de `notifyPartnerNewLead`.** Parceiro pode receber dados de lead que pediu para não ser contatado (mesmo apontamento em `10b-rodizio.md`). Se for corrigir, gate em `notify-consultant.ts` consultando `customers.do_not_contact` + `voice_dnc_list`.
+- **DNC/opt-out:** `notifyPartnerNewLead` checa `customers.do_not_contact` e não notifica (exceto `force`). Manter esse gate.
 - Colunas `partner_igreen_id` e `notification_phone` não têm `ADD COLUMN` textual localizável em `supabase/migrations/`; `types.ts` é a fonte de verdade real. Antes de renomear/dropar, confirmar no schema remoto.
 - `PartnerQrCode.tsx` deve usar sempre `short_code` no path; nunca embutir keyword crua na URL (a keyword vai só no `?text=` codificado).
 

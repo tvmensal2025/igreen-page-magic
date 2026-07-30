@@ -599,6 +599,25 @@ export async function notifyPartnerNewLead(
     if (lead?.is_sandbox) return { ok: false, reason: "sandbox" };
     if (!partnerId) return { ok: false, reason: "no_partner" };
 
+    // DNC / nunca mais contatar — não vaza lead bloqueado para o parceiro.
+    if (!opts?.force && lead?.id) {
+      try {
+        const { data: dncRow } = await adminClient()
+          .from("customers")
+          .select("do_not_contact")
+          .eq("id", lead.id)
+          .maybeSingle();
+        if ((dncRow as { do_not_contact?: boolean | null } | null)?.do_not_contact === true) {
+          console.log(`[notify-partner-lead] skip dnc lead=${lead.id}`);
+          return { ok: false, reason: "dnc" };
+        }
+      } catch (e) {
+        console.warn("[notify-partner-lead] dnc check falhou:", (e as Error).message);
+      }
+    } else if (!opts?.force && lead && (lead as { do_not_contact?: boolean }).do_not_contact === true) {
+      return { ok: false, reason: "dnc" };
+    }
+
     const { phone, name: partnerName } = await resolvePartnerContact(partnerId, ownerConsultantId);
     if (!phone) {
       console.warn(`[notify-partner-lead] parceiro ${partnerId} sem notification_phone`);
