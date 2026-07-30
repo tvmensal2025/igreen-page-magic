@@ -162,18 +162,48 @@ async function findExactFaqMatch(opts: {
     bot_flow_qa: { id: string; flow_id: string; position: number; text_response: string | null };
   };
   const rows = ((triggers as unknown) as Row[]) || [];
-  const candidates: Array<{ position: number; text: string }> = [];
+
+  // 1) Match EXATO (normalizado) — sempre vence.
+  const exact: Array<{ position: number; text: string }> = [];
+  // 2) Match por CONTENÇÃO — a frase cadastrada aparece inteira dentro da
+  //    pergunta ("oi, quanto custa a taxa?" casa com "quanto custa a taxa").
+  //    Só vale para triggers com 2+ palavras e 8+ caracteres, para não
+  //    disparar atalho por causa de um "sim" ou "ok" solto.
+  const contained: Array<{ position: number; text: string; len: number }> = [];
+
   for (const row of rows) {
     const text = (row.bot_flow_qa?.text_response || "").trim();
     if (!text) continue;
-    if (normalizeFaqQuestion(row.phrase) === norm) {
-      candidates.push({ position: row.bot_flow_qa.position, text });
+    const phrase = normalizeFaqQuestion(row.phrase);
+    if (!phrase) continue;
+    if (phrase === norm) {
+      exact.push({ position: row.bot_flow_qa.position, text });
+      continue;
     }
+    const words = phrase.split(" ").filter(Boolean).length;
+    if (words < 2 || phrase.length < 8) continue;
+    // Contenção com fronteira de palavra (evita "conta" casar em "contato").
+    const idx = norm.indexOf(phrase);
+    if (idx === -1) continue;
+    const before = idx === 0 ? " " : norm[idx - 1];
+    const afterIdx = idx + phrase.length;
+    const after = afterIdx >= norm.length ? " " : norm[afterIdx];
+    if (/[a-z0-9]/.test(before) || /[a-z0-9]/.test(after)) continue;
+    contained.push({ position: row.bot_flow_qa.position, text, len: phrase.length });
   }
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => a.position - b.position);
-  return { text: candidates[0].text };
+
+  if (exact.length > 0) {
+    exact.sort((a, b) => a.position - b.position);
+    return { text: exact[0].text };
+  }
+  if (contained.length > 0) {
+    // Frase mais longa = mais específica; empate resolve pela posição no fluxo.
+    contained.sort((a, b) => (b.len - a.len) || (a.position - b.position));
+    return { text: contained[0].text };
+  }
+  return null;
 }
+
 
 
 export async function answerFaqWithAI(opts: {
