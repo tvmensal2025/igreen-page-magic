@@ -74,6 +74,31 @@ export async function resolveConsultantOutboundChannel(
     return { kind: "whapi", instanceName: name, adapter };
   }
 
+  // 2b) Consultor com instância whapi* própria (ex.: Sirlene compartilhando o chip do Rafael)
+  if (env.whapiToken) {
+    const { data: whapiInst } = await supabase
+      .from("whatsapp_instances")
+      .select("instance_name, status, manual_review_required, fatal_lock_until")
+      .eq("consultant_id", consultantId)
+      .like("instance_name", "whapi%")
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const whapiStatus = String(whapiInst?.status || "").toLowerCase();
+    if (
+      whapiInst?.instance_name &&
+      !whapiInst.manual_review_required &&
+      !(whapiInst.fatal_lock_until && new Date(whapiInst.fatal_lock_until) > new Date()) &&
+      (!whapiStatus || HEALTHY_STATUSES.has(whapiStatus) || whapiStatus === "auth")
+    ) {
+      const adapter = getAdapter({
+        kind: "whapi",
+        input: { apiToken: env.whapiToken, instanceName: whapiInst.instance_name },
+      });
+      return { kind: "whapi", instanceName: whapiInst.instance_name, adapter };
+    }
+  }
+
   // 3) Evolution saudável do consultor
   if (env.evolutionUrl && env.evolutionKey) {
     let q = supabase
@@ -168,8 +193,12 @@ export async function resolveChannelForCustomer(
     .eq("id", customerId)
     .maybeSingle();
 
-  const kind = (c?.origin_channel as "evolution" | "whapi" | null) || null;
+  let kind = (c?.origin_channel as "evolution" | "whapi" | null) || null;
   const instanceName = (c?.origin_instance_name as string | null) || null;
+
+  // Corrige origem invertida (bug: channel=evolution + instance=whapi-* → 404 Evolution).
+  if (instanceName?.startsWith("whapi")) kind = "whapi";
+  else if (instanceName && !instanceName.startsWith("whapi") && kind === "whapi") kind = "evolution";
 
   if (!kind || !instanceName) {
     return {
@@ -248,8 +277,10 @@ export function isUnavailable(
  * Resolve canal do lead; se origem offline, tenta failover **só no mesmo consultor**.
  *
  * NUNCA usa o token Whapi da plataforma (número do superadmin/Rafael) para
- * consultor Evolution comum — isso vazava identidade no Zap errado
- * (bug 2026-07-30: cadência da Sirlene → Lucas saiu no Whapi do Rafael).
+ * consultor Evolution comum **sem** instância `whapi*` própria — isso vazava
+ * identidade no Zap errado (bug 2026-07-30: cadência da Sirlene → Lucas no Whapi
+ * do Rafael). Compartilhamento intencional (casal/sócios): gravar
+ * `whatsapp_instances` `whapi-*` no consultor (ex.: `whapi-sirlene`).
  */
 export async function resolveChannelForCustomerWithFailover(
   supabase: any,

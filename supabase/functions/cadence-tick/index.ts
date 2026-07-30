@@ -26,6 +26,7 @@ import { debitSmsSent } from "../_shared/voice-sms-billing.ts";
 import { resolveCallDialAudio } from "../_shared/voice-dialer/call-stitch.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
 import { gateProactiveTouch } from "../_shared/retention-orchestrator.ts";
+import { isPlausibleBrWhatsAppPhone, normalizePhone } from "../_shared/utils.ts";
 import {
   cadenceEffectKey,
   finishAutomationRun,
@@ -485,6 +486,14 @@ async function dispatchWhatsApp(
   });
   if (!gate.allowed) return { ok: false, detail: `suppressed:${gate.reason}` };
 
+  // Número lixo / país errado (ex.: +91 com 55 na frente) — não martela Whapi 40×.
+  const waDigits = normalizePhone(
+    String((cust as { whatsapp_chat_id?: string | null }).whatsapp_chat_id || cust.phone_whatsapp),
+  );
+  if (!isPlausibleBrWhatsAppPhone(waDigits)) {
+    return { ok: false, detail: "invalid_phone", permanent: true };
+  }
+
   const ch = await resolveChannelForCustomerWithFailover(supabase, row.customer_id, {
     evolutionUrl: env.evolutionUrl,
     evolutionKey: env.evolutionKey,
@@ -718,6 +727,21 @@ async function checkPhoneDeadForChannel(
   }
 
   return { block: false };
+}
+
+/** Falha WA que não adianta re-tentar (origem/instância errada ou número inválido). */
+function isPermanentWaFailure(detail: string | null | undefined): boolean {
+  const s = String(detail || "").toLowerCase();
+  if (!s) return false;
+  return (
+    s.includes("invalid_phone") ||
+    s.includes("instance does not exist") ||
+    s.includes("channel_instance_not_found") ||
+    s.includes("channel_instance_offline") ||
+    s.includes("channel_instance_locked") ||
+    s.includes("channel_manual_review") ||
+    s.includes("channel_no_origin")
+  );
 }
 
 
@@ -1724,7 +1748,8 @@ Deno.serve(async (req) => {
               const permanent =
                 !!res.permanent ||
                 ((def.channel === "sms" || def.channel === "voice") &&
-                  isPermanentSmsFailure(res.detail));
+                  isPermanentSmsFailure(res.detail)) ||
+                (def.channel === "whatsapp" && isPermanentWaFailure(res.detail));
               // Permanente (ex.: Mobile is not valid#240 / number invalid#203) → failed_final e avança.
               // Retryable → mesma chave (attempt++) e re-tenta em 30 min.
               await finishOutboundEffect(

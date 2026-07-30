@@ -491,13 +491,14 @@ Deno.serve(async (req) => {
 
     const { data: failRows } = await supabase
       .from("cadence_action_log")
-      .select("consultant_id, channel, detail")
+      .select("consultant_id, customer_id, channel, detail")
       .eq("status", "failed")
       .gte("created_at", since24h)
       .limit(3000);
 
     type FailRow = {
       consultant_id: string | null;
+      customer_id?: string | null;
       channel: string | null;
       detail: Record<string, unknown> | null;
     };
@@ -505,14 +506,28 @@ Deno.serve(async (req) => {
     const identityByConsultant = new Map<string, number>();
     const sendFailByConsultant = new Map<string, number>();
     const identityReasons = new Map<string, number>();
+    const identityCustomers = new Set<string>();
+    const sendFailCustomers = new Set<string>();
     let identityTotal = 0;
     let sendFailTotal = 0;
 
     for (const r of (failRows as FailRow[] | null) || []) {
       const dispatch = String((r.detail as any)?.dispatch || "");
       if (!dispatch) continue;
+      // Ruído de retry/advance — não conta no spike (já falhou de verdade antes).
+      if (
+        dispatch.includes("idempotent_replay") ||
+        dispatch.startsWith("effect_failed_final") ||
+        dispatch.startsWith("effect_suppressed") ||
+        dispatch.startsWith("ack_max_attempts")
+      ) {
+        continue;
+      }
       const cid = String(r.consultant_id || "system");
+      const customerId = String((r as any).customer_id || "");
       if (dispatch.startsWith("identity_missing")) {
+        if (customerId && identityCustomers.has(customerId)) continue;
+        if (customerId) identityCustomers.add(customerId);
         identityTotal++;
         identityByConsultant.set(cid, (identityByConsultant.get(cid) || 0) + 1);
         const reason = dispatch.split(":")[1] || "?";
@@ -522,6 +537,8 @@ Deno.serve(async (req) => {
         dispatch.includes("send_returned_false") ||
         dispatch.startsWith("send_error")
       ) {
+        if (customerId && sendFailCustomers.has(customerId)) continue;
+        if (customerId) sendFailCustomers.add(customerId);
         sendFailTotal++;
         sendFailByConsultant.set(cid, (sendFailByConsultant.get(cid) || 0) + 1);
       }

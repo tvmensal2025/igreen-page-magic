@@ -16,6 +16,23 @@ export function normalizePhone(raw: string): string {
   return digits;
 }
 
+/**
+ * Telefone BR plausível p/ WhatsApp (12 fixo legado ou 13 celular).
+ * Rejeita concatenação / país errado com 55 na frente (ex.: +91 gravado como 5591…).
+ */
+export function isPlausibleBrWhatsAppPhone(raw: string | null | undefined): boolean {
+  const d = normalizePhone(String(raw || ""));
+  if (!d.startsWith("55")) return false;
+  if (d.length !== 12 && d.length !== 13) return false;
+  const ddd = Number(d.slice(2, 4));
+  if (!Number.isFinite(ddd) || ddd < 11 || ddd > 99) return false;
+  // Celular canônico: 13 dígitos com 9 após o DDD.
+  if (d.length === 13) return d[4] === "9";
+  // 12 dígitos: fixo ou móvel antigo (8 após DDD) — 1º dígito local 2–9.
+  const localFirst = Number(d[4]);
+  return localFirst >= 2 && localFirst <= 9;
+}
+
 // ─── Timeouts (ms) para evitar travamentos ──────────────────────────────
 export const TIMEOUT_VIA_CEP = 6_000;    // 6s (era 10s)
 export const TIMEOUT_FETCH_IMAGE = 15_000; // 15s (era 30s)
