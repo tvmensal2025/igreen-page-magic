@@ -349,10 +349,15 @@ export function extractNome(text: string, opts: ExtractNomeOpts = {}): string | 
   if (trimmed.length > 0 && trimmed.length <= 80) {
     const onlyNameChars = /^[a-zà-ÿ]+(?:[''-][a-zà-ÿ]+)?(?:\s+[a-zà-ÿ]+(?:[''-][a-zà-ÿ]+)?){0,4}$/i.test(trimmed);
     if (onlyNameChars) {
-      const wordCount = trimmed.split(/\s+/).length;
+      const words = trimmed.split(/\s+/);
+      const wordCount = words.length;
       // 1 palavra única: só aceita quando o bot pediu o nome.
       // 2-5 palavras: aceita (ex.: "Manoel Bento de Oliveira", "José Silva Filho").
       if (wordCount === 1 && !opts.allowSingleWord) return null;
+      // Guard estrutural: qualquer palavra com cara de verbo derruba a frase
+      // ("quero entender melhor", "vou pensar", "mandei ontem") — sem isso
+      // a resposta livre do lead virava nome do cliente.
+      if (words.some((w) => looksLikeVerb(w))) return null;
       const cleaned = capitalizeName(trimmed);
       if (isValidNameCandidate(cleaned)) return cleaned;
     }
