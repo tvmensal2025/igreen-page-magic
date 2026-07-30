@@ -316,10 +316,21 @@ export async function answerFaqWithAI(opts: {
     return { text: "", confidence: 0, shouldHandoff: true, source: "skipped" };
   }
 
+  // Persona SEMPRE do consultor dono do lead — nunca "Rafael" fixo.
+  const persona =
+    opts.assistantName !== undefined || opts.consultantLabel !== undefined
+      ? {
+          assistantName: resolveAssistantDisplayName(opts.assistantName),
+          consultantLabel: String(opts.consultantLabel || "").trim(),
+        }
+      : await resolveFaqPersona(opts.supabase, opts.consultantId);
+  const systemPrompt = buildFaqSystemPrompt(persona);
+
   const userPrompt = `CONHECIMENTO IGREEN:
 ${knowledge}
 
 CONTEXTO:
+- Você é: ${persona.assistantName}${persona.consultantLabel ? ` (assistente de ${persona.consultantLabel})` : ""}
 - Nome do lead: ${opts.leadName || "(desconhecido)"}
 - Passo atual do funil: ${opts.currentStepLabel || "(início)"}
 ${opts.recentHistory ? `\nÚLTIMAS MENSAGENS DA CONVERSA:\n${opts.recentHistory.slice(0, 2000)}\n` : ""}
