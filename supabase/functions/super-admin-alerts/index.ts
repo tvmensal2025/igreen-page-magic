@@ -191,6 +191,8 @@ Deno.serve(async (req) => {
     "club_worker_url",
     "whapi_token",
     "whapi_api_url",
+    "alert_identity_missing_24h",
+    "alert_send_failed_24h",
   ]);
 
   const workers: Array<{ key: string; label: string; url: string }> = [];
