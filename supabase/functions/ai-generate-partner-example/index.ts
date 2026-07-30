@@ -2,6 +2,7 @@
 // de parceiro indicador. Usado no formulário de Parceiros para o consultor
 // validar visualmente se a keyword captura bem o que o lead vai escrever.
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { createClient } from "npm:@supabase/supabase-js@2";
 import { aiChat } from "../_shared/ai-gateway.ts";
 
 const SYSTEM = `Você gera UM exemplo curto de mensagem que um lead enviaria
