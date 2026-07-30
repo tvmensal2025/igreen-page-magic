@@ -214,6 +214,9 @@ export async function answerFaqWithAI(opts: {
   consultantId?: string;
   recentHistory?: string;
   model?: string;
+  /** Persona já resolvida pelo caller (evita 2ª query). */
+  assistantName?: string | null;
+  consultantLabel?: string | null;
   signal?: AbortSignal;
 }): Promise<FaqAnswer> {
 
