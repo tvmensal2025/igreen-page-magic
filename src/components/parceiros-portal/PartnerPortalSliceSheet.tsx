@@ -1,16 +1,20 @@
 import { Phone, Sparkles } from "lucide-react";
 import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "@/components/ui/sheet";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import type {
   ClassifiedPartnerLead,
   PartnerCycleStep,
 } from "@/lib/partnerPortalCycle";
 
+/**
+ * Detalhe da fatia A/B/C — modal centralizado (mobile e desktop).
+ * Antes era Sheet bottom e ficava colado demais na base da tela.
+ */
 export function PartnerPortalSliceSheet({
   open,
   onOpenChange,
@@ -25,27 +29,26 @@ export function PartnerPortalSliceSheet({
   people: ClassifiedPartnerLead[];
 }) {
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent
-        side="bottom"
-        className="dark max-h-[85dvh] overflow-y-auto rounded-t-3xl border-white/10 bg-[#071a10] text-foreground sm:max-w-lg sm:left-1/2 sm:-translate-x-1/2"
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="dark w-[calc(100%-1.5rem)] max-w-lg max-h-[min(85dvh,720px)] overflow-y-auto rounded-2xl border-white/10 bg-[#071a10] p-5 text-foreground sm:p-6"
       >
-        <SheetHeader className="text-left pb-2">
-          <SheetTitle className="font-heading text-white">
+        <DialogHeader className="text-left space-y-1.5 pr-6">
+          <DialogTitle className="font-heading text-white text-lg">
             {step?.label ?? "Etapa"}
-          </SheetTitle>
-          <SheetDescription className="text-emerald-100/60">
+          </DialogTitle>
+          <DialogDescription className="text-emerald-100/60 text-sm">
             {groupLabel}
             {step?.hint ? ` · ${step.hint}` : ""}
-          </SheetDescription>
-        </SheetHeader>
+          </DialogDescription>
+        </DialogHeader>
 
         {people.length === 0 ? (
           <p className="py-8 text-center text-sm text-emerald-100/50">
             Ninguém nesta fatia agora.
           </p>
         ) : (
-          <ul className="space-y-2.5 pb-6 pt-2">
+          <ul className="space-y-2.5 pb-1 pt-2">
             {people.map((p) => (
               <li
                 key={p.id}
@@ -84,7 +87,7 @@ export function PartnerPortalSliceSheet({
             ))}
           </ul>
         )}
-      </SheetContent>
-    </Sheet>
+      </DialogContent>
+    </Dialog>
   );
 }
