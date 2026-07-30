@@ -1,0 +1,198 @@
+-- Helpers de mascaramento (usados só pelo portal público do parceiro)
+CREATE OR REPLACE FUNCTION public.mask_first_name(_name text)
+RETURNS text
+LANGUAGE sql
+IMMUTABLE
+SET search_path = public
+AS $$
+  SELECT nullif(split_part(btrim(coalesce(_name, '')), ' ', 1), '');
+$$;
+
+CREATE OR REPLACE FUNCTION public.mask_phone_br(_phone text)
+RETURNS text
+LANGUAGE plpgsql
+IMMUTABLE
+SET search_path = public
+AS $$
+DECLARE
+  d text := regexp_replace(coalesce(_phone, ''), '\D', '', 'g');
+  ddd text;
+  rest text;
+BEGIN
+  IF length(d) < 8 THEN
+    RETURN NULL;
+  END IF;
+
+  -- remove DDI 55 quando presente
+  IF length(d) > 11 AND left(d, 2) = '55' THEN
+    d := substr(d, 3);
+  END IF;
+
+  IF length(d) >= 10 THEN
+    ddd := substr(d, 1, 2);
+    rest := substr(d, 3);
+  ELSE
+    ddd := NULL;
+    rest := d;
+  END IF;
+
+  -- mantém o primeiro dígito e os 4 últimos, mascara o miolo
+  rest := left(rest, 1) || '****' || right(rest, 4);
+
+  RETURN CASE WHEN ddd IS NULL THEN rest ELSE '(' || ddd || ') ' || rest END;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.mask_first_name(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.mask_phone_br(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.mask_first_name(text) TO anon, authenticated, service_role;
+GRANT EXECUTE ON FUNCTION public.mask_phone_br(text) TO anon, authenticated, service_role;
+
+-- Portal parceiro: mesmos dados, mas sem PII completa (primeiro nome + fone mascarado)
+CREATE OR REPLACE FUNCTION public.get_partner_banner_portal(_token text)
+RETURNS jsonb
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  v_partner referral_partners%ROWTYPE;
+  v_cons record;
+  v_spots jsonb;
+  v_scans jsonb;
+  v_leads jsonb;
+  v_cycle jsonb;
+  v_cycle_date date := (now() AT TIME ZONE 'America/Sao_Paulo')::date;
+BEGIN
+  IF _token IS NULL OR length(btrim(_token)) < 8 THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'invalid_token');
+  END IF;
+
+  SELECT * INTO v_partner
+  FROM referral_partners
+  WHERE portal_token = btrim(_token) AND is_active = true
+  LIMIT 1;
+
+  IF NOT FOUND THEN
+    RETURN jsonb_build_object('ok', false, 'error', 'not_found');
+  END IF;
+
+  SELECT license, igreen_id INTO v_cons
+  FROM consultants WHERE id = v_partner.consultant_id;
+
+  SELECT coalesce(jsonb_agg(jsonb_build_object(
+    'id', s.id,
+    'code', s.code,
+    'keyword', s.keyword,
+    'is_active', s.is_active
+  ) ORDER BY s.created_at), '[]'::jsonb)
+  INTO v_spots
+  FROM referral_partner_banner_spots s
+  WHERE s.partner_id = v_partner.id;
+
+  SELECT coalesce(jsonb_agg(jsonb_build_object('event_target', pe.event_target)), '[]'::jsonb)
+  INTO v_scans
+  FROM page_events pe
+  WHERE pe.consultant_id = v_partner.consultant_id
+    AND pe.event_type = 'qr_scan'
+    AND (
+      pe.event_target = ('partner:' || coalesce(v_partner.short_code, ''))
+      OR pe.event_target LIKE ('partner:' || coalesce(v_partner.short_code, '') || ':%')
+    );
+
+  SELECT coalesce(jsonb_agg(jsonb_build_object(
+    'referral_keyword_matched', c.referral_keyword_matched
+  )), '[]'::jsonb)
+  INTO v_leads
+  FROM customers c
+  WHERE c.referral_partner_id = v_partner.id
+    AND c.referral_keyword_matched IS NOT NULL;
+
+  -- Só leads elegíveis ao ciclo (espelho aproximado de isCycleLeadEligible).
+  -- PII mascarada: primeiro nome + telefone parcial.
+  SELECT coalesce(jsonb_agg(jsonb_build_object(
+    'id', c.id,
+    'name', public.mask_first_name(c.name),
+    'name_source', c.name_source,
+    'phone_whatsapp', public.mask_phone_br(c.phone_whatsapp),
+    'status', c.status,
+    'conversation_step', c.conversation_step,
+    'portal_submitted_at', c.portal_submitted_at,
+    'do_not_contact', coalesce(c.do_not_contact, false),
+    'customer_origin', c.customer_origin,
+    'is_converted', coalesce(c.is_converted, false),
+    'pos_venda_stage', c.pos_venda_stage,
+    'andamento_igreen', c.andamento_igreen,
+    'pos_venda_recadastro_at', c.pos_venda_recadastro_at,
+    'stage', lcs.stage,
+    'paused_reason', lcs.paused_reason,
+    'next_action_at', lcs.next_action_at,
+    'active_cadence', (lcs.next_action_at IS NOT NULL),
+    'queue_queue', q.queue,
+    'queue_step', q.step
+  ) ORDER BY coalesce(lcs.updated_at, c.updated_at) DESC NULLS LAST), '[]'::jsonb)
+  INTO v_cycle
+  FROM customers c
+  LEFT JOIN lead_cadence_state lcs ON lcs.customer_id = c.id
+  LEFT JOIN LATERAL (
+    SELECT drq.queue, drq.step
+    FROM daily_reheat_queue drq
+    WHERE drq.customer_id = c.id
+      AND drq.cycle_date = v_cycle_date
+      AND drq.status IN ('planned', 'claimed')
+    ORDER BY drq.updated_at DESC NULLS LAST
+    LIMIT 1
+  ) q ON true
+  WHERE c.referral_partner_id = v_partner.id
+    AND coalesce(c.do_not_contact, false) = false
+    AND coalesce(c.is_converted, false) = false
+    AND coalesce(c.customer_origin, '') NOT IN ('igreen_sync', 'igreen_extension')
+    AND c.portal_submitted_at IS NULL
+    AND nullif(btrim(coalesce(c.pos_venda_stage, '')), '') IS NULL
+    AND lower(coalesce(c.andamento_igreen, '')) NOT IN (
+      'ativo', 'aprovado', 'validado', 'licenciada', 'licenciado'
+    )
+    AND coalesce(c.status, '') NOT IN (
+      'approved', 'registered_igreen', 'cadastro_concluido', 'rejected',
+      'contato_incompleto', 'active', 'complete'
+    )
+    AND lower(coalesce(c.conversation_step, '')) NOT IN (
+      'cadastro_em_analise', 'portal_submitting', 'finalizando',
+      'finalizando_cadastro', 'aguardando_otp', 'validando_otp',
+      'aguardando_facial', 'aguardando_assinatura', 'complete',
+      'atendimento_finalizado', 'aguardando_avaliacao_atendimento'
+    )
+    AND (
+      lcs.paused_reason IS NULL
+      OR (
+        lower(lcs.paused_reason) NOT IN (
+          'manual_admin_clear_sla_backlog', 'dnc', 'opt_out',
+          'handoff_humano', 'invalid_phone'
+        )
+        AND lower(lcs.paused_reason) NOT LIKE 'dnc:%'
+        AND lower(lcs.paused_reason) NOT LIKE 'not_lead_outside_ddd%'
+      )
+    )
+    AND (lcs.stage IS NOT NULL OR q.queue IS NOT NULL);
+
+  RETURN jsonb_build_object(
+    'ok', true,
+    'partner', jsonb_build_object(
+      'id', v_partner.id,
+      'nome', v_partner.nome,
+      'short_code', v_partner.short_code
+    ),
+    'ref', coalesce(nullif(v_cons.license, ''), v_cons.igreen_id::text),
+    'spots', v_spots,
+    'scans', v_scans,
+    'leads', v_leads,
+    'cycle_leads', v_cycle
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.get_partner_banner_portal(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.get_partner_banner_portal(text) TO anon, authenticated;
+
+COMMENT ON FUNCTION public.get_partner_banner_portal(text) IS
+  'Portal publico /p/{token}: cycle_leads elegiveis com PII mascarada (primeiro nome + fone parcial).';

@@ -14712,6 +14712,8 @@ export type Database = {
         Args: { p_customer_id: string; p_source?: string }
         Returns: boolean
       }
+      mask_first_name: { Args: { _name: string }; Returns: string }
+      mask_phone_br: { Args: { _phone: string }; Returns: string }
       match_knowledge: {
         Args: {
           p_consultant_id: string
