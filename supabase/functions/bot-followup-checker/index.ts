@@ -206,7 +206,9 @@ Deno.serve(async (req) => {
           } as any,
         });
         if (!sendOk) {
-          await finishOutboundEffect(supabase, eff.effectId, "failed", {
+          // CHECK outbound_effects.status não aceita "failed" — usava status
+          // inválido e o finish falhava em silêncio (efeito preso em sending).
+          await finishOutboundEffect(supabase, eff.effectId, "failed_retryable", {
             errorCode: "send_returned_false",
           });
           await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");

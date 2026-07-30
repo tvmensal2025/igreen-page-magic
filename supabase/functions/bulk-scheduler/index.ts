@@ -20,6 +20,11 @@ import {
   resolveConsultantOutboundChannel,
 } from "../_shared/channel-sender.ts";
 import { ctx } from "../_shared/channel-sender.ts";
+import {
+  finishOutboundEffect,
+  markEffectSending,
+  reserveOutboundEffect,
+} from "../_shared/journey-effects.ts";
 
 const cronCorsHeaders = {
   ...corsHeaders,
@@ -331,14 +336,47 @@ Deno.serve(async (req) => {
       });
 
       const jid = toJid(t.phone);
-      // Claim em bulk_campaign_targets já é a idempotência do lote.
-      // Não passa supabase no ctx (customer_id do target não é UUID de customers).
-      const sendCtx = ctx(
-        camp.consultant_id,
-        camp.consultant_id,
-        `bulk-scheduler:${camp.id}`,
-        t.id,
-      );
+      // Efeito por target: reconcile sending→queued não reenvia se já sent/unknown.
+      const bulkKey = `bulk:${t.id}`;
+      const eff = await reserveOutboundEffect(supabase, {
+        idempotencyKey: bulkKey,
+        engineKey: "bulk_scheduler",
+        channel: "whatsapp",
+        consultantId: camp.consultant_id,
+        actionKey: `campaign:${camp.id}`,
+      });
+      if (!eff.canSend) {
+        if (eff.status === "sent" || eff.status === "delivered") {
+          await supabase.from("bulk_campaign_targets").update({
+            status: "sent",
+            sent_at: new Date().toISOString(),
+            error: null,
+          }).eq("id", t.id).eq("status", "sending");
+        } else if (eff.status === "unknown" || eff.status === "failed_final") {
+          await supabase.from("bulk_campaign_targets").update({
+            status: "failed",
+            error: `effect_${eff.status}`.slice(0, 500),
+          }).eq("id", t.id).eq("status", "sending");
+        } else {
+          // reserved/sending paralelo — devolve à fila no próximo reconcile
+          await supabase.from("bulk_campaign_targets").update({
+            status: "queued",
+            claimed_at: null,
+          }).eq("id", t.id).eq("status", "sending");
+        }
+        continue;
+      }
+
+      const sendCtx = {
+        ...ctx(
+          camp.consultant_id,
+          camp.consultant_id,
+          `bulk-scheduler:${camp.id}`,
+          t.id,
+        ),
+        idempotencyKey: bulkKey,
+        supabase,
+      };
 
       // Humaniza: presence "digitando" (Whapi) ou delay proporcional
       if (finalMsg) {
@@ -351,7 +389,9 @@ Deno.serve(async (req) => {
 
       let ok = false;
       let errText: string | undefined;
+      let sendThrew = false;
       try {
+        await markEffectSending(supabase, eff.effectId);
         const hasMedia = !!(camp.media_url && camp.media_type && camp.media_type !== "text");
         const mediaKind = camp.media_type as "image" | "video" | "audio" | "document";
         if (hasMedia && mediaOrder === "media_first") {
@@ -372,7 +412,7 @@ Deno.serve(async (req) => {
           else if (finalMsg && mediaKind === "audio") {
             const tr = await channel.adapter.sendText(jid, finalMsg, {
               ...sendCtx,
-              idempotencyKey: `${sendCtx.idempotencyKey}:text`,
+              idempotencyKey: `${bulkKey}:text`,
             } as any);
             ok = tr.ok;
             if (!tr.ok) errText = (tr as { detail?: string }).detail || (tr as { reason?: string }).reason;
@@ -393,7 +433,7 @@ Deno.serve(async (req) => {
                 url: camp.media_url!,
                 fileName: camp.media_filename || undefined,
               } as any,
-              { ...sendCtx, idempotencyKey: `${sendCtx.idempotencyKey}:media` } as any,
+              { ...sendCtx, idempotencyKey: `${bulkKey}:media` } as any,
             );
             ok = mr.ok;
             if (!mr.ok) errText = (mr as { detail?: string }).detail || (mr as { reason?: string }).reason;
@@ -408,8 +448,16 @@ Deno.serve(async (req) => {
         }
       } catch (e) {
         ok = false;
+        sendThrew = true;
         errText = (e as Error).message;
       }
+
+      await finishOutboundEffect(
+        supabase,
+        eff.effectId,
+        ok ? "sent" : (sendThrew ? "unknown" : "failed_retryable"),
+        { errorCode: ok ? null : (errText || "send_failed").slice(0, 120) },
+      );
 
       const patch: any = {
         status: ok ? "sent" : "failed",

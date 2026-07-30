@@ -96,11 +96,13 @@ Deno.serve(async (req) => {
       `É o mesmo link da *validação facial (selfie)* e da *assinatura do contrato*. Abra no celular, siga os passos e me avise por aqui quando finalizar! ✅`;
 
     const jid = `${digits}@s.whatsapp.net`;
+    // Bucket 5min: bloqueia double-click/retry de rede; permite reenvio manual depois.
+    const resendBucket = Math.floor(Date.now() / (5 * 60_000));
     const sendCtx = {
       customerId,
       consultantId,
       stepId: "manual:resend_portal_link",
-      idempotencyKey: `resend-link:${customerId}:${Date.now()}`,
+      idempotencyKey: `resend-link:${customerId}:${resendBucket}`,
       supabase,
     };
     const res = await channel.adapter.sendText(jid, text, sendCtx as any);

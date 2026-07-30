@@ -28,7 +28,7 @@ import {
 } from "../voice-dialer/velip.ts";
 import { debitSmsSent } from "../voice-sms-billing.ts";
 import { resolvePersonalizedCallAudio } from "../voice-dialer/call-stitch.ts";
-import { finishProactiveTouch, reserveProactiveTouch } from "../journey-effects.ts";
+import { finishOutboundEffect, finishProactiveTouch, markEffectSending, reserveOutboundEffect, reserveProactiveTouch } from "../journey-effects.ts";
 import { isAutomationEnabled } from "../automation-gate.ts";
 import { isBotGloballyEnabled } from "../bot/global-flag.ts";
 import { resolveCanonicalFlowVariant } from "../bot/canonical-flow-variant.ts";
@@ -406,6 +406,20 @@ async function runCall(
     };
   }
 
+  const effKey = `dreheat:call:${plan.customer_id}:${plan.step}`;
+  const eff = await reserveOutboundEffect(supabase, {
+    idempotencyKey: effKey,
+    engineKey: "daily_reheat",
+    channel: "voice",
+    customerId: plan.customer_id,
+    consultantId: plan.consultant_id,
+    stage: String(plan.step),
+    actionKey: "call",
+  });
+  if (!eff.canSend) {
+    return { action: "call", ok: false, detail: `effect_blocked:${eff.reason}` };
+  }
+
   const ctid = toCtid(`dreheat_${plan.customer_id.slice(0, 8)}_${plan.step}`);
 
   const isRetry = plan.step === "retry";
@@ -418,6 +432,7 @@ async function runCall(
   const personalize = !!kit?.personalize_name;
 
   try {
+    await markEffectSending(supabase, eff.effectId);
     let r;
     if (bodyClipId && personalize) {
       const st = await resolvePersonalizedCallAudio(supabase, {
@@ -432,6 +447,9 @@ async function runCall(
       } else if (bodyVelipId) {
         r = await playAudioFile({ to: dest, audioId: bodyVelipId, ctid });
       } else {
+        await finishOutboundEffect(supabase, eff.effectId, "failed_final", {
+          errorCode: "sofia_required_no_audio",
+        });
         return { action: "call", ok: false, detail: "sofia_required_no_audio" };
       }
     } else if (bodyVelipId) {
@@ -448,12 +466,23 @@ async function runCall(
       if (st.ok && st.velip_audio_id) {
         r = await playAudioFile({ to: dest, audioId: st.velip_audio_id, ctid });
       } else {
+        await finishOutboundEffect(supabase, eff.effectId, "failed_final", {
+          errorCode: "sofia_required_no_audio",
+        });
         return { action: "call", ok: false, detail: "sofia_required_no_audio" };
       }
     } else {
+      await finishOutboundEffect(supabase, eff.effectId, "failed_final", {
+        errorCode: "sofia_required_no_clip",
+      });
       return { action: "call", ok: false, detail: "sofia_required_no_clip" };
     }
-    if (!r.ok) return { action: "call", ok: false, detail: `velip:${r.error || "fail"}` };
+    if (!r.ok) {
+      await finishOutboundEffect(supabase, eff.effectId, "failed_retryable", {
+        errorCode: `velip:${r.error || "fail"}`,
+      });
+      return { action: "call", ok: false, detail: `velip:${r.error || "fail"}` };
+    }
     if (r.cd_id) {
       const { error: callLogErr } = await supabase.from("voice_call_logs").insert({
         consultant_id: plan.consultant_id,
@@ -471,8 +500,15 @@ async function runCall(
         console.warn("[daily-reheat] voice_call_logs insert failed", callLogErr.message);
       }
     }
+    await finishOutboundEffect(supabase, eff.effectId, "sent", {
+      providerMessageId: r.cd_id != null ? String(r.cd_id) : null,
+    });
     return { action: "call", ok: true, detail: `call_placed:${r.cd_id ?? "?"}` };
   } catch (e) {
+    // Ambíguo após provider: não repetir cegamente.
+    await finishOutboundEffect(supabase, eff.effectId, "unknown", {
+      errorCode: String((e as Error).message || "call_exception").slice(0, 120),
+    });
     return { action: "call", ok: false, detail: (e as Error).message };
   }
 }
@@ -501,7 +537,22 @@ async function runSms(
   if (!raw) return { action: "sms", ok: true, detail: "no_sms_text_skip" };
   const message = renderVars(raw, { nome, consultor, protocolo });
 
+  const effKey = `dreheat:sms:${plan.customer_id}:${plan.step}:${which}`;
+  const eff = await reserveOutboundEffect(supabase, {
+    idempotencyKey: effKey,
+    engineKey: "daily_reheat",
+    channel: "sms",
+    customerId: plan.customer_id,
+    consultantId: plan.consultant_id,
+    stage: String(plan.step),
+    actionKey: `sms:${which}`,
+  });
+  if (!eff.canSend) {
+    return { action: "sms", ok: false, detail: `effect_blocked:${eff.reason}` };
+  }
+
   try {
+    await markEffectSending(supabase, eff.effectId);
     const r = await makeSMS({ to: dest, message });
     const { data: smsLogRow, error: smsLogErr } = await supabase.from("voice_sms_log").insert({
       consultant_id: plan.consultant_id,
@@ -514,17 +565,28 @@ async function runSms(
     if (smsLogErr) {
       console.warn("[daily-reheat] voice_sms_log insert failed", smsLogErr.message);
     }
-    if (!r.ok) return { action: "sms", ok: false, detail: `velip:${r.error}` };
+    if (!r.ok) {
+      await finishOutboundEffect(supabase, eff.effectId, "failed_retryable", {
+        errorCode: `velip:${r.error || "fail"}`,
+      });
+      return { action: "sms", ok: false, detail: `velip:${r.error}` };
+    }
     const smsRef = r.cdls_id != null
       ? String(r.cdls_id)
-      : (smsLogRow as { id?: string } | null)?.id ?? `reheat_sms_${plan.customer_id}_${Date.now()}`;
+      : (smsLogRow as { id?: string } | null)?.id ?? `reheat_sms_${plan.customer_id}_${plan.step}`;
     void debitSmsSent(supabase, {
       consultantId: plan.consultant_id,
       providerRef: smsRef,
       metadata: { source: "daily_reheat" },
     });
+    await finishOutboundEffect(supabase, eff.effectId, "sent", {
+      providerMessageId: smsRef,
+    });
     return { action: "sms", ok: true, detail: `sms_sent:${r.cdls_id ?? "?"}` };
   } catch (e) {
+    await finishOutboundEffect(supabase, eff.effectId, "unknown", {
+      errorCode: String((e as Error).message || "sms_exception").slice(0, 120),
+    });
     return { action: "sms", ok: false, detail: (e as Error).message };
   }
 }

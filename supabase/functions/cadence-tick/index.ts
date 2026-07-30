@@ -537,7 +537,8 @@ async function dispatchWhatsApp(
     // Sem chip: manda o corpo sem wa.me (não adianta failed×30min).
     tplForSend = scrubMissingConsultantPhone(tplForSend);
   } else if (missingVar) {
-    return { ok: false, detail: `identity_missing:${missingVar}` };
+    // Sem nome do consultor: não martelar failed_retryable (custo/quota).
+    return { ok: false, detail: `identity_missing:${missingVar}`, permanent: true };
   }
   const text = renderTemplate(tplForSend, {
     nome: firstName,
@@ -884,7 +885,9 @@ async function dispatchSMS(
   const availOverrides = await loadAvail(row.consultant_id);
   const { phrase: fraseDisponibilidade } = buildAvailabilityPhrase(new Date(), availOverrides);
   const missingSmsVar = missingIdentityVar(rawTpl, consultantName, consultantPhone);
-  if (missingSmsVar) return { ok: false, detail: `identity_missing:${missingSmsVar}` };
+  if (missingSmsVar) {
+    return { ok: false, detail: `identity_missing:${missingSmsVar}`, permanent: true };
+  }
   let text = renderTemplate(rawTpl, {
     nome: firstName,
     consultor: consultantName,
@@ -1543,7 +1546,8 @@ Deno.serve(async (req) => {
                   ack.delivery_status === "failed" ||
                   (ack.created_at && isPendingStale(ack.created_at))
                 ) {
-                  let attempts = 0;
+                  // Fail-closed: se não ler attempt_count, assume teto (não reabre).
+                  let attempts = OUTBOUND_EFFECT_MAX_RETRYABLE_ATTEMPTS;
                   try {
                     const { data: effRow } = await supabase
                       .from("outbound_effects")
@@ -1551,7 +1555,9 @@ Deno.serve(async (req) => {
                       .eq("id", eff.effectId)
                       .maybeSingle();
                     attempts = Number((effRow as { attempt_count?: number } | null)?.attempt_count || 0);
-                  } catch { /* assume 0 → permite 1 reopen */ }
+                  } catch {
+                    /* mantém teto → ack_max_attempts_advance */
+                  }
 
                   if (attempts >= OUTBOUND_EFFECT_MAX_RETRYABLE_ATTEMPTS) {
                     // Teto: não reabre. Fecha efeito e avança escada (WA → SMS/voz).

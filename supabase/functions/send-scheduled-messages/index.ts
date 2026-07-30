@@ -205,12 +205,22 @@ Deno.serve(async (req) => {
               quota.reason === "empty_response" ||
               quota.reason === "rpc_error"));
         if (!quota.allowed && !bypassQuota) {
+          const attempts = Number(msg.attempt_count ?? 0) + 1;
+          const isFinal = attempts >= MAX_ATTEMPTS;
           const retryAt = quota.until || quota.next_allowed_at
             || new Date(Date.now() + 30 * 60_000).toISOString();
           await supabase.from("scheduled_messages")
-            .update({ status: "pending", scheduled_at: retryAt, processing_started_at: null })
+            .update({
+              status: isFinal ? "failed" : "pending",
+              attempt_count: attempts,
+              last_error: `anti_ban:${quota.reason}`.slice(0, 500),
+              processing_started_at: null,
+              ...(isFinal ? {} : { scheduled_at: retryAt }),
+            })
             .eq("id", msg.id);
-          console.log(`⏸️ [scheduled] msg ${msg.id} adiada (anti-ban): ${quota.reason} → ${retryAt}`);
+          if (isFinal) failedCount++;
+          else retriedCount++;
+          console.log(`⏸️ [scheduled] msg ${msg.id} adiada (anti-ban): ${quota.reason} → ${isFinal ? "failed" : retryAt}`);
           continue;
         }
 
@@ -230,11 +240,12 @@ Deno.serve(async (req) => {
         }
 
         const jid = phone.includes("@") ? phone : `${phone}@s.whatsapp.net`;
+        // Chave estável por msg (sem attempt): retries reusam a mesma dedupe.
         const sendCtx = {
           customerId: customerId || "scheduled",
           consultantId: msg.consultant_id || custConsultantId || "unknown",
           stepId: `scheduled:${msg.id}`,
-          idempotencyKey: `scheduled:${msg.id}:${msg.attempt_count ?? 0}`,
+          idempotencyKey: `scheduled:${msg.id}`,
           supabase,
         };
         const sendResult = await channel.adapter.sendText(jid, renderedText, sendCtx as never);

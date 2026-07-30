@@ -437,7 +437,7 @@ export async function sendWelcomeHeader(
       customerId,
       consultantId: consultantId || "",
       stepId: "manual:start_attendance:custom",
-      idempotencyKey: `welcome-custom:${customerId}:${Date.now()}`,
+      idempotencyKey: `welcome-custom:${customerId}`,
       supabase,
     };
     const rr = await channel.adapter.sendText(jid, text, sendCtxOv as never);
@@ -463,7 +463,7 @@ export async function sendWelcomeHeader(
         {
           ...sendCtxOv,
           stepId: "manual:start_attendance:audio",
-          idempotencyKey: `welcome-audio:${customerId}:${Date.now()}`,
+          idempotencyKey: `welcome-audio:${customerId}`,
         } as never,
       );
       if (ar.ok) {
@@ -529,7 +529,7 @@ export async function sendWelcomeHeader(
     customerId,
     consultantId: consultantId || "",
     stepId: "manual:start_attendance",
-    idempotencyKey: `welcome:${customerId}:${Date.now()}`,
+    idempotencyKey: `welcome:${customerId}`,
     supabase,
   };
 
@@ -550,7 +550,7 @@ export async function sendWelcomeHeader(
 
   const r2 = await channel.adapter.sendText(jid, protoBlock, {
     ...sendCtx,
-    idempotencyKey: `welcome-proto:${customerId}:${Date.now()}`,
+    idempotencyKey: `welcome-proto:${customerId}`,
   } as never);
   if (!r2.ok) {
     return { ok: false, code: "send_failed_protocol", detail: (r2 as { detail?: string }).detail };

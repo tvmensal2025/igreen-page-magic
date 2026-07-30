@@ -207,9 +207,18 @@ serve(async (req: Request) => {
 
       await markEffectSending(supabase, eff.effectId);
       const result = await channel.adapter.sendText(jid, nudgeText, sendCtx);
+      // Sempre marca nudge_sent_at (sucesso OU falha): senão o lead fica na
+      // query para sempre e, ao girar o bucket 4h, nasce chave nova (bypass do teto).
+      const markNudgeAttempted = async () => {
+        await supabase
+          .from("customers")
+          .update({ nudge_sent_at: new Date().toISOString() })
+          .eq("id", lead.id);
+      };
       if (!result.ok) {
         console.warn(`[faq-nudge] send failed for ${lead.id}`);
         await finishOutboundEffect(supabase, eff.effectId, "failed_retryable", { errorCode: "send_failed" });
+        await markNudgeAttempted();
         await releaseTouch(); continue;
       }
 
@@ -228,17 +237,21 @@ serve(async (req: Request) => {
         origin: "automation:faq-reengagement-nudge",
       });
 
-      // Marca nudge enviado
-      await supabase
-        .from("customers")
-        .update({ nudge_sent_at: new Date().toISOString() })
-        .eq("id", lead.id);
+      await markNudgeAttempted();
 
       sent++;
       // Jitter entre envios (2-4s) para anti-ban
       await new Promise((r) => setTimeout(r, 2000 + Math.random() * 2000));
     } catch (e) {
       console.warn(`[faq-nudge] failed for ${lead.id}:`, (e as Error).message);
+      // Catch também marca cooldown — senão exceção mid-flight deixa o lead
+      // elegível e o bucket 4h gira com chave nova.
+      try {
+        await supabase
+          .from("customers")
+          .update({ nudge_sent_at: new Date().toISOString() })
+          .eq("id", lead.id);
+      } catch { /* best-effort */ }
     }
   }
 

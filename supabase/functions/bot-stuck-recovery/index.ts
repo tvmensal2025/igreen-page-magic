@@ -209,17 +209,19 @@ Deno.serve(async (req) => {
       }
 
       if (attempts >= MAX_ATTEMPTS_BEFORE_STUCK) {
+        // Sempre para de resgatar após o teto — antes só FINALIZAR/CONTACT
+        // marcavam stuck e os demais steps continuavam enviando até 24h.
         let newStatus: string | null = null;
         if (FINALIZAR_STEPS.has(step)) newStatus = "stuck_finalizar";
         else if (CONTACT_STEPS.has(step)) newStatus = "stuck_contact";
-        if (newStatus) {
-          await supabase.from("customers").update({
-            status: newStatus,
-            error_message: `Travado em ${step} após ${attempts} resgates sem resposta`,
-          }).eq("id", lead.id);
-          stats.stuck_marked++;
-          continue;
-        }
+        await supabase.from("customers").update({
+          ...(newStatus ? { status: newStatus } : {}),
+          error_message: `Travado em ${step} após ${attempts} resgates sem resposta`,
+          // Empurra cooldown longe para o scan não martelar o mesmo lead.
+          next_rescue_allowed_at: new Date(Date.now() + 24 * 60 * 60_000).toISOString(),
+        }).eq("id", lead.id);
+        stats.stuck_marked++;
+        continue;
       }
 
       try {
@@ -306,8 +308,10 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // Chave estável por tentativa de resgate (attempts só sobe no sucesso).
+        const rescueKey = `rescue:${lead.id}:${step}:${attempts + 1}`;
         const eff = await reserveOutboundEffect(supabase, {
-          idempotencyKey: `rescue:${lead.id}:${attempts + 1}`,
+          idempotencyKey: rescueKey,
           engineKey: "bot_stuck_recovery",
           channel: "whatsapp",
           customerId: lead.id,
@@ -336,7 +340,7 @@ Deno.serve(async (req) => {
           customerId: lead.id,
           consultantId: lead.consultant_id,
           stepId: `rescue:${step}`,
-          idempotencyKey: `rescue:${lead.id}:${attempts + 1}`,
+          idempotencyKey: rescueKey,
           supabase,
         };
 

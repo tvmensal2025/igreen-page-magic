@@ -272,12 +272,13 @@ async function bucketB(supabase: any) {
         || /otp_invalid_or_expired/i.test(txt)
         || res.status === 400;
       if (isExpired) {
+        const clearedAt = new Date().toISOString();
         await supabase.from("customers").update({
           otp_code: null,
           otp_received_at: null,
           status: "awaiting_otp",
           conversation_step: "otp_falhou",
-          last_otp_dispatch_at: new Date().toISOString(),
+          last_otp_dispatch_at: clearedAt,
           last_otp_dispatch_error: "otp_expired_cleared",
           portal_retry_count: 0,
         }).eq("id", r.id);
@@ -326,7 +327,8 @@ async function bucketB(supabase: any) {
               customerId: r.id,
               consultantId: r.consultant_id,
               stepId: "watchdog_otp_expired",
-              idempotencyKey: `otp-exp:${r.id}:${Date.now()}`,
+              // Estável por evento de limpeza (não Date.now → sem duplicata em retry).
+              idempotencyKey: `otp-exp:${r.id}:${clearedAt}`,
               supabase,
             };
             const sendRes = await channel.adapter.sendText(jid, msg, sendCtx);
@@ -457,7 +459,8 @@ async function bucketC(supabase: any) {
           customerId: r.id,
           consultantId: r.consultant_id,
           stepId: "watchdog_facial_link",
-          idempotencyKey: `facial:${r.id}:${Math.floor(Date.now() / (60 * 60 * 1000))}`,
+          // Chave estável por lead+link (sem bucket horário → sem spam a cada hora).
+          idempotencyKey: `facial:${r.id}:${String(link).slice(-48)}`,
           supabase,
         };
         const result = await channel.adapter.sendText(jid, text, sendCtx);
@@ -476,9 +479,21 @@ async function bucketC(supabase: any) {
           sent++;
         } else {
           console.warn(`[watchdog C] send falhou customer=${r.id}`);
+          // Não marca link_facial_sent_at: permite retry com a MESMA chave
+          // (dedupe do adapter). Só registra erro operacional.
+          await supabase.from("customers").update({
+            last_portal_dispatch_error: "facial_link_send_failed",
+            last_portal_dispatch_at: new Date().toISOString(),
+          }).eq("id", r.id);
         }
       } catch (e: any) {
         console.warn(`[watchdog C] send erro customer=${r.id}: ${e?.message || e}`);
+        try {
+          await supabase.from("customers").update({
+            last_portal_dispatch_error: `facial_link_exception:${String(e?.message || e).slice(0, 120)}`,
+            last_portal_dispatch_at: new Date().toISOString(),
+          }).eq("id", r.id);
+        } catch { /* best-effort */ }
       }
     }
   }

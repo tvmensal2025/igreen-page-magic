@@ -447,6 +447,13 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
         console.warn("[reactivation-cron] claim pending exception:", e?.message);
       }
 
+      // Sem claim atômico → não envia (Date.now() na chave anularia dedupe).
+      if (!claimId) {
+        await releaseTouch();
+        totalFailed++;
+        continue;
+      }
+
       let ok = false;
       try {
         if (channel.kind === "evolution" && channelEnv.evolutionUrl && channelEnv.evolutionKey) {
@@ -462,9 +469,7 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
           customerId: customer.id,
           consultantId: tpl.consultant_id,
           stepId: `reactivation:${tpl.id}`,
-          idempotencyKey: claimId
-            ? `reactivation:${claimId}`
-            : `reactivation:${customer.id}:${tpl.id}:${Date.now()}`,
+          idempotencyKey: `reactivation:${claimId}`,
           supabase,
         };
         const result = await channel.adapter.sendText(remoteJid, finalText, sendCtx);
@@ -490,17 +495,6 @@ async function processAutoReactivation(supabase: SupabaseClient): Promise<Proces
             error_reason: ok ? null : `${channel.kind}_send_failed`,
             sent_at: new Date().toISOString(),
           }).eq("id", claimId);
-        } else {
-          await (supabase as any).from("reactivation_sends").insert({
-            customer_id: customer.id,
-            consultant_id: tpl.consultant_id,
-            template_id: tpl.id,
-            conversation_step: customer.conversation_step,
-            message_text: finalText,
-            trigger_type: "auto",
-            status: ok ? "sent" : "failed",
-            error_reason: ok ? null : `${channel.kind}_send_failed`,
-          });
         }
       } catch (e: any) {
         console.warn("[reactivation-cron] finalize reactivation_sends falhou:", e?.message);

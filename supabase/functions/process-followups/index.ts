@@ -247,10 +247,11 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Efeito idempotente: 1 follow-up por tentativa — dois crons
-        // simultâneos leem o mesmo followup_count → mesma chave → 1 vence.
+        // Efeito idempotente por slot de tentativa. No fail de ENVIO mantém
+        // o mesmo followup_count → mesma chave → teto RPC (não nasce chave nova).
+        const slot = attempts + 1;
         const eff = await reserveOutboundEffect(supabase, {
-          idempotencyKey: `followup:${c.id}:${attempts + 1}`,
+          idempotencyKey: `followup:${c.id}:${slot}`,
           engineKey: "process_followups",
           channel: "whatsapp",
           customerId: c.id,
@@ -259,6 +260,14 @@ Deno.serve(async (req) => {
         });
         if (!eff.canSend) {
           skipCount++;
+          if (
+            eff.status === "sent" ||
+            eff.status === "delivered" ||
+            eff.status === "failed_final" ||
+            eff.status === "unknown"
+          ) {
+            await cancelFollowup(supabase, c.id, `effect_${eff.status}`);
+          }
           await releaseTouch();
           continue;
         }
@@ -270,7 +279,7 @@ Deno.serve(async (req) => {
         let sendThrew = false;
         try {
           const sendCtx = {
-            ...ctx(c.consultant_id || "system", c.id, "process-followups", String(attempts + 1)),
+            ...ctx(c.consultant_id || "system", c.id, "process-followups", String(slot)),
             supabase,
           };
           const r = await channel.adapter.sendText(remoteJid, reply, sendCtx as any);
@@ -286,7 +295,8 @@ Deno.serve(async (req) => {
           await finishOutboundEffect(supabase, eff.effectId, sendThrew ? "unknown" : "failed_retryable", {
             errorCode: sendThrew ? "send_exception" : "send_failed",
           });
-          await rescheduleFollowup(supabase, c.id, RETRY_DELAY_MIN, attempts + 1);
+          // Mantém attempts (mesma chave) — só agenda o retry.
+          await rescheduleFollowup(supabase, c.id, RETRY_DELAY_MIN, attempts);
           await releaseTouch();
           continue;
         }

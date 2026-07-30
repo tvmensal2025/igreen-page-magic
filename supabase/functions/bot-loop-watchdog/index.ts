@@ -215,11 +215,13 @@ Deno.serve(async (req) => {
               throw new Error(`channel_unavailable:${channel.reason}`);
             }
             const jid = `${phone}@s.whatsapp.net`;
+            // Sem Date.now: 1 tip/dia/reason (queued.id quando existir reforça).
+            const dayKey = new Date().toISOString().slice(0, 10);
             const sendCtx = {
               customerId: customer.id,
               consultantId: customer.consultant_id,
               stepId: `bot-loop-watchdog:${reason}`,
-              idempotencyKey: `watchdog-tip:${customer.id}:${reason}:${queued?.id || Date.now()}`,
+              idempotencyKey: `watchdog-tip:${customer.id}:${reason}:${queued?.id || dayKey}`,
               supabase,
             };
             const sendRes = await channel.adapter.sendText(jid, tip, sendCtx);
