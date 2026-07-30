@@ -217,6 +217,44 @@ function isDomainNoise(word: string): boolean {
   return false;
 }
 
+/**
+ * Nomes próprios BR que terminam em -ndo/-ar e por isso escapam do
+ * guard estrutural de verbo abaixo. Denylist nunca fica completa; esta
+ * allowlist evita rejeitar gente de verdade.
+ */
+const NAMES_LOOKING_LIKE_VERBS = new Set([
+  "fernando","orlando","armando","rolando","edmundo","raimundo","wando",
+  "reinaldo","aldo","ubaldo","osvaldo","oswaldo","geraldo","ronaldo",
+  "cesar","caesar","oscar","edgar","hilar","gaspar","balthazar","baltazar",
+  "wilson","nelson",
+]);
+
+/**
+ * Guard estrutural: a palavra parece VERBO conjugado, não nome próprio.
+ * Complementa a blacklist de vocabulário (que nunca cobre tudo) e evita
+ * salvar frases como "quero entender melhor" ou "vou pensar" como nome.
+ */
+function looksLikeVerb(word: string): boolean {
+  const w = word.toLowerCase().replace(/[.]/g, "");
+  if (w.length < 4) return false;
+  if (NAMES_LOOKING_LIKE_VERBS.has(w)) return false;
+  // gerúndio: pensando, mandando, recebendo, seguindo
+  if (/(ando|endo|indo)$/.test(w) && w.length >= 6) return true;
+  // infinitivo: entender, participar, assinar, receber, decidir
+  if (/(ar|er|ir)$/.test(w) && w.length >= 6) return true;
+  // futuro / condicional: mandarei, gostaria, poderiam
+  // (-aria com ≤6 letras é nome: Maria, Ilaria, Rosaria → não bloqueia)
+  if (/(arei|erei|irei|ariam|eriam|iriam)$/.test(w)) return true;
+  if (/(aria|eria|iria)$/.test(w) && w.length >= 7) return true;
+  // pretérito 1ª/3ª pessoa: mandei, recebi, pensou, chegaram
+  if (/(ei|ou)$/.test(w) && w.length >= 6) return true;
+  if (/(aram|eram|iram)$/.test(w)) return true;
+  // -amos/-emos: sobrenomes Ramos/Lemos têm 5 letras; verbo real é maior
+  if (/(amos|emos|imos)$/.test(w) && w.length >= 7) return true;
+  return false;
+}
+
+
 const NAME_PARTICLES = new Set(["de", "da", "do", "dos", "das", "e"]);
 
 function capitalizeName(raw: string): string {
@@ -315,10 +353,15 @@ export function extractNome(text: string, opts: ExtractNomeOpts = {}): string | 
   if (trimmed.length > 0 && trimmed.length <= 80) {
     const onlyNameChars = /^[a-zà-ÿ]+(?:[''-][a-zà-ÿ]+)?(?:\s+[a-zà-ÿ]+(?:[''-][a-zà-ÿ]+)?){0,4}$/i.test(trimmed);
     if (onlyNameChars) {
-      const wordCount = trimmed.split(/\s+/).length;
+      const words = trimmed.split(/\s+/);
+      const wordCount = words.length;
       // 1 palavra única: só aceita quando o bot pediu o nome.
       // 2-5 palavras: aceita (ex.: "Manoel Bento de Oliveira", "José Silva Filho").
       if (wordCount === 1 && !opts.allowSingleWord) return null;
+      // Guard estrutural: qualquer palavra com cara de verbo derruba a frase
+      // ("quero entender melhor", "vou pensar", "mandei ontem") — sem isso
+      // a resposta livre do lead virava nome do cliente.
+      if (words.some((w) => looksLikeVerb(w))) return null;
       const cleaned = capitalizeName(trimmed);
       if (isValidNameCandidate(cleaned)) return cleaned;
     }

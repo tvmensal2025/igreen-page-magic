@@ -93,3 +93,19 @@ Deno.test("extractNome: gatilho 'nome' sem dois-pontos não captura mais (regres
   assertEquals(extractNome("Nome: João Silva"), "João Silva");
 });
 
+
+Deno.test("extractNome: frase livre com verbo NÃO vira nome (guard estrutural)", () => {
+  // bug: resposta livre do lead virava nome do cliente
+  assertEquals(extractNome("quero entender melhor"), null);
+  assertEquals(extractNome("vou pensar direitinho"), null);
+  assertEquals(extractNome("mandei ontem"), null);
+  assertEquals(extractNome("estou aguardando retorno"), null);
+  assertEquals(extractNome("gostaria de participar"), null);
+});
+
+Deno.test("extractNome: nomes que 'parecem verbo' continuam aceitos", () => {
+  assertEquals(extractNome("Fernando Ramos"), "Fernando Ramos");
+  assertEquals(extractNome("Maria Lemos"), "Maria Lemos");
+  assertEquals(extractNome("Cesar Augusto"), "Cesar Augusto");
+  assertEquals(extractNome("Orlando Nelson"), "Orlando Nelson");
+});

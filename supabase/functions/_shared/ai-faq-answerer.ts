@@ -18,6 +18,10 @@ import { aiChatCascade } from "./ai-gateway.ts";
 import { trackAIUsage } from "./ai-cost-tracker.ts";
 import { formatFaqReply, withSoftFlowClose } from "./format-reply.ts";
 import { resolveFlowId } from "./resolve-flow.ts";
+import {
+  resolveConsultantPresentationLabel,
+  resolveAssistantDisplayName,
+} from "./consultant-public-label.ts";
 
 export interface FaqAnswer {
   text: string;
@@ -31,9 +35,28 @@ interface KnowledgeSection {
   content: string;
 }
 
-const SYSTEM_PROMPT = `Você é o Rafael, atendente sênior da iGreen Energy respondendo dúvidas de leads no WhatsApp. Sua missão é esclarecer a dúvida com precisão e elegância — sem pressão comercial.
+/**
+ * Persona do FAQ — SEMPRE dinâmica.
+ *
+ * Bug 2026-07: o prompt fixava "Você é o Rafael", então a IA de QUALQUER
+ * consultor (Abel, Janete, Silvia…) se apresentava como Rafael ao lead.
+ * Agora a identidade vem do próprio consultor: nome da IA (`assistant_name`)
+ * + label público seguro (`resolveConsultantPresentationLabel`).
+ */
+export function buildFaqSystemPrompt(opts: {
+  assistantName?: string | null;
+  consultantLabel?: string | null;
+}): string {
+  const assistant = resolveAssistantDisplayName(opts.assistantName);
+  const consultant = String(opts.consultantLabel || "").trim();
+  const identidade = consultant
+    ? `Você é ${assistant}, assistente de ${consultant} na iGreen Energy`
+    : `Você é ${assistant}, assistente da iGreen Energy`;
+
+  return `${identidade}, respondendo dúvidas de leads no WhatsApp. Sua missão é esclarecer a dúvida com precisão e elegância — sem pressão comercial.
 
 REGRAS RÍGIDAS:
+0. IDENTIDADE: você se chama *${assistant}*${consultant ? ` e atende em nome de *${consultant}*` : ""}. NUNCA use outro nome próprio para se apresentar, nem invente o nome do consultor.
 1. Responda APENAS com base no CONHECIMENTO fornecido + no contexto da conversa. NUNCA invente preços, prazos, taxas, distribuidoras, números ou benefícios que não estejam ali.
 2. Resposta clara e completa: 2 a 4 frases curtas. Separe ideias com quebra de linha (use \\n\\n entre parágrafos). No máximo 1 emoji simples — preferível nenhum.
 3. Formatação WhatsApp: use *negrito* só em 1–2 termos importantes (ex.: *iGreen*, *sem fidelidade*). NÃO use markdown de título (#), listas longas nem links desnecessários.
@@ -44,6 +67,36 @@ REGRAS RÍGIDAS:
 8. NUNCA mencione áudio, vídeo ou que vai "mandar de novo" o material. Você está respondendo só com texto.
 
 Retorne JSON: {"text": "...", "confidence": 0.0-1.0, "shouldHandoff": true|false}`;
+}
+
+/**
+ * Carrega identidade do consultor (IA + label público). Fail-open: erro de
+ * banco vira persona genérica, nunca a persona de outro consultor.
+ */
+export async function resolveFaqPersona(
+  // deno-lint-ignore no-explicit-any
+  supabase: any,
+  consultantId?: string | null,
+): Promise<{ assistantName: string; consultantLabel: string }> {
+  if (!consultantId) {
+    return { assistantName: resolveAssistantDisplayName(null), consultantLabel: "" };
+  }
+  try {
+    const { data } = await supabase
+      .from("consultants")
+      .select("name, display_name, assistant_name")
+      .eq("id", consultantId)
+      .maybeSingle();
+    return {
+      assistantName: resolveAssistantDisplayName(data?.assistant_name),
+      consultantLabel: resolveConsultantPresentationLabel(data?.name, data?.display_name),
+    };
+  } catch (e) {
+    console.warn("[ai-faq-answerer] persona lookup failed:", (e as Error).message);
+    return { assistantName: resolveAssistantDisplayName(null), consultantLabel: "" };
+  }
+}
+
 
 
 /**
@@ -109,18 +162,48 @@ async function findExactFaqMatch(opts: {
     bot_flow_qa: { id: string; flow_id: string; position: number; text_response: string | null };
   };
   const rows = ((triggers as unknown) as Row[]) || [];
-  const candidates: Array<{ position: number; text: string }> = [];
+
+  // 1) Match EXATO (normalizado) — sempre vence.
+  const exact: Array<{ position: number; text: string }> = [];
+  // 2) Match por CONTENÇÃO — a frase cadastrada aparece inteira dentro da
+  //    pergunta ("oi, quanto custa a taxa?" casa com "quanto custa a taxa").
+  //    Só vale para triggers com 2+ palavras e 8+ caracteres, para não
+  //    disparar atalho por causa de um "sim" ou "ok" solto.
+  const contained: Array<{ position: number; text: string; len: number }> = [];
+
   for (const row of rows) {
     const text = (row.bot_flow_qa?.text_response || "").trim();
     if (!text) continue;
-    if (normalizeFaqQuestion(row.phrase) === norm) {
-      candidates.push({ position: row.bot_flow_qa.position, text });
+    const phrase = normalizeFaqQuestion(row.phrase);
+    if (!phrase) continue;
+    if (phrase === norm) {
+      exact.push({ position: row.bot_flow_qa.position, text });
+      continue;
     }
+    const words = phrase.split(" ").filter(Boolean).length;
+    if (words < 2 || phrase.length < 8) continue;
+    // Contenção com fronteira de palavra (evita "conta" casar em "contato").
+    const idx = norm.indexOf(phrase);
+    if (idx === -1) continue;
+    const before = idx === 0 ? " " : norm[idx - 1];
+    const afterIdx = idx + phrase.length;
+    const after = afterIdx >= norm.length ? " " : norm[afterIdx];
+    if (/[a-z0-9]/.test(before) || /[a-z0-9]/.test(after)) continue;
+    contained.push({ position: row.bot_flow_qa.position, text, len: phrase.length });
   }
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => a.position - b.position);
-  return { text: candidates[0].text };
+
+  if (exact.length > 0) {
+    exact.sort((a, b) => a.position - b.position);
+    return { text: exact[0].text };
+  }
+  if (contained.length > 0) {
+    // Frase mais longa = mais específica; empate resolve pela posição no fluxo.
+    contained.sort((a, b) => (b.len - a.len) || (a.position - b.position));
+    return { text: contained[0].text };
+  }
+  return null;
 }
+
 
 
 export async function answerFaqWithAI(opts: {
@@ -131,6 +214,9 @@ export async function answerFaqWithAI(opts: {
   consultantId?: string;
   recentHistory?: string;
   model?: string;
+  /** Persona já resolvida pelo caller (evita 2ª query). */
+  assistantName?: string | null;
+  consultantLabel?: string | null;
   signal?: AbortSignal;
 }): Promise<FaqAnswer> {
 
@@ -230,10 +316,21 @@ export async function answerFaqWithAI(opts: {
     return { text: "", confidence: 0, shouldHandoff: true, source: "skipped" };
   }
 
+  // Persona SEMPRE do consultor dono do lead — nunca "Rafael" fixo.
+  const persona =
+    opts.assistantName !== undefined || opts.consultantLabel !== undefined
+      ? {
+          assistantName: resolveAssistantDisplayName(opts.assistantName),
+          consultantLabel: String(opts.consultantLabel || "").trim(),
+        }
+      : await resolveFaqPersona(opts.supabase, opts.consultantId);
+  const systemPrompt = buildFaqSystemPrompt(persona);
+
   const userPrompt = `CONHECIMENTO IGREEN:
 ${knowledge}
 
 CONTEXTO:
+- Você é: ${persona.assistantName}${persona.consultantLabel ? ` (assistente de ${persona.consultantLabel})` : ""}
 - Nome do lead: ${opts.leadName || "(desconhecido)"}
 - Passo atual do funil: ${opts.currentStepLabel || "(início)"}
 ${opts.recentHistory ? `\nÚLTIMAS MENSAGENS DA CONVERSA:\n${opts.recentHistory.slice(0, 2000)}\n` : ""}
@@ -260,7 +357,7 @@ PERGUNTA DO LEAD: "${q.slice(0, 600)}"`;
         },
       },
       messages: [
-        { role: "system", content: SYSTEM_PROMPT },
+        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt },
       ],
       signal: opts.signal || ctrl.signal,
