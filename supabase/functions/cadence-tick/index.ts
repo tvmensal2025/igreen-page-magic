@@ -32,6 +32,7 @@ import {
   finishOutboundEffect,
   finishProactiveTouch,
   markEffectSending,
+  OUTBOUND_EFFECT_MAX_RETRYABLE_ATTEMPTS,
   reserveOutboundEffect,
   reserveProactiveTouch,
   startAutomationRun,
@@ -1532,7 +1533,7 @@ Deno.serve(async (req) => {
           if (!eff.canSend) {
             await finishProactiveTouch(supabase, touch.reservationId, touch.claimToken, "released");
             if (eff.status === "sent" || eff.status === "delivered") {
-              // Envio já ocorreu. WhatsApp: só avança se ACK ok; senão espera ou reabre retry.
+              // Envio já ocorreu. WhatsApp: só avança se ACK ok; senão espera ou reabre retry (com teto).
               if (def.channel === "whatsapp") {
                 const ack = await loadCadenceWaAck(supabase, row.customer_id, stage);
                 if (isAckOk(ack.delivery_status) || eff.status === "delivered") {
@@ -1542,28 +1543,62 @@ Deno.serve(async (req) => {
                   ack.delivery_status === "failed" ||
                   (ack.created_at && isPendingStale(ack.created_at))
                 ) {
-                  // Reabre efeito para reenvio (JID pode ter sido corrigido).
+                  let attempts = 0;
                   try {
-                    await supabase
+                    const { data: effRow } = await supabase
                       .from("outbound_effects")
-                      .update({
-                        status: "failed_retryable",
-                        error_code: ack.delivery_status === "failed" ? "ack_failed" : "ack_pending_stale",
-                      })
+                      .select("attempt_count")
                       .eq("id", eff.effectId)
-                      .eq("status", "sent");
-                  } catch { /* best-effort */ }
-                  await finishRow(row.id, claimToken, {
-                    next_action_at: new Date(now.getTime() + 5 * 60_000).toISOString(),
-                  });
-                  detail = {
-                    ...detail,
-                    dispatch: "ack_failed_reopen",
-                    effect_id: eff.effectId,
-                    delivery_status: ack.delivery_status,
-                  };
-                  deferred++;
-                  continue;
+                      .maybeSingle();
+                    attempts = Number((effRow as { attempt_count?: number } | null)?.attempt_count || 0);
+                  } catch { /* assume 0 → permite 1 reopen */ }
+
+                  if (attempts >= OUTBOUND_EFFECT_MAX_RETRYABLE_ATTEMPTS) {
+                    // Teto: não reabre. Fecha efeito e avança escada (WA → SMS/voz).
+                    try {
+                      await supabase
+                        .from("outbound_effects")
+                        .update({
+                          status: "failed_final",
+                          error_code: "max_attempts_ack",
+                        })
+                        .eq("id", eff.effectId)
+                        .eq("status", "sent");
+                    } catch { /* best-effort */ }
+                    detail = {
+                      ...detail,
+                      dispatch: "ack_max_attempts_advance",
+                      effect_id: eff.effectId,
+                      delivery_status: ack.delivery_status,
+                      attempt_count: attempts,
+                      advance_skip: true,
+                    };
+                    status = "failed";
+                  } else {
+                    // Reabre efeito para reenvio (JID pode ter sido corrigido).
+                    try {
+                      await supabase
+                        .from("outbound_effects")
+                        .update({
+                          status: "failed_retryable",
+                          error_code: ack.delivery_status === "failed" ? "ack_failed" : "ack_pending_stale",
+                        })
+                        .eq("id", eff.effectId)
+                        .eq("status", "sent");
+                    } catch { /* best-effort */ }
+                    await finishRow(row.id, claimToken, {
+                      next_action_at: new Date(now.getTime() + 5 * 60_000).toISOString(),
+                    });
+                    detail = {
+                      ...detail,
+                      dispatch: "ack_failed_reopen",
+                      effect_id: eff.effectId,
+                      delivery_status: ack.delivery_status,
+                      attempt_count: attempts,
+                    };
+                    deferred++;
+                    continue;
+                  }
                 } else {
                   // Ainda queued/pending recente — espera reconciler/webhook.
                   await finishRow(row.id, claimToken, {
@@ -1584,9 +1619,9 @@ Deno.serve(async (req) => {
               }
             } else if (
               (eff.status === "failed_final" || eff.status === "suppressed") &&
-              (def.channel === "sms" || def.channel === "voice")
+              (def.channel === "sms" || def.channel === "voice" || def.channel === "whatsapp")
             ) {
-              // Destino Velip definitivo inválido: não fica em loop — avança escada.
+              // Destino inválido OU teto de tentativas: não fica em loop — avança escada.
               detail = {
                 ...detail,
                 dispatch: `effect_${eff.status}_advance`,

@@ -42,9 +42,15 @@ export interface ReserveEffectInput {
  *
  * A RPC já resolve todos os casos atomicamente:
  * - novo → acquired=true (reserved);
- * - released/failed_retryable → CAS interno (attempt+1) → acquired=true p/ 1 worker;
+ * - released/failed_retryable abaixo do teto → CAS (attempt+1) → acquired=true;
+ * - teto estourado → failed_final, acquired=false;
  * - sent/delivered/sending/reserved/unknown/suppressed/failed_final → acquired=false.
+ *
+ * Tetos (banco): failed_retryable < 5 · released (soft-defer) < 15.
  */
+export const OUTBOUND_EFFECT_MAX_RETRYABLE_ATTEMPTS = 5;
+export const OUTBOUND_EFFECT_MAX_RELEASED_ATTEMPTS = 15;
+
 export async function reserveOutboundEffect(
   supabase: SB,
   input: ReserveEffectInput,
