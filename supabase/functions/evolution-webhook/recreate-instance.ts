@@ -1,31 +1,38 @@
-// Auto-recreate a dead Evolution instance.
+// Recreate Evolution instance — SOMENTE manual_admin.
 //
-// Motivo: quando o Evolution devolve connection.close com 401/403/440, a
-// sessão foi invalidada pelo WhatsApp. Simplesmente pedir um novo QR na
-// mesma instância NÃO funciona — o servidor Evolution ainda mantém o
-// socket morto internamente. O correto é apagar a instância no Evolution
-// e recriar do zero, mantendo o mesmo `whatsapp_instances.id` no Supabase.
+// 🛡️ 2026-07-30: `auto_fatal` está DESLIGADO. Após 401/403/440 o webhook
+// aplica hard-lock (register_fatal_disconnect). Pedir QR automático acelera ban
+// de número antigo (anos). Recreate só com super-admin consciente.
 //
-// Rate limit:
+// Rate limit (manual):
 //   • se a linha foi atualizada há < 15min por outra recreação, pula.
-//   • se houve >= 3 recreações em 24h, marca manual_review_required=true
-//     e para (chip provavelmente queimado, precisa intervenção humana).
+//   • se houve >= 3 recreações em 24h, marca manual_review_required=true.
 
 import { fetchWithTimeout } from "../_shared/utils.ts";
 
 export interface RecreateResult {
   ok: boolean;
-  skipped?: "rate_limit_15min" | "too_many_24h";
+  skipped?: "rate_limit_15min" | "too_many_24h" | "auto_fatal_disabled";
   new_instance_name?: string;
   qr_base64?: string | null;
   error?: string;
 }
 
+/** Settings seguros no create (Evolution docs + baileys-antiban). Sem proxy Evomi. */
+export const SAFE_EVOLUTION_INSTANCE_SETTINGS = {
+  rejectCall: true,
+  msgCall: "Não posso atender agora. Me chama no Zap por texto 🙂",
+  groupsIgnore: true,
+  alwaysOnline: false,
+  readMessages: false,
+  readStatus: false,
+  syncFullHistory: false,
+} as const;
+
 const SUPABASE_URL_ENV = Deno.env.get("SUPABASE_URL") || "";
 const WEBHOOK_URL = `${SUPABASE_URL_ENV.replace(/\/+$/, "")}/functions/v1/evolution-webhook`;
 
 function baseNameOf(instanceName: string): string {
-  // Remove sufixos numéricos anteriores tipo "-YYYYMMDDHHmm".
   return instanceName.replace(/-\d{8,14}$/, "");
 }
 
@@ -63,7 +70,15 @@ export async function recreateInstance(
   const baseUrl = evolutionApiUrl.replace(/\/+$/, "");
   const headers = { "Content-Type": "application/json", apikey: evolutionApiKey };
 
-  // ── Rate limit: recreações recentes no mesmo id ──
+  // Fail-closed: auto_fatal nunca recria (defesa em profundidade).
+  if (triggeredBy === "auto_fatal") {
+    console.error(
+      `[recreateInstance] BLOQUEADO auto_fatal em ${oldInstanceName} (reason=${reason ?? "-"}). ` +
+      `Use manual_admin após admin_clear_fatal_lock.`,
+    );
+    return { ok: false, skipped: "auto_fatal_disabled" };
+  }
+
   try {
     const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
     const { data: recent } = await supabase
@@ -75,27 +90,25 @@ export async function recreateInstance(
       .order("created_at", { ascending: false });
 
     const list = (recent as { created_at: string }[] | null) ?? [];
-    if (triggeredBy === "auto_fatal") {
-      if (list.length > 0) {
-        const lastMs = Date.parse(list[0].created_at);
-        if (Date.now() - lastMs < 15 * 60 * 1000) {
-          console.log(`[recreateInstance] skip ${oldInstanceName}: última recreação há <15min`);
-          return { ok: false, skipped: "rate_limit_15min" };
-        }
+    if (list.length > 0) {
+      const lastMs = Date.parse(list[0].created_at);
+      if (Date.now() - lastMs < 15 * 60 * 1000) {
+        console.log(`[recreateInstance] skip ${oldInstanceName}: última recreação há <15min`);
+        return { ok: false, skipped: "rate_limit_15min" };
       }
-      if (list.length >= 3) {
-        console.warn(`[recreateInstance] ${oldInstanceName}: >=3 recreações em 24h → manual_review_required`);
-        await supabase
-          .from("whatsapp_instances")
-          .update({
-            manual_review_required: true,
-            fatal_disconnect_reason: typeof reason === "number" ? reason : null,
-            fatal_disconnect_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", instanceRowId);
-        return { ok: false, skipped: "too_many_24h" };
-      }
+    }
+    if (list.length >= 3) {
+      console.warn(`[recreateInstance] ${oldInstanceName}: >=3 recreações em 24h → manual_review_required`);
+      await supabase
+        .from("whatsapp_instances")
+        .update({
+          manual_review_required: true,
+          fatal_disconnect_reason: typeof reason === "number" ? reason : null,
+          fatal_disconnect_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", instanceRowId);
+      return { ok: false, skipped: "too_many_24h" };
     }
   } catch (e: any) {
     console.warn(`[recreateInstance] rate-limit check falhou: ${e?.message}`);
@@ -104,7 +117,6 @@ export async function recreateInstance(
   const newName = newInstanceName(oldInstanceName);
   console.log(`♻️ Recriando instância Evolution: ${oldInstanceName} → ${newName} (trigger=${triggeredBy}, reason=${reason ?? "-"})`);
 
-  // Step 1: DELETE antiga no Evolution (best-effort, pode já não existir).
   try {
     const r = await fetchWithTimeout(`${baseUrl}/instance/delete/${oldInstanceName}`, {
       method: "DELETE",
@@ -117,7 +129,6 @@ export async function recreateInstance(
     console.warn(`[recreateInstance] DELETE falhou (ok, seguindo): ${e?.message}`);
   }
 
-  // Step 2: CREATE nova (com QR + webhook).
   let createBody: any = null;
   try {
     const r = await fetchWithTimeout(`${baseUrl}/instance/create`, {
@@ -127,6 +138,7 @@ export async function recreateInstance(
         instanceName: newName,
         qrcode: true,
         integration: "WHATSAPP-BAILEYS",
+        ...SAFE_EVOLUTION_INSTANCE_SETTINGS,
         webhook: {
           url: WEBHOOK_URL,
           byEvents: false,
@@ -147,7 +159,6 @@ export async function recreateInstance(
     return { ok: false, error: `create_exception: ${e?.message}` };
   }
 
-  // Step 3: UPDATE linha no Supabase (mesmo id, novo instance_name, reset flags).
   try {
     await supabase
       .from("whatsapp_instances")
@@ -168,16 +179,13 @@ export async function recreateInstance(
     console.error(`[recreateInstance] UPDATE row falhou: ${e?.message}`);
   }
 
-  // Step 4: registra sinal para rate-limit futuro.
   try {
     await supabase.from("instance_risk_signals").insert({
       instance_name: newName,
       signal_type: "auto_recreate",
-      severity: triggeredBy === "auto_fatal" ? "high" : "medium",
+      severity: "medium",
       metadata: { old_name: oldInstanceName, trigger: triggeredBy, reason: reason ?? null },
     });
-    // Também insere sob o nome ANTIGO para o rate-limit próximo (que
-    // pode chegar via connection.close do nome novo em breve).
     await supabase.from("instance_risk_signals").insert({
       instance_name: oldInstanceName,
       signal_type: "auto_recreate",

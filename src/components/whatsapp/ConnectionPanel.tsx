@@ -172,13 +172,12 @@ export function ConnectionPanel({
   const [showDisconnectConfirm, setShowDisconnectConfirm] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   // ⚠️ Anti-spam: pedir QR várias vezes em poucos segundos é interpretado
-  // pelo WhatsApp como comportamento de bot. Forçamos um cooldown de 10s
-  // entre cliques nos botões "Atualizar agora" / "Gerar novo QR".
+  // pelo WhatsApp como comportamento de bot. Cooldown 30s (era 10s).
   const [refreshCooldownLeft, setRefreshCooldownLeft] = useState(0);
-  const refreshDisabled = isLoading || refreshCooldownLeft > 0;
+  const refreshDisabled = isLoading || refreshCooldownLeft > 0 || fatalLocked;
   const handleSafeRefresh = async () => {
-    if (refreshDisabled || !onRefreshQr) return;
-    setRefreshCooldownLeft(10);
+    if (refreshDisabled || !onRefreshQr || fatalLocked) return;
+    setRefreshCooldownLeft(30);
     try { await onRefreshQr(); } finally { /* cooldown corre independente */ }
   };
   useEffect(() => {
@@ -188,8 +187,8 @@ export function ConnectionPanel({
   }, [refreshCooldownLeft]);
   const showDiagnostic = connectionLog.length > 0 && (isLoading || error || connectionStatus === "connecting" || operationalHealth !== "healthy");
   const isAutoReconnecting = isLoading && connectionLog.some((l) => l.includes("🔄"));
-  // ⚠️ Reset/reconnect totalmente bloqueados quando há revisão manual ativa.
-  const showResetButton = !fatalLocked && onSafeReset && (operationalHealth === "reset_recommended" || operationalHealth === "degraded" || consecutiveTimeouts >= 3);
+  // Reset só em degradação grave — Conectar NÃO deve destruir sessão.
+  const showResetButton = !fatalLocked && onSafeReset && (operationalHealth === "reset_recommended" || consecutiveTimeouts >= 5);
   const showLoadingState = isLoading && !qrCode;
   const showErrorState = !showLoadingState && !isLoading && !!error;
   const showDisconnectedWithoutInstance = !showLoadingState && !showErrorState && !isLoading && connectionStatus === "disconnected" && !instanceName;
@@ -221,7 +220,7 @@ export function ConnectionPanel({
           </div>
           <div className="flex-1">
             <h3 className="font-heading font-bold text-foreground text-lg">Conexão WhatsApp</h3>
-            <p className="text-xs text-muted-foreground">Conecte seu celular para enviar mensagens</p>
+            <p className="text-xs text-muted-foreground">1 consultor = 1 sessão. Reconectar não desvincula o chip.</p>
           </div>
           <HealthBadge health={operationalHealth} timeouts={consecutiveTimeouts} />
         </div>
@@ -369,20 +368,22 @@ export function ConnectionPanel({
                   <p className="text-base font-heading font-bold text-destructive">Número em revisão manual</p>
                   <p className="text-sm text-muted-foreground">
                     Houve uma desconexão grave{fatalReason ? ` (código ${fatalReason})` : ""}. O WhatsApp pode ter restringido este chip.
-                    <strong> Não reconecte aqui agora.</strong> Verifique o número no app oficial do WhatsApp no celular. Se quiser usar outro chip, use o botão abaixo.
+                    <strong> Não escaneie QR agora</strong> — isso pode queimar o número. Verifique no app oficial do celular. Só use o botão abaixo se for <strong>outro chip</strong>.
                   </p>
                 </>
               ) : (
                 <>
-                  <p className="text-base font-heading font-bold text-foreground">Conexão perdida</p>
-                  <p className="text-sm text-muted-foreground">A reconexão automática não foi possível. Você pode gerar um novo QR ou trocar de chip.</p>
+                  <p className="text-base font-heading font-bold text-foreground">Conexão pausada</p>
+                  <p className="text-sm text-muted-foreground">
+                    Reconectamos na <strong>mesma sessão</strong> (não desvincula o chip). Evite vários QR seguidos — isso bloqueia o WhatsApp.
+                  </p>
                 </>
               )}
             </div>
             <div className="flex flex-wrap gap-2 justify-center">
               {!fatalLocked && (
                 <Button onClick={onConnect} variant="outline" className="gap-2 rounded-xl px-6 h-11 border-primary/30 hover:bg-primary/5 hover:border-primary/50 transition-all">
-                  <QrCode className="w-4 h-4" /> Gerar novo QR
+                  <QrCode className="w-4 h-4" /> Reconectar (mesma sessão)
                 </Button>
               )}
               <Button
@@ -398,7 +399,7 @@ export function ConnectionPanel({
                   variant="outline"
                   className="gap-2 rounded-xl px-6 h-11 text-warning border-warning/20 hover:bg-warning/5 hover:border-warning/30 hover:text-warning"
                 >
-                  <RotateCcw className="w-4 h-4" /> Resetar
+                  <RotateCcw className="w-4 h-4" /> Resetar (último recurso)
                 </Button>
               )}
             </div>
@@ -476,7 +477,7 @@ export function ConnectionPanel({
             <div className="flex items-center gap-2.5">
               <div className={`w-2 h-2 rounded-full ${qrExpired ? "bg-warning" : "bg-primary"} animate-pulse`} />
               <p className="text-sm text-muted-foreground font-medium">
-                {qrExpired ? "QR expirado — clique em \"Gerar novo QR\" abaixo" : "Aguardando leitura do QR Code..."}
+                {qrExpired ? "QR expirado — aguarde e clique em Atualizar (não várias vezes)" : "Aguardando leitura do QR Code..."}
               </p>
             </div>
 
@@ -489,7 +490,7 @@ export function ConnectionPanel({
                 className="gap-2 text-xs text-muted-foreground hover:text-foreground disabled:opacity-50"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                {refreshCooldownLeft > 0 ? `Aguarde ${refreshCooldownLeft}s` : "Gerar novo QR"}
+                {refreshCooldownLeft > 0 ? `Aguarde ${refreshCooldownLeft}s` : "Atualizar QR"}
               </Button>
             )}
 
@@ -577,17 +578,17 @@ export function ConnectionPanel({
             </AlertDialogTitle>
             <AlertDialogDescription className="space-y-3">
               <p>
-                Este processo irá <strong>remover a instância atual e criar uma nova</strong>. É recomendado quando o servidor não está respondendo após várias tentativas.
+                Isso <strong>desvincula o chip e pede QR de novo</strong>. Só use se o suporte pedir ou a sessão estiver irrecuperável.
+                Vários resets seguidos <strong>podem bloquear o número no WhatsApp</strong>.
               </p>
               <div className="rounded-lg bg-secondary/80 p-3 text-xs space-y-1">
                 <p className="font-bold text-foreground">O que acontece:</p>
-                <p>1. A sessão WhatsApp atual será encerrada</p>
-                <p>2. A instância antiga será removida</p>
-                <p>3. Uma nova instância será criada</p>
-                <p>4. Um novo QR Code será gerado para escanear</p>
+                <p>1. A sessão atual é encerrada (logout)</p>
+                <p>2. A instância é removida e recriada com o <strong>mesmo nome</strong></p>
+                <p>3. Um QR novo aparece — escaneie <strong>uma vez</strong></p>
               </div>
               <p className="text-xs text-muted-foreground">
-                ⚠️ Seus contatos, templates e agendamentos <strong>não serão afetados</strong>.
+                Preferível: botão <strong>Reconectar (mesma sessão)</strong>, que não desvincula o chip.
               </p>
             </AlertDialogDescription>
           </AlertDialogHeader>

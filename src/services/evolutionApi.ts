@@ -172,6 +172,17 @@ async function request<T>(
 
 // ─── Instance Management ───
 
+/** Settings seguros (Evolution docs). Sem proxy residencial. */
+export const SAFE_EVOLUTION_INSTANCE_SETTINGS = {
+  rejectCall: true,
+  msgCall: "Não posso atender agora. Me chama no Zap por texto 🙂",
+  groupsIgnore: true,
+  alwaysOnline: false,
+  readMessages: false,
+  readStatus: false,
+  syncFullHistory: false,
+} as const;
+
 export async function createInstance(instanceName: string) {
   const webhookUrl = `${SUPABASE_URL}/functions/v1/evolution-webhook`;
 
@@ -182,6 +193,7 @@ export async function createInstance(instanceName: string) {
     instanceName,
     qrcode: true,
     integration: "WHATSAPP-BAILEYS",
+    ...SAFE_EVOLUTION_INSTANCE_SETTINGS,
     webhook: {
       url: webhookUrl,
       byEvents: false,

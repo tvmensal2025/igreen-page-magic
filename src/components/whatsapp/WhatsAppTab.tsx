@@ -424,16 +424,17 @@ export function WhatsAppTab({
                   <div className={`h-1.5 w-1.5 rounded-full animate-pulse shrink-0 ${fatalLocked ? "bg-destructive" : "bg-warning"}`} />
                   <span className="truncate">
                     {fatalLocked
-                      ? "Número em revisão manual — não reconecte aqui. Use 'Desconectar / trocar chip'."
+                      ? "Número em revisão — não escaneie QR. Só troque de chip se for outro número."
                       : connectionStatus === "connecting"
-                        ? "Reconectando — você ainda pode ver o histórico"
-                        : "Desconectado — histórico disponível, envios podem falhar"}
+                        ? "Reconectando na mesma sessão — você ainda pode ver o histórico"
+                        : "Desconectado — Reconectar mantém a mesma sessão (não desvincula)"}
                   </span>
                   {!fatalLocked && (
                     <button
                       onClick={() => createAndConnect()}
                       disabled={isLoading}
                       className="ml-auto text-warning hover:underline font-medium shrink-0"
+                      title="Reconecta na mesma instância, sem logout"
                     >
                       {isLoading ? "..." : "Reconectar"}
                     </button>

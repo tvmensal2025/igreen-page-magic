@@ -19,7 +19,6 @@ import {
   logEntry,
   sanitize,
   getFixedInstanceName,
-  getFreshInstanceName,
   isAuthError,
   isRecoverableConnectionError,
   sleep,
@@ -322,25 +321,24 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addLog, handleAuthFailure, haltRecovery, markConnected, setHealth, setStatus, stopPolling]);
 
-  /* ── Create & Connect ── */
+  /* ── Create & Connect ──
+   * Política anti-ban (2026-07-30): 1 consultor = 1 nome fixo.
+   * Conectar NÃO faz logout/delete (isso força pairing novo = ban).
+   * Logout+delete só em safeReset / Desconectar (ação explícita).
+   */
   const createAndConnect = useCallback(async () => {
     if (lockRef.current) return;
 
-    // ⛔ Hard-lock: revisão manual ativa após desconexão fatal. Não tentar
-    // novo QR/connect para o mesmo número — pode piorar um bloqueio do WhatsApp.
     if (fatalLocked) {
       addLog("⛔ Conexão bloqueada: número em revisão manual.");
       setError(
         "Este número está em revisão manual após uma desconexão grave do WhatsApp. " +
-        "Verifique no app oficial e, se quiser usar outro chip, escolha 'Desconectar / trocar chip'.",
+        "Não escaneie QR agora — isso pode queimar o chip. " +
+        "Verifique no app oficial do celular. Só use 'Desconectar / trocar chip' se for outro número.",
       );
       return;
     }
 
-
-    // 🔒 Anti-ban: impede que duas abas peçam QR simultaneamente para o mesmo
-    // consultor. Pedidos de QR duplos/rápidos são interpretados como bot pelo
-    // WhatsApp e contribuem para banimento.
     try {
       const lockKey = `consultant:${consultantId}`;
       const ch = new BroadcastChannel("whatsapp-qr-lock");
@@ -367,7 +365,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         }
       });
       setTimeout(() => { clearInterval(lockInterval); ch.close(); }, 5 * 60 * 1000);
-    } catch { /* navegador sem BroadcastChannel, não bloquear */ }
+    } catch { /* navegador sem BroadcastChannel */ }
 
     lockRef.current = true;
 
@@ -376,98 +374,109 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
     setConnectionLog([]);
     setQrCode(null);
     setQrGeneratedAt(null);
-    instanceSavedRef.current = false;
     health.resetRecoveryCounter();
     timeoutCountRef.current = 0;
     setConsecutiveTimeouts(0);
     setHealth("healthy");
     stopPolling();
 
-    const previousName = instanceName || getFixedInstanceName(consultantId);
+    // Sempre o mesmo nome — reutilizar credenciais Evolution/Baileys.
+    const name = getFixedInstanceName(consultantId);
+    setInstanceName(name);
 
     try {
-      addLog("Verificando se o WhatsApp já está conectado...");
-      const state = await checks.checkState(previousName);
+      addLog("Verificando sessão WhatsApp (mesma instância)...");
+      let state = await checks.checkState(name);
       if (!mountedRef.current) return;
 
       if (state === "open") {
-        setInstanceName(previousName);
-        await markConnected(previousName, "✅ WhatsApp já está conectado!");
-        startPolling(previousName);
+        await markConnected(name, "✅ WhatsApp já está conectado!");
+        startPolling(name);
         return;
       }
 
-      // Sempre sessão nova: reusar instância antiga dispara segurança do WhatsApp.
-      addLog("Preparando sessão limpa (nova instância)...");
+      // Instância não existe no Evolution → create 1× (sem logout de nada).
+      if (state === "missing") {
+        addLog("Criando instância (primeira vez ou servidor limpo)...");
+        setHealth("recovering");
+        try {
+          const response = await withTimeout(createInstance(name), 20000);
+          if (!mountedRef.current) return;
+          await saveInstance(name);
+          instanceSavedRef.current = true;
+          setHasInstance(true);
+          const qr = response?.qrcode?.base64 || null;
+          if (qr) {
+            health.resetRecoveryCounter();
+            setQrCode(qr);
+            setQrGeneratedAt(Date.now());
+            setStatus("connecting");
+            setHealth("needs_qr");
+            addLog("📱 QR Code gerado — escaneie UMA vez com o celular");
+          } else {
+            setStatus("connecting");
+            setHealth("recovering");
+            addLog("⏳ Instância criada. Pedindo QR (sem recriar sessão)...");
+          }
+          startPolling(name);
+          return;
+        } catch (createErr) {
+          if (isAuthError(createErr)) { handleAuthFailure(createErr); return; }
+          const msg = sanitize(createErr instanceof Error ? createErr.message : "Erro");
+          // Já existe no servidor → segue para connect na mesma.
+          if (msg.includes("already") || msg.includes("403") || msg.includes("409") || msg.includes("exists")) {
+            addLog("⏳ Instância já existe. Reconectando na mesma sessão...");
+            await saveInstance(name);
+            instanceSavedRef.current = true;
+            setHasInstance(true);
+            state = "close";
+          } else if (isRecoverableConnectionError(msg)) {
+            await saveInstance(name);
+            instanceSavedRef.current = true;
+            setHasInstance(true);
+            setStatus("connecting");
+            setHealth("degraded");
+            addLog("⏳ Servidor instável. Tentando recuperar a mesma instância...");
+            startPolling(name);
+            return;
+          } else {
+            setStatus("disconnected");
+            setError(msg);
+            addLog("❌ " + msg);
+            return;
+          }
+        }
+      }
+
+      // Existe (close / connecting / unknown): só connect = QR na MESMA instância.
+      // NÃO logout, NÃO delete, NÃO nome novo.
+      addLog("Reconectando na mesma instância (sem desvincular o chip)...");
+      setStatus("connecting");
       setHealth("recovering");
-      try { await withTimeout(logoutInstance(previousName), 8000); } catch { /* ok */ }
-      try { await withTimeout(deleteInstance(previousName), 8000); } catch { /* ok */ }
-      const fixed = getFixedInstanceName(consultantId);
-      if (fixed !== previousName) {
-        try { await withTimeout(logoutInstance(fixed), 5000); } catch { /* ok */ }
-        try { await withTimeout(deleteInstance(fixed), 5000); } catch { /* ok */ }
-      }
-      await deleteInstanceDb();
-      instanceSavedRef.current = false;
+      await saveInstance(name);
+      instanceSavedRef.current = true;
+      setHasInstance(true);
 
-      const name = getFreshInstanceName(consultantId);
-      setInstanceName(name);
-      addLog("Criando nova instância...");
-
-      try {
-        const response = await withTimeout(createInstance(name), 20000);
-        if (!mountedRef.current) return;
-
-        await saveInstance(name);
-        instanceSavedRef.current = true;
-        setHasInstance(true);
-        const qr = response?.qrcode?.base64 || null;
-
-        if (qr) {
-          health.resetRecoveryCounter();
-          setQrCode(qr);
-          setQrGeneratedAt(Date.now());
-          setStatus("connecting");
-          setHealth("needs_qr");
-          addLog("📱 QR Code gerado — escaneie com seu celular");
-        } else {
-          setStatus("connecting");
-          setHealth("recovering");
-          addLog("⏳ Instância criada. Aguardando QR Code...");
-        }
+      const qrAttempt = await checks.tryGetQr(name);
+      if (!mountedRef.current) return;
+      const recovered =
+        qrAttempt.alreadyConnected ||
+        (!qrAttempt.qr && await checks.confirmConnectedState(name, 2, 1000));
+      if (recovered) {
+        await markConnected(name, "✅ WhatsApp conectado!");
         startPolling(name);
-      } catch (createErr) {
-        if (isAuthError(createErr)) { handleAuthFailure(createErr); return; }
-
-        const msg = sanitize(createErr instanceof Error ? createErr.message : "Erro");
-
-        if (msg.includes("already") || msg.includes("403") || msg.includes("409") || msg.includes("exists")) {
-          await saveInstance(name);
-          instanceSavedRef.current = true;
-          setHasInstance(true);
-          setStatus("connecting");
-          setHealth("recovering");
-          addLog("⏳ Instância já existe no servidor. Conectando...");
-          startPolling(name);
-          return;
-        }
-
-        if (isRecoverableConnectionError(msg)) {
-          await saveInstance(name);
-          instanceSavedRef.current = true;
-          setHasInstance(true);
-          setStatus("connecting");
-          setError(null);
-          setHealth("degraded");
-          addLog("⏳ Servidor instável. Tentando recuperar a instância...");
-          startPolling(name);
-          return;
-        }
-
-        setStatus("disconnected");
-        setError(msg);
-        addLog("❌ " + msg);
+        return;
       }
+      if (qrAttempt.qr) {
+        health.resetRecoveryCounter();
+        setQrCode(qrAttempt.qr);
+        setQrGeneratedAt(Date.now());
+        setHealth("needs_qr");
+        addLog("📱 QR Code — escaneie UMA vez. Não fique gerando vários QR.");
+      } else {
+        addLog("⏳ Aguardando QR da mesma sessão...");
+      }
+      startPolling(name);
     } catch (err) {
       if (isAuthError(err)) { handleAuthFailure(err); return; }
 
@@ -477,10 +486,8 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         setStatus("connecting");
         setError(null);
         setHealth("degraded");
-        addLog("⏳ Conexão instável. Tentando novamente...");
-        const fallback = getFreshInstanceName(consultantId);
-        setInstanceName(fallback);
-        startPolling(fallback);
+        addLog("⏳ Conexão instável. Mantendo a mesma instância...");
+        startPolling(name);
       } else {
         setStatus("disconnected");
         setError(msg);
@@ -491,17 +498,26 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       setIsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [consultantId, instanceName, fatalLocked, addLog, handleAuthFailure, markConnected, saveInstance, deleteInstanceDb, setHealth, setStatus, startPolling, stopPolling]);
+  }, [consultantId, fatalLocked, addLog, handleAuthFailure, markConnected, saveInstance, setHealth, setStatus, startPolling, stopPolling]);
 
-  /* ── Refresh QR ── */
+  /* ── Refresh QR (mesma instância — NUNCA logout/delete) ── */
   const refreshQr = useCallback(async () => {
+    if (fatalLocked) {
+      addLog("⛔ QR bloqueado: número em revisão manual.");
+      return;
+    }
     const name = instanceName || getFixedInstanceName(consultantId);
     try {
-      addLog("📱 Renovando QR Code...");
+      addLog("📱 Pedindo QR da mesma sessão...");
       const state = await checks.checkState(name);
       if (state === "open") {
         await markConnected(name, "✅ WhatsApp já está conectado!");
         startPolling(name);
+        return;
+      }
+      if (state === "missing") {
+        // Sem instância: Conectar cria 1× — não inventar nome fresco aqui.
+        addLog("ℹ️ Instância ausente. Use Conectar (cria uma vez, nome fixo).");
         return;
       }
       const qrAttempt = await checks.tryGetQr(name);
@@ -520,16 +536,16 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         setStatus("connecting");
         setHealth("needs_qr");
         setError(null);
-        addLog("📱 Novo QR Code gerado");
+        addLog("📱 QR atualizado — escaneie UMA vez");
       } else {
-        addLog("⏳ QR Code ainda não disponível. Tentando novamente...");
+        addLog("⏳ QR ainda não disponível. Aguarde (não fique clicando).");
       }
     } catch (err) {
       if (isAuthError(err)) { handleAuthFailure(err); return; }
       console.warn("[useWhatsApp] refreshQr error:", err);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instanceName, consultantId, addLog, handleAuthFailure, markConnected, setHealth, setStatus, startPolling]);
+  }, [instanceName, consultantId, fatalLocked, addLog, handleAuthFailure, markConnected, setHealth, setStatus, startPolling]);
 
   /* ── Disconnect ── */
   const disconnect = useCallback(async () => {
@@ -566,7 +582,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [instanceName, consultantId, stopPolling, addLog, deleteInstanceDb, setHealth, setStatus]);
 
-  /* ── Level 3: Safe Reset ── */
+  /* ── Level 3: Safe Reset (ÚNICO lugar que logout+delete+create) ── */
   const safeReset = useCallback(async () => {
     if (lockRef.current) return;
     if (fatalLocked) {
@@ -576,21 +592,28 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
     }
     lockRef.current = true;
 
-    const name = getFreshInstanceName(consultantId);
+    // Mesmo após reset: nome FIXO do consultor (não fresh).
+    const name = getFixedInstanceName(consultantId);
     setIsLoading(true);
     setHealth("resetting");
     stopPolling();
 
-    addLog("🔄 Iniciando reset seguro da conexão...");
+    addLog("🔄 Reset explícito — desvincula e cria de novo (use só se suporte pediu)...");
 
     try {
-      const previousName = instanceName || getFixedInstanceName(consultantId);
+      const previousName = instanceName || name;
       addLog("1/4 — Encerrando sessão WhatsApp...");
       try { await withTimeout(logoutInstance(previousName), 10000); } catch { /* ok */ }
+      if (previousName !== name) {
+        try { await withTimeout(logoutInstance(name), 8000); } catch { /* ok */ }
+      }
       await sleep(2000);
 
       addLog("2/4 — Removendo instância antiga...");
       try { await withTimeout(deleteInstance(previousName), 10000); } catch { /* ok */ }
+      if (previousName !== name) {
+        try { await withTimeout(deleteInstance(name), 8000); } catch { /* ok */ }
+      }
       await sleep(2000);
 
       addLog("3/4 — Limpando registros locais...");
@@ -600,7 +623,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       timeoutCountRef.current = 0;
       setConsecutiveTimeouts(0);
 
-      addLog("4/4 — Criando nova instância...");
+      addLog("4/4 — Recriando a MESMA identidade de instância...");
       setInstanceName(name);
 
       try {
@@ -615,11 +638,11 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
           setQrGeneratedAt(Date.now());
           setStatus("connecting");
           setHealth("needs_qr");
-          addLog("✅ Reset concluído! Escaneie o novo QR Code.");
+          addLog("✅ Reset concluído! Escaneie o QR UMA vez.");
         } else {
           setStatus("connecting");
           setHealth("recovering");
-          addLog("✅ Instância recriada. Aguardando QR Code...");
+          addLog("✅ Instância recriada. Aguardando QR...");
         }
         setError(null);
         startPolling(name);
@@ -633,7 +656,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
           instanceSavedRef.current = true; setHasInstance(true);
           setStatus("connecting");
           setHealth("recovering");
-          addLog("⏳ Instância recuperada. Aguardando QR Code...");
+          addLog("⏳ Instância já existia. Pedindo QR na mesma...");
           setError(null);
           startPolling(name);
           return;
@@ -656,7 +679,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       setIsLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instanceName, consultantId, addLog, deleteInstanceDb, handleAuthFailure, saveInstance, setHealth, setStatus, startPolling, stopPolling]);
+  }, [instanceName, consultantId, fatalLocked, addLog, deleteInstanceDb, handleAuthFailure, saveInstance, setHealth, setStatus, startPolling, stopPolling]);
 
   const reconnect = useCallback(() => createAndConnect(), [createAndConnect]);
 

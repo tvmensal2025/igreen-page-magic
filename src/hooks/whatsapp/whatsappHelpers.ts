@@ -57,8 +57,9 @@ export function getFixedInstanceName(consultantId: string): string {
 }
 
 /**
- * Nome único por tentativa de conexão.
- * Evita reaproveitar sessão Evolution antiga (WhatsApp interpreta como risco).
+ * Nome único por tentativa — SÓ para casos legados / migração.
+ * Conectar e Reset usam getFixedInstanceName (1 consultor = 1 instância).
+ * Fresh names geravam multi-QR e ban (Abel 2026-07-28).
  */
 export function getFreshInstanceName(consultantId: string): string {
   const slug = consultantId.replace(/-/g, "").slice(0, 12);

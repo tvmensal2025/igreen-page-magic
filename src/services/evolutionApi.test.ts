@@ -84,6 +84,13 @@ describe("evolutionApi (proxy-based)", () => {
           instanceName: "test-inst",
           qrcode: true,
           integration: "WHATSAPP-BAILEYS",
+          rejectCall: true,
+          msgCall: "Não posso atender agora. Me chama no Zap por texto 🙂",
+          groupsIgnore: true,
+          alwaysOnline: false,
+          readMessages: false,
+          readStatus: false,
+          syncFullHistory: false,
           webhook: {
             url: "https://zlzasfhcxcznaprrragl.supabase.co/functions/v1/evolution-webhook",
             byEvents: false,

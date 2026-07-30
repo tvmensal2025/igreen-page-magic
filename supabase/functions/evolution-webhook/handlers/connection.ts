@@ -1,13 +1,14 @@
 // CONNECTION_UPDATE event handler.
-// Extracted verbatim from index.ts — no behavior change.
+// Política anti-ban de SESSÃO (2026-07-30): número do consultor > UX de reconnect.
+// Fatal (0/401/403/405/409/411/440) → hard-lock + alerta. NUNCA auto-recreate/QR.
 
 import { fetchWithTimeout } from "../../_shared/utils.ts";
+import { notifySuperAdminOpsAlert } from "../../_shared/superadmin-alert.ts";
 import {
   canReconnect,
   classifyDisconnect,
   recordRiskSignal,
 } from "../_helpers.ts";
-import { recreateInstance } from "../recreate-instance.ts";
 import type { SupabaseClient } from "./types.ts";
 
 export interface HandleConnectionArgs {
@@ -112,17 +113,68 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
 
 
   if (connState === "close" && connInstance) {
-    // 🩹 2026-07-04: Removido o HARD-LOCK automático de 14d.
-    // Motivo: 401/403/440 em connection.close representam queda de sessão
-    // socket do Evolution (sessão substituída, restart, handshake incompleto)
-    // e NÃO ban confirmado do WhatsApp. O antiban pré-04/jun (warmup +
-    // min_interval + typing + jitter + recovery_mode + reconnect cooldown)
-    // já protege o chip sem travar 14 dias em falso positivo.
-    // Ban de verdade agora só é marcado manualmente pelo super-admin via
-    // RPC admin_mark_instance_banned.
+    // 🛡️ 2026-07-30: Restaurado hard-lock em fatal (reverte regressão 2026-07-04).
+    // Motivo: auto-recreate + novo QR após 403 acelera ban de chip antigo (anos).
+    // Número do consultor é inadmissível perder. Falso positivo (parado) > ban.
+    // Ban/sessão fatal: register_fatal_disconnect + alerta. Recreate só manual_admin.
     const disconnectClass = classifyDisconnect(statusReason);
-    const severity = disconnectClass === "fatal" ? "high" : "low";
 
+    if (disconnectClass === "fatal") {
+      console.warn(
+        `🛑 Instância ${connInstance} desconectou FATAL (reason=${statusReason}). ` +
+        `HARD-LOCK 14d — PROIBIDO auto-QR / auto-recreate.`,
+      );
+
+      await recordRiskSignal(supabase, connInstance, "disconnect_fatal", "critical", {
+        reason: statusReason,
+        classified_as: "fatal",
+        policy: "no_auto_recreate_2026_07_30",
+      });
+
+      try {
+        await supabase.rpc("register_fatal_disconnect", {
+          p_instance: connInstance,
+          p_reason: Number(statusReason) || 0,
+          p_lock_hours: 336,
+        });
+      } catch (e: any) {
+        console.warn(`⚠️ register_fatal_disconnect falhou para ${connInstance}:`, e?.message);
+        try {
+          await supabase
+            .from("whatsapp_instances")
+            .update({
+              status: "needs_reconnect",
+              manual_review_required: true,
+              fatal_disconnect_reason: Number(statusReason) || 0,
+              fatal_disconnect_at: new Date().toISOString(),
+              fatal_lock_until: new Date(Date.now() + 336 * 3600_000).toISOString(),
+              recovery_mode_until: new Date(Date.now() + 336 * 3600_000).toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+            .eq("instance_name", connInstance);
+        } catch (_) { /* swallow */ }
+      }
+
+      try {
+        await notifySuperAdminOpsAlert(supabase, {
+          key: `evolution_fatal:${connInstance}`,
+          severity: "critical",
+          dedupMinutes: 180,
+          text:
+            `🛑 *Evolution FATAL* (reason=${statusReason ?? "?"})\n` +
+            `Instância: \`${connInstance}\`\n\n` +
+            `Hard-lock 14d ativo. *NÃO* peça QR / reconectar agora — ` +
+            `isso queima número antigo.\n` +
+            `Só liberar via admin_clear_fatal_lock após validar o chip no celular.`,
+        });
+      } catch (e: any) {
+        console.warn(`[connection] alerta fatal falhou: ${e?.message}`);
+      }
+
+      return true;
+    }
+
+    // ── TRANSIENTE: status + sinal leve + reconexão com cooldown 10 min ──
     try {
       await supabase
         .from("whatsapp_instances")
@@ -130,53 +182,19 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
         .eq("instance_name", connInstance);
     } catch (_) { /* non-critical */ }
 
-    await recordRiskSignal(supabase, connInstance, "disconnect_transient", severity, {
+    await recordRiskSignal(supabase, connInstance, "disconnect_transient", "low", {
       reason: statusReason,
-      classified_as: disconnectClass,
+      classified_as: "transient",
     });
 
-    // ── FATAL (401/403/440/…): sessão morta no WhatsApp. Reconectar no mesmo
-    // instance_name não resolve — o servidor Evolution mantém o socket morto.
-    // Solução: deletar a instância no Evolution e recriar do zero, mantendo o
-    // mesmo whatsapp_instances.id. O usuário só precisa escanear o novo QR.
-    if (disconnectClass === "fatal" && evolutionApiUrl && evolutionApiKey) {
-      const { data: instRow } = await supabase
-        .from("whatsapp_instances")
-        .select("id, instance_name")
-        .eq("instance_name", connInstance)
-        .maybeSingle();
-
-      if (instRow?.id) {
-        const recreateTask = recreateInstance(supabase, {
-          instanceRowId: instRow.id,
-          oldInstanceName: connInstance,
-          evolutionApiUrl,
-          evolutionApiKey,
-          triggeredBy: "auto_fatal",
-          reason: statusReason ?? null,
-        });
-        try {
-          // @ts-ignore: EdgeRuntime global
-          if (typeof EdgeRuntime !== "undefined" && (EdgeRuntime as any)?.waitUntil) {
-            // @ts-ignore
-            (EdgeRuntime as any).waitUntil(recreateTask);
-          } else {
-            await recreateTask;
-          }
-        } catch (_) { void recreateTask; }
-      }
-      return true;
-    }
-
-    // ── TRANSIENTE: apenas agenda reconexão em 30s ──
     const allowedToReconnect = evolutionApiUrl && evolutionApiKey
       && await canReconnect(supabase, connInstance);
 
     if (allowedToReconnect) {
       const baseUrl = evolutionApiUrl.replace(/\/$/, "");
       console.log(
-        `🔄 Instância ${connInstance} desconectou (reason=${statusReason}, class=${disconnectClass}). ` +
-        `Agendando reconexão em 30s (background).`,
+        `🔄 Instância ${connInstance} desconectou (reason=${statusReason}, transitório). ` +
+        `Agendando reconexão em 30s (background, anti-ban).`,
       );
       const reconnectInBackground = (async () => {
         try {

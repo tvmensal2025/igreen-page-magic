@@ -13,13 +13,13 @@
 | # | Camada anti-ban (padrão indústria 2026) | Fonte de referência | Onde está implementado |
 |---|---|---|---|
 | 1 | **Cooldown de reconexão persistente** (não em memória) — evita loop de reconnect, vetor #1 de ban | `baileys-antiban`, Kraya AI | `supabase/migrations/...try_acquire_reconnect_slot.sql` + `supabase/functions/evolution-webhook/_helpers.ts:canReconnect` (10 min via RPC, fail-closed) |
-| 2 | **Tratar `statusReason=0/401/403/440` como FATAL** — não tentar reconectar sessão derrubada/banida | docs Baileys, WasenderAPI | `evolution-webhook/_helpers.ts:FATAL_DISCONNECT_REASONS` + `handlers/connection.ts` (fatal → `needs_reconnect` + recovery 14d) |
+| 2 | **Tratar `statusReason=0/401/403/440` como FATAL** — não tentar reconectar sessão derrubada/banida | docs Baileys, baileys-antiban, WasenderAPI | `evolution-webhook/_helpers.ts` + `handlers/connection.ts` → `register_fatal_disconnect` (14d) + alerta super-admin. **NUNCA** `recreateInstance(auto_fatal)` (revertido 2026-07-30; regressão 04/07 queimava chip) |
 | 3 | **QR polling ≥30s, sem auto-refresh agressivo** — pedido rápido de QR é assinatura de bot | Whapi, Affinect | `src/hooks/useWhatsApp.ts:startPolling` (poll 30s no estado QR) + `ConnectionPanel.tsx:handleQrExpired` (não regenera sozinho) |
 | 4 | **Warmup progressivo 14 dias** (D1=20 → D14+=600 msgs/dia) | Wazzap, Affinect, Chatarmin | `migrations/...check_send_quota.sql` (ramp + `warmup_started_at`) chamado em `bulk-scheduler`, `reactivation-cron`, `reactivation-send`, `send-scheduled-messages` |
 | 5 | **Intervalo mínimo entre envios + jitter humano** (60s→18s + 700–2200ms aleatório) | `baileys-antiban`, Greentick | `migrations/...check_send_quota.sql` (`min_interval_ms`) + `supabase/functions/_shared/anti-ban.ts:humanJitterMs` |
 | 6 | **Simular "digitando" (presence) antes de cada envio** | `baileys-antiban`, Whapi | `_shared/anti-ban.ts:simulateTyping` + `typingDurationMs` (40ms/char, 1.2-6s) chamados em todos os senders |
 | 7 | **Circuit breaker em sinais de risco** — pausa automática após N falhas | Kraya AI, `baileys-antiban` | `migrations/...record_risk_signal.sql` + lógica em `check_send_quota` (≥3 reconnects/6h, ≥10 falhas/6h, ≥1 fatal) |
-| 8 | **Modo recuperação pós-incidente** (14 dias após fatal/troca de chip) | Affinect, Whapi | `migrations/...activate_recovery_mode` + acionado em `evolution-webhook/handlers/connection.ts` |
+| 8 | **Modo recuperação pós-incidente** (14 dias após fatal/troca de chip) | Affinect, Whapi | `register_fatal_disconnect` (seta `fatal_lock_until` + `recovery_mode_until` + `manual_review_required`) em `handlers/connection.ts` no fatal. UI bloqueia QR (`fatalLocked`). Só `admin_clear_fatal_lock` libera |
 | 9 | **Painel de saúde + kill switch manual** — consultor vê o status e pode pausar | Chatarmin | `src/components/whatsapp/InstanceHealth.tsx` + RPCs `pause_sending_now` / `clear_recovery_mode` |
 | 10 | **Lock anti-multi-aba** — duas abas pedindo QR ao mesmo tempo = ban | Whapi (best practice) | `src/hooks/useWhatsApp.ts:createAndConnect` (BroadcastChannel `whatsapp-qr-lock`) |
 
@@ -110,6 +110,8 @@ Frontend
 ## 7. Conclusão
 
 O sistema está no padrão usado por empresas grandes que vendem **Evolution/Baileys como serviço** (Wazzap, Whapi, Chatarmin). Todo consultor que respeitar o warmup e não forçar bypass está protegido pelas 10 camadas acima — o backend bloqueia automaticamente comportamentos que historicamente causam ban, e o painel dá ao consultor visibilidade total + um kill switch manual.
+
+**2026-07-30:** restaurado hard-lock fatal (camadas 2+8) após regressão de 04/07 que fazia `recreateInstance` automático em 403. Princípio: **número do consultor (anos) > UX de reconnect**. Create de instância passa settings seguros (`rejectCall`, `groupsIgnore`, sem `syncFullHistory` / `alwaysOnline`). **Sem proxy Evomi** no Evolution (custo GB contínuo); proteção principal = não loop de QR.
 
 Próximo nível de proteção só existe abandonando a stack atual e indo para WhatsApp Cloud API oficial — decisão de produto, não de engenharia.
 
