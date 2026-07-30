@@ -1,5 +1,6 @@
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { resolveWhatsAppChatId, digitsOnlyPhone } from "../_shared/resolve-whatsapp-chat-id.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,6 +12,22 @@ interface ProxyRequest {
   path: string;
   method: "GET" | "POST" | "PUT" | "DELETE";
   body?: unknown;
+}
+
+/** Extrai instanceName de paths Evolution comuns (`message/…/{inst}`, `instance/…/{inst}`, `chat/…/{inst}`). */
+function extractEvolutionInstanceName(safePath: string): string | null {
+  const parts = safePath.split("/").filter(Boolean);
+  if (parts.length < 3) return null;
+  const root = parts[0];
+  if (root === "message" || root === "chat" || root === "group" || root === "call") {
+    return parts[2] || null;
+  }
+  if (root === "instance") {
+    // instance/create e instance/fetchInstances não têm dono no path
+    if (parts[1] === "create" || parts[1] === "fetchInstances") return null;
+    return parts[2] || null;
+  }
+  return null;
 }
 
 function isMediaFetchPath(path: string): boolean {
@@ -372,6 +389,32 @@ Deno.serve(async (req) => {
     const safePath = path.replace(/^\/+/, "");
     const targetUrl = `${evolutionUrl}/${safePath}`;
 
+    // Posse da instância: consultor só opera a própria; admin passa.
+    const instanceName = extractEvolutionInstanceName(safePath);
+    if (instanceName) {
+      let isAdmin = false;
+      try {
+        const { data: sa } = await supabase.rpc("is_super_admin", { _user_id: user.id });
+        isAdmin = sa === true;
+      } catch {
+        isAdmin = false;
+      }
+      if (!isAdmin) {
+        const { data: inst } = await supabase
+          .from("whatsapp_instances")
+          .select("consultant_id")
+          .eq("instance_name", instanceName)
+          .maybeSingle();
+        const owner = (inst as { consultant_id?: string } | null)?.consultant_id;
+        if (!owner || owner !== user.id) {
+          return new Response(
+            JSON.stringify({ error: "forbidden", code: "instance_forbidden", message: "Instância não pertence a este consultor." }),
+            { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      }
+    }
+
     let outboundBody = body;
     // BR 9º dígito: reescreve `number` no envio manual (front → Evolution)
     // com o JID real de POST /chat/whatsappNumbers/{instance}.
@@ -383,16 +426,34 @@ Deno.serve(async (req) => {
       !Array.isArray(outboundBody) &&
       (outboundBody as { number?: unknown }).number
     ) {
-      const instanceName = safePath.split("/")[2] || "";
+      const instanceNameForWa = safePath.split("/")[2] || "";
       const rawNumber = String((outboundBody as { number?: unknown }).number || "");
-      if (instanceName && digitsOnlyPhone(rawNumber)) {
+      if (instanceNameForWa && digitsOnlyPhone(rawNumber)) {
+        // DNC absoluto também no envio manual via proxy Evolution.
+        {
+          const suppression = await assertCanContact(supabase, {
+            phone: rawNumber,
+            consultantId: user.id,
+            channel: "whatsapp",
+          });
+          if (!suppression.allowed) {
+            return new Response(
+              JSON.stringify({
+                error: "Lead em lista de não contato — envio bloqueado.",
+                reasonCode: "do_not_contact",
+                reason: suppression.reason,
+              }),
+              { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+            );
+          }
+        }
         const resolved = await resolveWhatsAppChatId({
           phoneOrJid: rawNumber,
           provider: {
             kind: "evolution",
             apiUrl: evolutionUrl,
             apiKey: evolutionKey!,
-            instanceName,
+            instanceName: instanceNameForWa,
           },
           fallbackProviders: Deno.env.get("WHAPI_TOKEN")
             ? [{

@@ -36,8 +36,11 @@ const REQUIRED = [
   "recover-stuck-otp/index.ts",
   "worker-callback/index.ts",
   "pos-venda-auto-progress/index.ts",
-  // AUD-005 round 2 — SMS fallback Velip
+  // AUD-005 round 2 — SMS fallback Velip + proxies + platform-sales
   "voice-dialer-webhook/index.ts",
+  "whapi-proxy/index.ts",
+  "evolution-proxy/index.ts",
+  "platform-sales-dispatch/index.ts",
 ] as const;
 
 function hasGate(src: string): boolean {

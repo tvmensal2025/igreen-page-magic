@@ -7,6 +7,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { awaitWhapiSendSlot } from "../_shared/whapi-throttle.ts";
 import { resolveWhatsAppChatId } from "../_shared/resolve-whatsapp-chat-id.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -665,6 +666,22 @@ Deno.serve(async (req) => {
           });
         }
         to = resolved.chatId;
+        // DNC absoluto também no chat humano (política 100% — sem sobra).
+        {
+          const suppression = await assertCanContact(admin, {
+            phone: to,
+            customerId: payload.customerId ? String(payload.customerId) : undefined,
+            consultantId: settings.superadmin_consultant_id || userId,
+            channel: "whatsapp",
+          });
+          if (!suppression.allowed) {
+            return json(403, {
+              error: "Lead em lista de não contato — envio bloqueado.",
+              reasonCode: "do_not_contact",
+              reason: suppression.reason,
+            });
+          }
+        }
         // Anti-ban: fila espaçadora (nunca recusa). Default bulk (~18s entre
         // contatos). Chat 1:1 pode mandar payload.intent="reply" (intervalo curto).
         const textIntent = payload.intent === "reply" ? "reply" as const : "bulk" as const;
@@ -715,6 +732,21 @@ Deno.serve(async (req) => {
           });
         }
         to = resolvedMedia.chatId;
+        {
+          const suppression = await assertCanContact(admin, {
+            phone: to,
+            customerId: payload.customerId ? String(payload.customerId) : undefined,
+            consultantId: settings.superadmin_consultant_id || userId,
+            channel: "whatsapp",
+          });
+          if (!suppression.allowed) {
+            return json(403, {
+              error: "Lead em lista de não contato — envio bloqueado.",
+              reasonCode: "do_not_contact",
+              reason: suppression.reason,
+            });
+          }
+        }
 
         const path =
           mediatype === "video" ? "/messages/video"

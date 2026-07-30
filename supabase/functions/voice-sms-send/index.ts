@@ -197,12 +197,22 @@ Deno.serve(async (req) => {
       continue;
     }
 
-    const ctid = toCtid(`sms_${consultantId.slice(0, 6)}_${Date.now().toString(36)}`);
+    const dayKey = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+    const msgHashBuf = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(message),
+    );
+    const msgHash = Array.from(new Uint8Array(msgHashBuf))
+      .slice(0, 4)
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join("");
+    // ctid estável (consultor+fone+texto+dia) — double-click / retry não duplica no Velip.
+    const ctid = toCtid(`sms_${consultantId.slice(0, 8)}_${destDigits.slice(-11)}_${msgHash}_${dayKey}`);
     const r = await makeSMS({
       to: rec.phone,
       message,
       ctid,
-      httpdup: 0, // envio manual: não bloquear reenvio em 10s
+      httpdup: 1,
     });
 
     const insert = await admin.from("voice_sms_log").insert({

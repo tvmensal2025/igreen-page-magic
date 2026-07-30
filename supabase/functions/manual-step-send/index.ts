@@ -98,6 +98,20 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (!customer) return json({ ok: false, blocked: true, code: "customer_not_found", error: "customer_not_found", message: "Lead não encontrado (pode ter sido removido). Recarregue a lista." });
 
+    // Posse: customer.consultant_id deve bater com body.consultantId.
+    // Auth só garantia "sou o consultor X"; sem isso, X disparava step no lead de Y (IDOR).
+    // System/service_role e superadmin que passa consultantId = dono real seguem ok.
+    const ownerId = String((customer as { consultant_id?: string | null }).consultant_id || "");
+    if (ownerId && ownerId !== String(body.consultantId)) {
+      return json({
+        ok: false,
+        blocked: true,
+        code: "forbidden",
+        error: "forbidden",
+        message: "Lead não pertence a este consultor.",
+      });
+    }
+
     const suppression = await assertCanContact(supabase, {
       customerId: body.customerId,
       consultantId: body.consultantId,

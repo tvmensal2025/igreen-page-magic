@@ -9,6 +9,7 @@ import {
   buildPsDemoCtaButtonsOutbound,
   buildPsDemoMenuText,
 } from "../_shared/platform-sales-demo.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -405,6 +406,35 @@ Deno.serve(async (req) => {
         }
         continue;
       }
+
+      // DNC / voice_dnc — nunca enviar venda da plataforma a número bloqueado.
+      {
+        const channelGate =
+          channel === "whatsapp" ? "whatsapp" : channel === "sms" ? "sms" : "voice";
+        const suppression = await assertCanContact(admin, {
+          phone,
+          channel: channelGate,
+        });
+        if (!suppression.allowed) {
+          await admin.from("platform_sales_dispatch_log").insert({
+            campaign_id: campaignId,
+            target_id: t.id,
+            day_key: day,
+            channel,
+            dry_run: false,
+            rendered_text: text,
+            status: "skipped_dnc",
+            error: String(suppression.reason || "dnc").slice(0, 120),
+          });
+          channelResults.push({
+            channel,
+            status: "skipped_dnc",
+            reason: suppression.reason,
+          });
+          continue;
+        }
+      }
+
       try {
         if (channel === "whatsapp") {
           if (!whapiToken) throw new Error("whapi_token_missing");
@@ -452,7 +482,7 @@ Deno.serve(async (req) => {
           form.set("dest", dest);
           form.set("message", text);
           form.set("cuttext", "1");
-          form.set("ctid", `ps_${t.id}_${day}_${Date.now()}`);
+          form.set("ctid", `ps_${t.id}_${day}`);
           const r = await velipPost("/MakeSMS", form);
           if (!r.ok) throw new Error(r.error || "sms_failed");
           providerId = String((r.env as any)?.cdls_id ?? (r.raw as any)?.cdls_id ?? "") || null;
@@ -463,7 +493,7 @@ Deno.serve(async (req) => {
           form.set("dest", dest);
           form.set("text", text);
           form.set("encoding", "UTF-8");
-          form.set("ctid", `ps_call_${t.id}_${day}_${Date.now()}`);
+          form.set("ctid", `ps_call_${t.id}_${day}`);
           const bina = Deno.env.get("VELIP_CALLER_ID")?.trim();
           if (bina) form.set("callerid", bina);
           const r = await velipPost("/MakeTTSCall", form);
