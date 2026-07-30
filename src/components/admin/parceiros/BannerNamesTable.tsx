@@ -17,6 +17,8 @@ interface Props {
   title?: string;
   /** Clique na linha → abre o mesmo modal de baixar/editar frase (Geral ou local). */
   onRowClick?: (row: BannerNameRow) => void;
+  /** Texto da ação na linha (portal: "baixar"; admin: "editar frase"). */
+  rowActionLabel?: string;
 }
 
 /**
@@ -29,6 +31,7 @@ export function BannerNamesTable({
   emptyHint = "Nenhum banner nomeado ainda. Crie um local com nome para rastrear.",
   title = "Por nome do banner",
   onRowClick,
+  rowActionLabel = "editar frase",
 }: Props) {
   return (
     <div className="bg-card rounded-2xl border border-border overflow-hidden">
@@ -38,7 +41,9 @@ export function BannerNamesTable({
         </p>
         <p className="text-[11px] text-muted-foreground mt-0.5">
           {onRowClick
-            ? "Clique no nome para abrir o modal e mudar a frase (sem reimprimir)."
+            ? rowActionLabel === "baixar"
+              ? "Clique no nome para baixar o banner (A4 ou 504×904)."
+              : "Clique no nome para abrir o modal e mudar a frase (sem reimprimir)."
             : "Cada nome identifica de onde veio a leitura e o lead."}
         </p>
       </div>
@@ -99,9 +104,13 @@ export function BannerNamesTable({
                     role={clickable ? "button" : undefined}
                     title={
                       clickable
-                        ? r.kind === "geral"
-                          ? "Abrir Banner Geral — baixar / editar frase"
-                          : `Abrir “${r.name}” — baixar / editar frase`
+                        ? rowActionLabel === "baixar"
+                          ? r.kind === "geral"
+                            ? "Baixar Banner Geral"
+                            : `Baixar “${r.name}”`
+                          : r.kind === "geral"
+                            ? "Abrir Banner Geral — baixar / editar frase"
+                            : `Abrir “${r.name}” — baixar / editar frase`
                         : undefined
                     }
                   >
@@ -110,7 +119,7 @@ export function BannerNamesTable({
                         {r.name}
                         {clickable ? (
                           <span className="ml-1.5 text-[10px] font-normal text-primary">
-                            editar frase
+                            {rowActionLabel}
                           </span>
                         ) : null}
                       </p>

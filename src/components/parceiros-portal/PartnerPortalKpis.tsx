@@ -1,5 +1,12 @@
 import { motion } from "framer-motion";
-import { MessageCircle, QrCode, Snowflake, Users, Orbit } from "lucide-react";
+import {
+  BadgeCheck,
+  MessageCircle,
+  Orbit,
+  QrCode,
+  Snowflake,
+  Users,
+} from "lucide-react";
 
 type Kpi = {
   label: string;
@@ -12,12 +19,14 @@ type Kpi = {
 export function PartnerPortalKpis({
   leituras,
   leads,
+  fechamentos,
   countA,
   countB,
   countC,
 }: {
   leituras: number;
   leads: number;
+  fechamentos: number;
   countA: number;
   countB: number;
   countC: number;
@@ -34,6 +43,13 @@ export function PartnerPortalKpis({
       value: leads,
       Icon: Users,
       accent: "from-lime-500/20 to-transparent",
+    },
+    {
+      label: "Fechamentos",
+      value: fechamentos,
+      hint: "Cadastros aprovados",
+      Icon: BadgeCheck,
+      accent: "from-amber-500/25 to-transparent",
     },
     {
       label: "Em conversa (A)",
@@ -59,7 +75,7 @@ export function PartnerPortalKpis({
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6">
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5 sm:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 sm:gap-3">
         {items.map((item, i) => (
           <motion.div
             key={item.label}

@@ -120,8 +120,9 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
 - Parceiros: `PartnerBannersPanel` + tabela `referral_partner_banner_spots` (nome obrigatório, arquivar, CSV, link `/p/{portal_token}`).
 - Ranking: `BannersRanking` unifica seus + parceiros.
 - Página do parceiro: `PartnerBannerPortalPage` (`/p/{portal_token}`) + RPC `get_partner_banner_portal`.
-  - Visual dark premium (`src/components/parceiros-portal/*`): hero, KPIs, **pizzas A/B/C**, banners.
-  - RPC devolve `cycle_leads` **só elegíveis** (filtros SQL ≈ `isCycleLeadEligible` + exige stage ou fila do dia) com nome, `phone_whatsapp`, stage, fila (`queue_queue`/`queue_step`), pós-venda.
+  - Visual dark premium (`src/components/parceiros-portal/*`): hero, KPIs (**Fechamentos** = `pos_venda_stage = 'Aprovado'`), **pizzas A/B/C**, banners.
+  - Clique na linha do banner → `PartnerPortalDownloadModal` (só baixar A4/Banner PNG·PDF; sem editar frase).
+  - RPC devolve `consultant.{name,igreen_id,phone}` para rodapé do flyer + `cycle_leads` **só elegíveis** (filtros SQL ≈ `isCycleLeadEligible` + exige stage ou fila do dia) com nome, `phone_whatsapp`, stage, fila (`queue_queue`/`queue_step`), pós-venda.
   - Classificação: `src/lib/partnerPortalCycle.ts` (fila diária prioriza; sem stage/fila → fora da pizza).
   - Clique na fatia: nome + telefone (`tel:`) + **aviso da etapa** (+ próximo toque).
   - Meta `noindex,nofollow` com cleanup no unmount. Aviso “Link privado — não compartilhe”.

@@ -32,10 +32,14 @@ export default function PartnerBannerPortalPage() {
   const [partnerName, setPartnerName] = useState("");
   const [shortCode, setShortCode] = useState("");
   const [refLabel, setRefLabel] = useState("");
+  const [consultantName, setConsultantName] = useState("");
+  const [consultantIgreenId, setConsultantIgreenId] = useState("");
+  const [consultantPhone, setConsultantPhone] = useState("");
   const [spots, setSpots] = useState<SpotRow[]>([]);
   const [rootScans, setRootScans] = useState(0);
   const [scanByCode, setScanByCode] = useState<Record<string, number>>({});
   const [leadByKw, setLeadByKw] = useState<Record<string, number>>({});
+  const [fechamentos, setFechamentos] = useState(0);
   const [cycleRaw, setCycleRaw] = useState<PartnerPortalCycleLeadRaw[]>([]);
 
   useEffect(() => {
@@ -58,6 +62,12 @@ export default function PartnerBannerPortalPage() {
           error?: string;
           partner?: { nome?: string; short_code?: string | null };
           ref?: string | null;
+          consultant?: {
+            name?: string | null;
+            igreen_id?: string | null;
+            phone?: string | null;
+          };
+          stats?: { fechamentos?: number | null };
           spots?: SpotRow[];
           scans?: Array<{ event_target?: string }>;
           leads?: Array<{ referral_keyword_matched?: string | null }>;
@@ -75,6 +85,12 @@ export default function PartnerBannerPortalPage() {
         setPartnerName(String(payload.partner?.nome || "Parceiro"));
         setShortCode(String(payload.partner?.short_code || ""));
         setRefLabel(String(payload.ref || ""));
+        setConsultantName(String(payload.consultant?.name || "").trim());
+        setConsultantIgreenId(
+          String(payload.consultant?.igreen_id || "").replace(/\D/g, ""),
+        );
+        setConsultantPhone(String(payload.consultant?.phone || "").trim());
+        setFechamentos(Number(payload.stats?.fechamentos) || 0);
         setSpots(Array.isArray(payload.spots) ? payload.spots : []);
         setCycleRaw(Array.isArray(payload.cycle_leads) ? payload.cycle_leads : []);
 
@@ -202,12 +218,21 @@ export default function PartnerBannerPortalPage() {
       <PartnerPortalKpis
         leituras={totalLeituras}
         leads={totalLeads}
+        fechamentos={fechamentos}
         countA={countA}
         countB={countB}
         countC={countC}
       />
       <PartnerPortalCycleSection leads={cycleLeads} />
-      <PartnerPortalBanners rows={rows} />
+      <PartnerPortalBanners
+        rows={rows}
+        partnerName={partnerName}
+        shortCode={shortCode}
+        refLabel={refLabel}
+        consultantName={consultantName}
+        consultantIgreenId={consultantIgreenId}
+        consultantPhone={consultantPhone}
+      />
       {rootUrl && (
         <p className="pb-10 px-4 text-center text-[10px] font-mono text-emerald-100/30 break-all">
           QR vivo · {rootUrl}
