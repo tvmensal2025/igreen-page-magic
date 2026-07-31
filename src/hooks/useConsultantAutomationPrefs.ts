@@ -175,14 +175,15 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
       ]);
 
       setSaving(false);
-      if (err) {
-        setError(err.message);
+      // As duas gravações vão em paralelo (tabelas diferentes). Se uma falhar,
+      // a outra já foi gravada: recarrega do banco para a tela mostrar o estado
+      // real, em vez de ficar exibindo o que o consultor tentou salvar.
+      if (err || consUpd.error) {
+        setError((err ?? consUpd.error)!.message);
+        void reload();
         return false;
       }
-      if (consUpd.error) {
-        setError(consUpd.error.message);
-        return false;
-      }
+
 
       const row = rowFromData(consultantId, {
         ...(data as ConsultantAutomationPrefs),
