@@ -149,6 +149,7 @@ export function AIAgentTab({ userId, initialSubTab }: { userId: string; initialS
       if (error) throw error;
       setPersonaName(trimmed);
       setSavedPersonaName(trimmed);
+      window.dispatchEvent(new CustomEvent("igreen:assistant-name-saved", { detail: trimmed }));
       toast({ title: "✅ Nome atualizado", description: `Sua IA agora se chama "${trimmed}".` });
     } catch (e: any) {
       const raw = e?.message || String(e);

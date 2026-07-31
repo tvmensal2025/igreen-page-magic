@@ -150,6 +150,8 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
         await supabase.from("ai_agent_config").insert({ consultant_id: userId, persona_name: trimmed, enabled: true });
       }
       setPersonaName(trimmed);
+      onFormChange({ assistant_name: trimmed });
+      window.dispatchEvent(new CustomEvent("igreen:assistant-name-saved", { detail: trimmed }));
       toast({ title: "✅ Nome da IA salvo", description: `Sua IA agora se chama "${trimmed}".`, duration: 1800 });
       // Só regenera se Zap já estiver conectado.
       try {
