@@ -276,8 +276,11 @@ Deno.test("11.3: CNH sem verso — gate libera (verso só é obrigatório para R
   const sb = fazerSupabaseFalso({
     document_type: "cnh",
     electricity_bill_photo_url: URL_VALIDA,
+    bill_base64: DATA_VALIDA,
     document_front_url: URL_VALIDA,
+    document_front_base64: DATA_VALIDA,
     document_back_url: "nao_aplicavel", // sentinela de CNH (sem verso)
+
   });
   const stub = instalarFetchStub();
   try {
