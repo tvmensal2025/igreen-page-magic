@@ -14560,6 +14560,34 @@ export type Database = {
           stripe_fees_cents: number
         }[]
       }
+      get_public_consultant: {
+        Args: { _license: string }
+        Returns: {
+          cadastro_url: string | null
+          club_cadastro_url: string | null
+          created_at: string | null
+          facebook_pixel_id: string | null
+          google_analytics_id: string | null
+          id: string | null
+          igreen_id: string | null
+          licenciada_cadastro_url: string | null
+          license: string | null
+          name: string | null
+          phone: string | null
+          photo_url: string | null
+          referred_by: string | null
+        }[]
+        SetofOptions: {
+          from: "*"
+          to: "consultants_public"
+          isOneToOne: false
+          isSetofReturn: true
+        }
+      }
+      get_public_instance_phone: {
+        Args: { _consultant_id: string }
+        Returns: string
+      }
       get_referral_partner_analytics: {
         Args: never
         Returns: {

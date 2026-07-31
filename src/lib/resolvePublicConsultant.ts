@@ -25,29 +25,18 @@ export async function resolvePublicConsultant(
   const license = normalizeSlug(rawLicense);
   if (!license) return null;
 
-  const { data: exact, error: exactErr } = await supabase
-    .from("consultants_public" as any)
-    .select("*")
-    .ilike("license", license)
-    .maybeSingle();
+  // RPC pública individual: resolve exato ou prefixo único no servidor,
+  // sem permitir varredura da base de consultores.
+  const { data, error } = await supabase.rpc(
+    "get_public_consultant" as any,
+    { _license: license },
+  );
 
-  if (exactErr) throw exactErr;
-  if (exact) {
-    const row = exact as unknown as Consultant;
-    return { consultant: row, canonicalLicense: row.license };
-  }
+  if (error) throw error;
 
-  // Prefixo único: /joao → /joao-ab12cd quando há só um match.
-  const { data: prefixed, error: prefixErr } = await supabase
-    .from("consultants_public" as any)
-    .select("*")
-    .ilike("license", `${license}-%`);
+  const rows = (Array.isArray(data) ? data : data ? [data] : []) as unknown as Consultant[];
+  const row = rows[0];
+  if (!row) return null;
 
-  if (prefixErr) throw prefixErr;
-  if (Array.isArray(prefixed) && prefixed.length === 1) {
-    const row = prefixed[0] as unknown as Consultant;
-    return { consultant: row, canonicalLicense: row.license };
-  }
-
-  return null;
+  return { consultant: row, canonicalLicense: row.license };
 }
