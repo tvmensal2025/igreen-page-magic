@@ -285,6 +285,16 @@ export async function resolveChannelForCustomer(
       detail: "WHAPI_TOKEN ausente", instanceName, kind,
     };
   }
+  // Whapi é do superadmin: lead de outro consultor nunca sai pelo chip do dono.
+  if (!isWhapiAllowedForConsultant(env, c?.consultant_id)) {
+    return {
+      unavailable: true, reason: "missing_credentials",
+      detail:
+        `origem Whapi (${instanceName}) não pertence ao consultor — use Evolution`,
+      instanceName, kind,
+    };
+  }
+
   const adapter = getAdapter({
     kind: "whapi",
     input: { apiToken: env.whapiToken, instanceName },
