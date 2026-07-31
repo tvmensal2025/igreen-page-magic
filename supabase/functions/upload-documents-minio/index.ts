@@ -134,7 +134,10 @@ function formatDate(dateString: string | null): string {
 }
 
 // ── Baixar arquivo de URL ──
-async function downloadFile(url: string): Promise<{ bytes: Uint8Array; contentType: string }> {
+async function downloadFile(
+  url: string,
+  supabase?: any,
+): Promise<{ bytes: Uint8Array; contentType: string }> {
   // Se for data URL
   if (url.startsWith("data:")) {
     const match = url.match(/^data:([^;]+);base64,(.+)$/);
@@ -148,6 +151,20 @@ async function downloadFile(url: string): Promise<{ bytes: Uint8Array; contentTy
       }
       return { bytes, contentType };
     }
+  }
+
+  // Supabase Storage: `whatsapp-media` é bucket PRIVADO — a URL /object/public/
+  // gravada em customers responde HTTP 400 no fetch cru. Baixa via service role.
+  const parsed = supabase ? parseSupabaseStorageUrl(url) : null;
+  if (parsed && supabase) {
+    const { data, error } = await supabase.storage.from(parsed.bucket).download(parsed.path);
+    if (error || !data) {
+      throw new Error(`Failed to download file (storage): ${error?.message || "sem dados"}`);
+    }
+    return {
+      bytes: new Uint8Array(await data.arrayBuffer()),
+      contentType: data.type || "application/octet-stream",
+    };
   }
 
   // Baixar de URL
