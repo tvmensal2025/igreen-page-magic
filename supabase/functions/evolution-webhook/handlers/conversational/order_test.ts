@@ -119,9 +119,13 @@ function makeFakeSupabase(initial: Partial<FakeStore> = {}) {
           case "in": return Array.isArray(f.val) && (f.val as any[]).includes(v);
           case "is": return f.val === null ? v === null : v === f.val;
           case "not.in": return Array.isArray(f.val) && !(f.val as any[]).includes(v);
+          // `.or("step_key.eq.X,id.eq.X")` — PostgREST OR de igualdades simples
+          case "or": return (f.val as Array<{ col: string; val: string }>)
+            .some((c) => String(r[c.col] ?? "") === c.val);
           default: return true;
         }
       }));
+
 
     const resolveSelect = () => {
       const tbl = (store as any)[table] as any[] | undefined;
