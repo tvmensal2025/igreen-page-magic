@@ -16,6 +16,7 @@ function describeSupabaseError(error: unknown): string {
     return "Já existe um registro com esses dados (chave duplicada).";
   }
   if (err.code === "23502") return `Campo obrigatório faltando: ${msg}`;
+  if (/reservado ao consultor dono/i.test(msg)) return "Esse nome de IA já pertence a outro consultor. Escolha um nome só seu (ex.: Bia, Lara, Nina).";
   if (err.code === "42501" || msg.toLowerCase().includes("row-level security")) return "Sessão expirou ou sem permissão. Faça login novamente.";
   if (err.code === "PGRST301" || msg.toLowerCase().includes("jwt")) return "Sessão expirou. Faça login novamente.";
   return msg || "Erro desconhecido ao salvar";
