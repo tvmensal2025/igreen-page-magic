@@ -55,6 +55,32 @@ export async function handleConnectionUpdate(args: HandleConnectionArgs): Promis
       instanceUpdate.connected_phone = ownerPhone;
     }
 
+    // ⚠️ ANTI-BAN: o cap diário (check_send_quota) é calculado a partir de
+    // `warmup_started_at` (fallback: created_at). Se a instância nunca teve
+    // warmup ou trocou de número (chip novo no mesmo registro), o número
+    // novo herdaria o cap maduro (600/dia, 3s) já no dia 1 → risco de ban.
+    // Só (re)inicia o ramp nesses dois casos; reconexão do MESMO número
+    // preserva o warmup em andamento.
+    try {
+      const { data: prev } = await supabase
+        .from("whatsapp_instances")
+        .select("connected_phone, warmup_started_at")
+        .eq("instance_name", connInstance)
+        .maybeSingle();
+      const prevPhone = String((prev as any)?.connected_phone || "").replace(/\D/g, "");
+      const newPhone = String(ownerPhone || "").replace(/\D/g, "");
+      const numeroTrocou = !!prevPhone && !!newPhone && prevPhone !== newPhone;
+      if (!(prev as any)?.warmup_started_at || numeroTrocou) {
+        instanceUpdate.warmup_started_at = new Date().toISOString();
+        console.log(
+          `🐣 [anti-ban] warmup reiniciado em ${connInstance} (${numeroTrocou ? "número trocado" : "sem warmup"}) — cap dia 1 = 20`,
+        );
+      }
+    } catch (e) {
+      console.warn(`[anti-ban] falha ao avaliar warmup de ${connInstance}:`, (e as any)?.message);
+    }
+
+
     const { data: inst } = await supabase
       .from("whatsapp_instances")
       .update(instanceUpdate)
