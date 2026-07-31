@@ -15,7 +15,29 @@ export interface ChannelEnv {
   evolutionUrl: string | undefined;
   evolutionKey: string | undefined;
   whapiToken: string;
+  /** Consultor dono do Whapi (settings.superadmin_consultant_id). */
+  superadminConsultantId?: string | null;
 }
+
+/**
+ * Whapi é do superadmin (Rafael). Consultores usam Evolution.
+ *
+ * Regra 2026-07-31: o token Whapi da plataforma SÓ pode ser usado quando o
+ * consultor dono do envio é o superadmin. Instância `whapi-*` de terceiro não
+ * autoriza mais o uso do chip do Rafael (evita identidade errada + ban).
+ * Se `superadminConsultantId` não estiver configurado, mantém o comportamento
+ * antigo para não travar envios legados.
+ */
+export function isWhapiAllowedForConsultant(
+  env: Pick<ChannelEnv, "whapiToken" | "superadminConsultantId">,
+  consultantId: string | null | undefined,
+): boolean {
+  if (!env.whapiToken) return false;
+  const superId = env.superadminConsultantId ?? null;
+  if (!superId) return true;
+  return !!consultantId && String(consultantId) === String(superId);
+}
+
 
 export interface ResolvedChannel {
   kind: "evolution" | "whapi";
