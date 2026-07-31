@@ -146,7 +146,16 @@ function makeFakeSupabase(initial: Partial<FakeStore> = {}) {
       in(col: string, val: unknown[]) { filters.push({ col, op: "in", val }); return chain; },
       is(col: string, val: unknown) { filters.push({ col, op: "is", val }); return chain; },
       not(col: string, op: string, val: unknown) { filters.push({ col, op: `not.${op}`, val }); return chain; },
+      or(expr: string) {
+        const clauses = String(expr).split(",").map((part) => {
+          const [col, op, ...rest] = part.split(".");
+          return op === "eq" ? { col, val: rest.join(".") } : null;
+        }).filter(Boolean) as Array<{ col: string; val: string }>;
+        filters.push({ col: "__or__", op: "or", val: clauses });
+        return chain;
+      },
       gte(_col: string, _val: unknown) { return chain; },
+
       order(col: string, opts?: { ascending?: boolean }) { _order = { col, asc: opts?.ascending !== false }; return chain; },
       limit(n: number) { _limit = n; return chain; },
       maybeSingle() {
