@@ -104,12 +104,14 @@ async function sendWhatsAppNotice(supabase: any, customer: any) {
     }
 
     if (whapiToken) {
-      // Fallback Whapi também passa pelo anti-ban (quota da instância Whapi).
-      const whapiQuota = await checkSendQuota(supabase, "whapi");
+      // Fallback Whapi também passa pelo anti-ban (com o bypass soft já canônico do Whapi).
+      const { awaitOutboundSendQuota, registerSend: regSend } = await import("../_shared/anti-ban.ts");
+      const whapiQuota = await awaitOutboundSendQuota(supabase, "whapi", { channelKind: "whapi" });
       if (!whapiQuota.allowed) {
         console.warn(`🚫 [finalize-capture] whapi bloqueado pelo anti-ban reason=${whapiQuota.reason}`);
         return;
       }
+
       const resolved = await resolveWhatsAppChatId({
         phoneOrJid: phone,
         provider: { kind: "whapi", apiToken: whapiToken, baseUrl: whapiUrl },
