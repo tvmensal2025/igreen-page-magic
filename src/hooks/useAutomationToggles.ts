@@ -56,10 +56,14 @@ export function useAutomationToggles() {
     }
 
     setBusyKey(key);
-    const { error } = await supabase
+    // RLS admin-only: sem permissão o UPDATE volta 0 linhas SEM erro. Se não
+    // exigirmos a linha de volta, a tela diz "desligado" e o motor segue ligado.
+    const { data: saved, error } = await supabase
       .from("automation_toggles")
       .update({ enabled: next })
-      .eq("id", row.id);
+      .eq("id", row.id)
+      .select("id")
+      .maybeSingle();
     setBusyKey(null);
 
     if (error) {
@@ -70,11 +74,16 @@ export function useAutomationToggles() {
       );
       return false;
     }
+    if (!saved) {
+      toast.error("Sem permissão. Nada foi alterado — o motor continua como estava.");
+      return false;
+    }
 
     setItems((prev) => prev.map((x) => (x.id === row.id ? { ...x, enabled: next } : x)));
     toast.success(next ? `“${row.label}” ligado` : `“${row.label}” desligado`);
     return true;
   }
+
 
   async function bulkSet(next: boolean) {
     if (
