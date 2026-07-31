@@ -107,6 +107,12 @@ export function useConsultantForm(
         gender: form.gender === "consultor" || form.gender === "consultora" ? form.gender : null,
         portal_kind: form.portal_kind === "autoconexao" ? "autoconexao" : "digital",
       };
+      // Nome da IA: só envia se o form tiver um valor preenchido (onboarding).
+      // Vazio = não mexe, para não apagar/reverter o que foi salvo no campo
+      // "Nome da IA" (DadosTab / Atendente IA), que grava direto no banco.
+      if (form.assistant_name && form.assistant_name.trim()) {
+        consultantFields.assistant_name = form.assistant_name.trim();
+      }
       // Só envia a senha se o usuário digitou um valor novo (campo vem vazio do banco por segurança).
       if (form.igreen_portal_password && form.igreen_portal_password.trim()) {
         consultantFields.igreen_portal_password = form.igreen_portal_password;
