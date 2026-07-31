@@ -16,6 +16,7 @@
 //      → puxa contrato do worker e envia link pelo canal de origem;
 //        se instância offline, gera alerta e segura até voltar
 
+import { loadSuperadminConsultantId } from "../_shared/attendance-channel-env.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { dispatchPortalWorker, resolveWorker } from "../_shared/portal-worker.ts";
 import {

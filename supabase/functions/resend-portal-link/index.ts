@@ -4,6 +4,7 @@
 // de captação. Não muda conversation_step nem despausa o bot — só dispara o
 // texto com o link já existente em customers.
 
+import { loadSuperadminConsultantId } from "../_shared/attendance-channel-env.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { resolveChannelForCustomer, isUnavailable } from "../_shared/channel-sender.ts";
