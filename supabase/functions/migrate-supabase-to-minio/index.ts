@@ -218,7 +218,7 @@ async function migrateOne(bucket: string, path: string): Promise<{ ok: boolean; 
       status: "done",
       target_url: up.url,
       target_object_key: up.objectKey,
-      consultant_id: consultantId,
+      consultant_id: /^[0-9a-f-]{36}$/i.test(consultantId || "") ? consultantId : null,
       customer_jid: jid,
       media_kind: kind,
       size_bytes: bytes.byteLength,
