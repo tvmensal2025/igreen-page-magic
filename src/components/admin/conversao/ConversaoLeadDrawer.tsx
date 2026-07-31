@@ -111,10 +111,26 @@ export function ConversaoLeadDrawer({ lead, consultantId, onClose, onClassify, o
       if (!res.ok && !res.alreadyClosed) throw new Error(res.error || "Falha ao tirar da fila");
 
       // Para de mandar automático para quem não é lead.
-      await supabase
+      // RLS: se quem clicou não é o dono do lead, o UPDATE volta 0 linhas SEM
+      // erro. Exigimos a linha de volta e caímos na edge com service_role.
+      const { data: pausedRow, error: pauseErr } = await supabase
         .from("customers")
         .update({ bot_paused: true, bot_paused_reason: "nao_e_lead" } as any)
-        .eq("id", lead.customer_id);
+        .eq("id", lead.customer_id)
+        .select("id")
+        .maybeSingle();
+      if (pauseErr || !pausedRow) {
+        const { data: res, error: invErr } = await supabase.functions.invoke("customer-takeover", {
+          body: { customerId: lead.customer_id, paused: true, reason: "nao_e_lead" },
+        });
+        if (invErr || (res as any)?.error) {
+          throw new Error(
+            "Saiu da fila, mas NÃO consegui pausar o bot deste lead: " +
+              ((res as any)?.message || (res as any)?.error || invErr?.message || pauseErr?.message || "permissão negada"),
+          );
+        }
+      }
+
 
       toast.success("Saiu da fila", {
         description: "Marcado como não é lead. O WhatsApp continua disponível se precisar.",

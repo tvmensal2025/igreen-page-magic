@@ -285,15 +285,27 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
     try {
       if (botActive) {
         // Desligar: pausa estável (mesmo reason do portal/WhatsApp).
-        const { error } = await supabase.from("customers")
+        // IMPORTANTE: RLS de `customers` só deixa o DONO (ou assigned) atualizar.
+        // Admin/líder tem SELECT mas não UPDATE → volta 0 linhas SEM erro.
+        // Por isso exigimos a linha de volta e caímos na edge quando não vier.
+        const { data: row, error } = await supabase.from("customers")
           .update({
             bot_paused: true,
             bot_paused_reason: "humano_assumiu",
             bot_paused_at: new Date().toISOString(),
             bot_paused_until: null,
           } as never)
-          .eq("id", customerId);
-        if (error) throw error;
+          .eq("id", customerId)
+          .select("id")
+          .maybeSingle();
+        if (error || !row) {
+          const { data: res, error: invErr } = await supabase.functions.invoke("customer-takeover", {
+            body: { customerId, paused: true, reason: "humano_assumiu" },
+          });
+          if (invErr || (res as any)?.error) {
+            throw new Error((res as any)?.message || (res as any)?.error || invErr?.message || error?.message || "Não foi possível desligar o bot");
+          }
+        }
         setBotPaused(true);
         toast({ title: "🤖 Bot desligado neste cliente interessado", description: "A IA não vai responder mais este número." });
       } else {
@@ -306,10 +318,19 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           assigned_human_id: null,
         };
         if (!globalAiEnabled) patch.bot_force_enabled = true;
-        const { error } = await supabase.from("customers")
+        const { data: row, error } = await supabase.from("customers")
           .update(patch as never)
-          .eq("id", customerId);
-        if (error) throw error;
+          .eq("id", customerId)
+          .select("id")
+          .maybeSingle();
+        if (error || !row) {
+          const { data: res, error: invErr } = await supabase.functions.invoke("customer-takeover", {
+            body: { customerId, paused: false },
+          });
+          if (invErr || (res as any)?.error) {
+            throw new Error((res as any)?.message || (res as any)?.error || invErr?.message || error?.message || "Não foi possível ligar o bot");
+          }
+        }
         setBotPaused(false);
         if (!globalAiEnabled) setBotForceEnabled(true);
         toast({
@@ -319,6 +340,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
             : "Bot ativo só para este número (IA global continua desligada).",
         });
       }
+
     } catch (e) {
       toast({ title: "Erro", description: (e as Error)?.message || "Falha ao alternar bot", variant: "destructive" });
     } finally {
