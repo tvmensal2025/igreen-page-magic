@@ -63,8 +63,12 @@ export function BotGlobalKillSwitch() {
   const [loadingPending, setLoadingPending] = useState(false);
 
   const load = async () => {
-    const { data } = await supabase.from("app_settings").select("bot_global_enabled").eq("id", "global").maybeSingle();
+    const { data, error } = await supabase.from("app_settings").select("bot_global_enabled").eq("id", "global").maybeSingle();
+    // Sem leitura confiável (RLS/erro) NÃO assumimos "ATIVO": manter carregando evita
+    // que o super admin veja "ATIVO" quando o bot pode estar desligado.
+    if (error) return;
     setEnabled(data ? !!(data as any).bot_global_enabled : true);
+
   };
 
   useEffect(() => { void load(); }, []);
