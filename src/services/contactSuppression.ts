@@ -162,13 +162,18 @@ export async function revokeContactSuppression(input: {
 
     const patch: Record<string, unknown> = {
       do_not_contact: false,
-      bot_paused_reason: null,
     };
     if (pausedByOptOut) {
+      // Só aqui é seguro zerar o motivo: a pausa era do opt-out e está sendo removida.
       patch.bot_paused = false;
+      patch.bot_paused_reason = null;
       patch.bot_paused_at = null;
       patch.bot_paused_until = null;
     }
+    // Se a pausa veio de outro motivo (handoff humano, "lead_quer_pensar", etc.),
+    // preservamos bot_paused E bot_paused_reason — o auto-resume do webhook e a UI
+    // dependem do motivo original; zerá-lo deixava o lead pausado para sempre.
+
 
     const { error } = await supabase
       .from("customers")
