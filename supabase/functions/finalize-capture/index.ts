@@ -127,7 +127,7 @@ async function sendWhatsAppNotice(supabase: any, customer: any) {
         headers: { Authorization: `Bearer ${whapiToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ to: resolved.chatId, body: text, typing_time: 0 }),
       });
-      if (wr.ok) await registerSend(supabase, "whapi");
+      if (wr.ok) await regSend(supabase, "whapi");
     }
 
   } catch (e: any) {
