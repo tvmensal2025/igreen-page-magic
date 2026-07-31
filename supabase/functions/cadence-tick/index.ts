@@ -731,7 +731,12 @@ async function checkPhoneDeadForChannel(
     .find((r) => {
       const d = String(r.phone || "").replace(/\D/g, "");
       if (!d) return false;
-      return candidateDigits.some((c) => c === d || c.endsWith(d) || d.endsWith(c));
+      // Só aceita sufixo quando os dois lados têm ao menos 10 dígitos (DDD + número),
+      // para não bloquear número errado por coincidência de final curto.
+      return candidateDigits.some((c) =>
+        c === d || (c.length >= 10 && d.length >= 10 && (c.endsWith(d) || d.endsWith(c)))
+      );
+
     }) ?? null;
   if (dncRow) {
     return { block: true, reason: `dnc:${dncRow.source || "unknown"}`, dnc_reason: dncRow.reason || undefined };
