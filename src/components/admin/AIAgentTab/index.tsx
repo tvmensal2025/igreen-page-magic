@@ -64,7 +64,8 @@ export function AIAgentTab({ userId, initialSubTab }: { userId: string; initialS
       .insert({
         consultant_id: userId,
         enabled: patch.enabled ?? true,
-        persona_name: patch.persona_name ?? personaName,
+        // Nunca usa o texto que está sendo digitado: só o nome já salvo.
+        persona_name: patch.persona_name ?? savedPersonaName ?? null,
       });
     return error;
   }
@@ -72,7 +73,11 @@ export function AIAgentTab({ userId, initialSubTab }: { userId: string; initialS
   async function toggleEnabled(v: boolean) {
     setSavingEnabled(true);
     setEnabled(v);
-    const error = await saveConfig({ enabled: v, persona_name: personaName });
+    // Só o liga/desliga. Antes mandava junto o `personaName` do input — se o
+    // consultor tivesse digitado meio nome e mexesse nesta chave, o nome pela
+    // metade era gravado no espelho legado, dessincronizando do assistant_name.
+    const error = await saveConfig({ enabled: v });
+
     if (error) {
       toast({ title: "Erro", description: error.message, variant: "destructive" });
       setEnabled(!v);
