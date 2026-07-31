@@ -276,24 +276,32 @@ export function VoiceCycleKitPanel({ consultantId }: Props) {
     setSavingGates(true);
     const next = { ...gates, ...patch };
     try {
+      // RLS admin-only: negação volta 0 linhas SEM erro. Exigimos a linha.
       if (patch.toggle !== undefined) {
-        const { error } = await supabase
+        const { data: tRow, error } = await supabase
           .from("automation_toggles")
           .update({ enabled: patch.toggle })
-          .eq("key", "daily_reheat");
+          .eq("key", "daily_reheat")
+          .select("key")
+          .maybeSingle();
         if (error) throw error;
+        if (!tRow) throw new Error("O banco recusou a gravação (sem permissão de administrador). Nada mudou.");
       }
       if (patch.enabled !== undefined || patch.live !== undefined) {
-        const { error } = await (supabase as any)
+        const { data: sRow, error } = await (supabase as any)
           .from("daily_reheat_settings")
           .update({
             ...(patch.enabled !== undefined ? { enabled: patch.enabled } : {}),
             ...(patch.live !== undefined ? { live_dispatch_enabled: patch.live } : {}),
             updated_at: new Date().toISOString(),
           })
-          .eq("id", "global");
+          .eq("id", "global")
+          .select("id")
+          .maybeSingle();
         if (error) throw error;
+        if (!sRow) throw new Error("O banco recusou a gravação (sem permissão de administrador). Nada mudou.");
       }
+
       setGates(next);
       toast({
         title: next.toggle && next.enabled && next.live ? "Motor ligado" : "Motor atualizado",

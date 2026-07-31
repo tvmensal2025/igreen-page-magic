@@ -108,12 +108,21 @@ export function ColdCadenceCapCard({ canEdit = true }: { canEdit?: boolean }) {
     };
     const { data: row } = await supabase.from("daily_reheat_settings").select("id").limit(1).maybeSingle();
     const id = (row as { id?: string } | null)?.id;
-    const { error } = id
-      ? await supabase.from("daily_reheat_settings").update(patch).eq("id", id)
-      : await supabase.from("daily_reheat_settings").insert(patch);
+    // RLS: só `has_role(admin)` grava. Sem a role, o UPDATE volta 0 linhas SEM
+    // erro — a tela diria "caps salvos" com o teto antigo ainda valendo.
+    const { data: saved, error } = id
+      ? await supabase.from("daily_reheat_settings").update(patch).eq("id", id).select("id").maybeSingle()
+      : await supabase.from("daily_reheat_settings").insert(patch).select("id").maybeSingle();
     setSaving(false);
     if (error) { toast.error("Não foi possível salvar", { description: error.message }); return; }
+    if (!saved) {
+      toast.error("Caps NÃO foram salvos", {
+        description: "O banco recusou a gravação (sem permissão de administrador). Os tetos antigos continuam valendo.",
+      });
+      return;
+    }
     toast.success(`Caps salvos — B:${patch.cap_b} · C:${patch.cap_c} · Global:${patch.cap_global_outreach}`);
+
   }
 
   if (loading) {
