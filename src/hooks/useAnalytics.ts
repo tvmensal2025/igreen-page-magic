@@ -169,7 +169,12 @@ export function useAnalytics(
         .map(normalizeIgreenId)
         .filter((v: string | null): v is string => !!v);
       const localGreen = loadLocalGreenSettings(scopeConsultantId);
+      if (!consultantProfile?.igreen_id) {
+        // Sem igreen_id o painel zera a carteira: registra para diagnóstico.
+        console.warn("[useAnalytics] consultor sem igreen_id — métricas de carteira podem vir zeradas", scopeConsultantId);
+      }
       const dbCadastroIds = (greenRow as { cadastro_igreen_ids?: string[] } | null)?.cadastro_igreen_ids;
+
       const myClientsSettings: MyClientsSettings = {
         myIgreenId: normalizeIgreenId(consultantProfile?.igreen_id),
         consultantName: consultantProfile?.name ?? null,
