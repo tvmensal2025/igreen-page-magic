@@ -246,9 +246,13 @@ Deno.test("11.3: RG completo — gate libera, dispatchPortalWorker envia ao work
   const sb = fazerSupabaseFalso({
     document_type: "rg",
     electricity_bill_photo_url: URL_VALIDA,
+    bill_base64: DATA_VALIDA,
     document_front_url: URL_VALIDA,
+    document_front_base64: DATA_VALIDA,
     document_back_url: URL_VALIDA, // verso presente
+    document_back_base64: DATA_VALIDA,
   });
+
   const stub = instalarFetchStub();
   try {
     const r = await despacharAcaoCadastro({
