@@ -262,11 +262,18 @@ Deno.serve(async (req) => {
   const limit = Math.min(Math.max(Number(body.limit) || 25, 1), 50);
 
   if (!dryRun) {
-    const { data: g } = await admin.from("app_settings").select("bot_global_enabled").eq("id", "global").maybeSingle();
-    if (g && g.bot_global_enabled === false) {
+    // Kill switch é FAIL-CLOSED: se não conseguirmos ler app_settings, não dispara.
+    const { data: g, error: gErr } = await admin
+      .from("app_settings").select("bot_global_enabled").eq("id", "global").maybeSingle();
+    if (gErr) {
+      console.error("[platform-sales-dispatch] falha ao ler bot_global_enabled", gErr);
+      return json(503, { error: "kill_switch_unreadable" });
+    }
+    if (!g || g.bot_global_enabled === false) {
       return json(403, { error: "bot_global_disabled" });
     }
   }
+
 
   const { data: setRowsEarly } = await admin.from("settings").select("key, value").in("key", ["whapi_token", "whapi_api_url"]);
   const smapEarly: Record<string, string> = {};
