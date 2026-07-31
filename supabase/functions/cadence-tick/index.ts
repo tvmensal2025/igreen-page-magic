@@ -1088,6 +1088,7 @@ Deno.serve(async (req) => {
   const loadAvail = createAvailabilityLoader(supabase);
   const caps = await loadOutreachCaps(supabase);
   const touchedToday = await countOutreachTouchesToday(supabase);
+  const capCountReliable = touchedToday.ok;
   let touchedB = touchedToday.b;
   let touchedC = touchedToday.c;
   const alertedThresholds = new Set<string>(); // ex: "B:60", "C:100", "G:85"
