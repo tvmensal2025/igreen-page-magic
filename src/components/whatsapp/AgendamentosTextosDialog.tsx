@@ -392,7 +392,23 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
       })),
     );
     setAiKnow((aiKnowRes.data || []) as AiKnowRow[]);
-    setAiAgent((aiAgentRes.data as AiAgentRow) || null);
+    // Fonte da verdade do nome da IA é `consultants.assistant_name` (é o que o
+    // runtime lê em ai-agent-router / render-vars). `ai_agent_config.persona_name`
+    // é só espelho legado — exibimos sempre o valor real do consultor.
+    const { data: consRow } = await supabase
+      .from("consultants")
+      .select("assistant_name")
+      .eq("id", consultantId)
+      .maybeSingle();
+    const realAssistantName = ((consRow as { assistant_name?: string | null } | null)?.assistant_name || "").trim();
+    const agentRow = (aiAgentRes.data as AiAgentRow) || null;
+    setAiAgent(
+      agentRow
+        ? { ...agentRow, persona_name: realAssistantName || agentRow.persona_name }
+        : realAssistantName
+          ? ({ consultant_id: consultantId, persona_name: realAssistantName, tone: null, system_prompt: null, step_prompts: null, enabled: null } as unknown as AiAgentRow)
+          : null,
+    );
     setRodizio((rodizioRes.data || []) as RodizioRow[]);
     setPosVendaGlobal((posGlobalRes.data || []) as PosVendaDefaultRow[]);
     setHolidays((holidaysRes.data || []) as HolidayRow[]);
