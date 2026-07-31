@@ -5,7 +5,7 @@ import { classifyByRules, detectSignals, type ClassifyMessage } from "./rule-cla
 Deno.test("renderPhraseText: substitui variáveis", () => {
   const out = renderPhraseText(
     "Oi {{nome}}, conta {{valor_conta}}, {{representante}}",
-    { name: "Maria Silva", name_source: "cliente_confirmou", electricity_bill_value: 350 },
+    { name: "Maria Silva", name_source: "user_confirmed", electricity_bill_value: 350 },
     "João Consultor",
   );
   assertEquals(out.includes("Maria"), true);
