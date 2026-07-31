@@ -160,8 +160,13 @@ export async function undoTakeoverByPhone(rawPhone: string): Promise<boolean> {
       assigned_human_id: null,
       updated_at: new Date().toISOString(),
     };
-    const { error } = await supabase.from("customers").update(patch).eq("id", cust.id);
-    if (error) {
+    const { data: resumed, error } = await supabase
+      .from("customers")
+      .update(patch)
+      .eq("id", cust.id)
+      .select("id")
+      .maybeSingle();
+    if (error || !resumed) {
       const { error: invErr } = await supabase.functions.invoke("customer-takeover", {
         body: { customerId: cust.id, paused: false },
       });
