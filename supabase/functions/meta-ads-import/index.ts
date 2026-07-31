@@ -212,7 +212,10 @@ Deno.serve(async (req) => {
         if (!insErr) {
           inserted++;
           newCampaignsNeedMessage.push({ id: mc.id, name: mc.name });
+        } else {
+          console.warn("[meta-ads-import] insert campanha falhou", mc.id, insErr.message);
         }
+
       }
     }
 
