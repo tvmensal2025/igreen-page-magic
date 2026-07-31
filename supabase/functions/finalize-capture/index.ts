@@ -104,6 +104,12 @@ async function sendWhatsAppNotice(supabase: any, customer: any) {
     }
 
     if (whapiToken) {
+      // Fallback Whapi também passa pelo anti-ban (quota da instância Whapi).
+      const whapiQuota = await checkSendQuota(supabase, "whapi");
+      if (!whapiQuota.allowed) {
+        console.warn(`🚫 [finalize-capture] whapi bloqueado pelo anti-ban reason=${whapiQuota.reason}`);
+        return;
+      }
       const resolved = await resolveWhatsAppChatId({
         phoneOrJid: phone,
         provider: { kind: "whapi", apiToken: whapiToken, baseUrl: whapiUrl },
@@ -114,12 +120,14 @@ async function sendWhatsAppNotice(supabase: any, customer: any) {
         console.warn("[finalize-capture] whapi dest unresolved", resolved.reason);
         return;
       }
-      await fetch(`${whapiUrl}/messages/text`, {
+      const wr = await fetch(`${whapiUrl}/messages/text`, {
         method: "POST",
         headers: { Authorization: `Bearer ${whapiToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({ to: resolved.chatId, body: text, typing_time: 0 }),
       });
+      if (wr.ok) await registerSend(supabase, "whapi");
     }
+
   } catch (e: any) {
     console.warn("[finalize-capture] notice send error:", e?.message);
   }
