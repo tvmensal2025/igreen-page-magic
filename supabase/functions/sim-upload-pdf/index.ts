@@ -42,8 +42,15 @@ Deno.serve(async (req) => {
     });
     if (upErr) return json({ error: "upload_failed", detail: upErr.message }, 500);
 
-    const url = `${SUPABASE_URL}/storage/v1/object/public/simulator-uploads/${path}`;
-    return json({ url, path });
+    // `simulator-uploads` é bucket PRIVADO: URL pública responde 400 e o
+    // download da mídia no webhook falha (OCR trava). Assinamos por 7 dias.
+    const { data: signed, error: signErr } = await svc.storage
+      .from("simulator-uploads")
+      .createSignedUrl(path, 60 * 60 * 24 * 7);
+    if (signErr || !signed?.signedUrl) {
+      return json({ error: "sign_failed", detail: signErr?.message || "sem URL" }, 500);
+    }
+    return json({ url: signed.signedUrl, path });
   } catch (e) {
     return json({ error: "internal", detail: String((e as Error)?.message || e) }, 500);
   }

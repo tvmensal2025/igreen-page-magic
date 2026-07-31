@@ -210,8 +210,12 @@ export default function FlowSimulator({ open, onOpenChange, consultantId }: Prop
         .from("simulator-uploads")
         .upload(path, file, { upsert: false, contentType: file.type });
       if (upErr) throw upErr;
-      const { data: pub } = supabase.storage.from("simulator-uploads").getPublicUrl(path);
-      const url = pub.publicUrl;
+      // Bucket privado: URL pública responde 400 no download do webhook/OCR.
+      const { data: signed, error: signErr } = await supabase.storage
+        .from("simulator-uploads")
+        .createSignedUrl(path, 60 * 60 * 24 * 7);
+      if (signErr || !signed?.signedUrl) throw signErr || new Error("Falha ao assinar URL");
+      const url = signed.signedUrl;
       const kind: "image" | "document" = file.type.startsWith("image/") ? "image" : "document";
       setEvents((prev) => [
         ...prev,
