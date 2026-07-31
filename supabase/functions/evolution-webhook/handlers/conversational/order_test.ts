@@ -119,9 +119,13 @@ function makeFakeSupabase(initial: Partial<FakeStore> = {}) {
           case "in": return Array.isArray(f.val) && (f.val as any[]).includes(v);
           case "is": return f.val === null ? v === null : v === f.val;
           case "not.in": return Array.isArray(f.val) && !(f.val as any[]).includes(v);
+          // `.or("step_key.eq.X,id.eq.X")` — PostgREST OR de igualdades simples
+          case "or": return (f.val as Array<{ col: string; val: string }>)
+            .some((c) => String(r[c.col] ?? "") === c.val);
           default: return true;
         }
       }));
+
 
     const resolveSelect = () => {
       const tbl = (store as any)[table] as any[] | undefined;
@@ -142,7 +146,16 @@ function makeFakeSupabase(initial: Partial<FakeStore> = {}) {
       in(col: string, val: unknown[]) { filters.push({ col, op: "in", val }); return chain; },
       is(col: string, val: unknown) { filters.push({ col, op: "is", val }); return chain; },
       not(col: string, op: string, val: unknown) { filters.push({ col, op: `not.${op}`, val }); return chain; },
+      or(expr: string) {
+        const clauses = String(expr).split(",").map((part) => {
+          const [col, op, ...rest] = part.split(".");
+          return op === "eq" ? { col, val: rest.join(".") } : null;
+        }).filter(Boolean) as Array<{ col: string; val: string }>;
+        filters.push({ col: "__or__", op: "or", val: clauses });
+        return chain;
+      },
       gte(_col: string, _val: unknown) { return chain; },
+
       order(col: string, opts?: { ascending?: boolean }) { _order = { col, asc: opts?.ascending !== false }; return chain; },
       limit(n: number) { _limit = n; return chain; },
       maybeSingle() {
@@ -470,9 +483,11 @@ Deno.test("Bug B FIX: QA hit emits in configured order (text→audio) for __qa__
 
   // Reply must be empty — QA emits everything inline.
   assertEquals(r.reply, "");
-  // The exact order is TEXT then AUDIO.
+  // Regra canônica: quando o FAQ tem áudio, o texto duplicado é suprimido —
+  // mesmo com ordem configurada (text→audio) sobra apenas o áudio.
   const seq = rec.events.map((e) => e.kind === "text" ? `T:${e.text}` : `${e.kind.toUpperCase()}`);
-  assertEquals(seq, ["T:Resposta do FAQ", "AUDIO"], `event sequence wrong:\n${seq.join("\n")}`);
+  assertEquals(seq, ["AUDIO"], `event sequence wrong:\n${seq.join("\n")}`);
+
 });
 
 // Sanity: legacy QA path (no order configured) still puts media first then text.
@@ -506,5 +521,7 @@ Deno.test("Bug B FIX: QA hit with no configured order falls back to media-first/
 
   await runConversationalFlow(ctx);
   const seq = rec.events.map((e) => e.kind === "text" ? "TEXT" : "AUDIO");
-  assertEquals(seq, ["AUDIO", "TEXT"], `legacy fallback order wrong: ${seq.join(",")}`);
+  // Regra canônica: FAQ com áudio NÃO repete o mesmo conteúdo em texto.
+  assertEquals(seq, ["AUDIO"], `legacy fallback order wrong: ${seq.join(",")}`);
+
 });

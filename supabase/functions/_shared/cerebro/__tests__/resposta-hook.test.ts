@@ -188,9 +188,9 @@ Deno.test("fail-open: erro ao ler a flag é engolido — não roda o Cérebro", 
   assertEquals(chamadas.processarTurnoChamado, 0);
 });
 
-// ─── (3b) on com handoff/sem texto → não envia ──────────────────────────────
+// ─── (3b) on com handoff/sem texto → não envia e NÃO bloqueia o fluxo ───────
 
-Deno.test("em `on` com handoff/sem texto, respondeu=true porém reply=null e não envia", async () => {
+Deno.test("em `on` com handoff/sem texto, respondeu=false (fluxo scriptado segue) e não envia", async () => {
   let enviouChamado = 0;
   const { deps } = montarDeps({
     flag: "on",
@@ -201,12 +201,15 @@ Deno.test("em `on` com handoff/sem texto, respondeu=true porém reply=null e nã
     enviarTexto: () => { enviouChamado++; return true; },
   }));
 
-  assertEquals(r.respondeu, true);
+  // Regra canônica: sem texto e sem outbound o hook devolve respondeu=false,
+  // senão o webhook faz early-return e o fluxo scriptado nunca inicia.
+  assertEquals(r.respondeu, false);
   assertEquals(r.reply, null);
   assertEquals(r.shouldHandoff, true);
   assertEquals(r.enviou, false);
   assertEquals(enviouChamado, 0, "sem texto → sender não é chamado");
 });
+
 
 // ─── (6) Despacho da ação de cadastro via repassador existente ──────────────
 

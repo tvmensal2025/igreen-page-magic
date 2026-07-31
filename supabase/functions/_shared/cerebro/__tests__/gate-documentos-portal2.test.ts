@@ -150,6 +150,10 @@ function instalarFetchStub() {
 }
 
 const URL_VALIDA = "https://exemplo/arquivo.jpg";
+// Preflight real exige BYTES baixáveis. Em teste (sem rede/sem storage) usamos
+// data-url >200 chars, que o `assertStorageReadable` aceita sem download.
+const DATA_VALIDA = `data:image/jpeg;base64,${"A".repeat(400)}`;
+
 
 // ─── 1) RG sem verso → gate bloqueia: NÃO despacha ao worker ─────────────────
 
@@ -242,9 +246,13 @@ Deno.test("11.3: RG completo — gate libera, dispatchPortalWorker envia ao work
   const sb = fazerSupabaseFalso({
     document_type: "rg",
     electricity_bill_photo_url: URL_VALIDA,
+    bill_base64: DATA_VALIDA,
     document_front_url: URL_VALIDA,
+    document_front_base64: DATA_VALIDA,
     document_back_url: URL_VALIDA, // verso presente
+    document_back_base64: DATA_VALIDA,
   });
+
   const stub = instalarFetchStub();
   try {
     const r = await despacharAcaoCadastro({
@@ -268,8 +276,11 @@ Deno.test("11.3: CNH sem verso — gate libera (verso só é obrigatório para R
   const sb = fazerSupabaseFalso({
     document_type: "cnh",
     electricity_bill_photo_url: URL_VALIDA,
+    bill_base64: DATA_VALIDA,
     document_front_url: URL_VALIDA,
+    document_front_base64: DATA_VALIDA,
     document_back_url: "nao_aplicavel", // sentinela de CNH (sem verso)
+
   });
   const stub = instalarFetchStub();
   try {
