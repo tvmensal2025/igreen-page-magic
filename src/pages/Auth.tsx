@@ -84,8 +84,14 @@ const Auth = () => {
     }
   };
 
+  // Volta para a página que o usuário tentou abrir antes do login (guardada pelo
+  // ProtectedRoute em location.state.from). Sem isso, todo login caía em /admin.
   const checkAdminAndNavigate = async (_userId: string) => {
-    navigate("/admin");
+    const from = (location.state as { from?: string } | null)?.from;
+    const safeFrom = typeof from === "string" && from.startsWith("/") && !from.startsWith("//") && from !== "/auth"
+      ? from
+      : "/admin";
+    navigate(safeFrom, { replace: true });
   };
 
   useEffect(() => {
