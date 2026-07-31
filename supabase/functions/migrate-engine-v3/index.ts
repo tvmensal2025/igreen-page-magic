@@ -101,12 +101,12 @@ Deno.serve(async (req) => {
   if (!isServiceRoleAuth(req)) {
     const adminUrl = Deno.env.get("SUPABASE_URL");
     const adminKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-    if (!adminUrl || !adminKey) return jsonResponse(500, { ok: false, error: "misconfigured" });
+    if (!adminUrl || !adminKey) return jsonResponse({ ok: false, error: "misconfigured" }, 500);
     const adminClient = createClient(adminUrl, adminKey, { auth: { persistSession: false } });
     const caller = await resolveCaller(req, adminClient);
     if (caller instanceof Response) return caller;
     if (caller.mode === "jwt" && !caller.isAdmin) {
-      return jsonResponse(403, { ok: false, error: "forbidden" });
+      return jsonResponse({ ok: false, error: "forbidden" }, 403);
     }
   }
 
