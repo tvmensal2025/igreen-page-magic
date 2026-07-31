@@ -22,6 +22,21 @@ export const WASTE_LOOKBACK_DAYS = 2;
 /** Campanhas muito novas (< 2h) só entram se force=true. */
 export const WASTE_MIN_AGE_MS = 2 * 60 * 60 * 1000;
 
+/** true se a campanha ainda é nova demais para waste (sem force). */
+export function isTooNewForWaste(
+  createdOrStartedAt: string | Date | null | undefined,
+  opts?: { force?: boolean; nowMs?: number },
+): boolean {
+  if (opts?.force) return false;
+  if (!createdOrStartedAt) return false;
+  const t = createdOrStartedAt instanceof Date
+    ? createdOrStartedAt.getTime()
+    : new Date(createdOrStartedAt).getTime();
+  if (!Number.isFinite(t)) return false;
+  const now = opts?.nowMs ?? Date.now();
+  return now - t < WASTE_MIN_AGE_MS;
+}
+
 export type WasteVerdict =
   | { action: "none" }
   | { action: "pause_campaign"; rule: "zero_conv" | "zero_click"; reason: string }

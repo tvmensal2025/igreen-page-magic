@@ -89,25 +89,14 @@ export async function removeStage(id: string): Promise<void> {
 }
 
 /**
- * Reordena etapas. Faz a renumeração em duas passadas (offset alto + final)
- * para não violar o UNIQUE(position) durante o swap.
+ * Reordena etapas de forma atômica via RPC (duas passagens no banco,
+ * numa única transação — não deixa UNIQUE(product_family, position) quebrado).
  */
 export async function reorderStages(items: Array<{ id: string; position: number }>): Promise<void> {
-  const OFFSET = 10000;
-  for (const item of items) {
-    const { error } = await supabase
-      .from("sale_stage_templates" as never)
-      .update({ position: item.position + OFFSET } as never)
-      .eq("id", item.id);
-    if (error) throw error;
-  }
-  for (const item of items) {
-    const { error } = await supabase
-      .from("sale_stage_templates" as never)
-      .update({ position: item.position } as never)
-      .eq("id", item.id);
-    if (error) throw error;
-  }
+  const { error } = await supabase.rpc("reorder_sale_stage_templates" as never, {
+    p_items: items,
+  } as never);
+  if (error) throw error;
 }
 
 export async function seedDefaultTemplate(): Promise<void> {

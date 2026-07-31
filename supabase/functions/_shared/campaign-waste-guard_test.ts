@@ -2,6 +2,7 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   evaluateAdWaste,
   evaluateCampaignWaste,
+  isTooNewForWaste,
   WASTE_ZERO_CLICK_SPEND_CENTS,
   WASTE_ZERO_CONV_SPEND_CENTS,
 } from "./campaign-waste-guard.ts";
@@ -64,5 +65,21 @@ Deno.test("AUTO_PERF_PAUSE trava reativação", () => {
   assertEquals(
     isConsultantLocked("AUTO_PERF_PAUSE: Waste guard: R$ 10.00 sem conversa — só reativa no Play"),
     true,
+  );
+});
+
+Deno.test("isTooNewForWaste respeita idade mínima e force", () => {
+  const now = Date.now();
+  assertEquals(
+    isTooNewForWaste(new Date(now - 30 * 60 * 1000).toISOString(), { nowMs: now }),
+    true,
+  );
+  assertEquals(
+    isTooNewForWaste(new Date(now - 3 * 60 * 60 * 1000).toISOString(), { nowMs: now }),
+    false,
+  );
+  assertEquals(
+    isTooNewForWaste(new Date(now - 30 * 60 * 1000).toISOString(), { force: true, nowMs: now }),
+    false,
   );
 });

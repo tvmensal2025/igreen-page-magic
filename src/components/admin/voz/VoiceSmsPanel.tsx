@@ -58,24 +58,58 @@ function storageKey(consultantId: string) {
   return `voice_sms_templates_v1_${consultantId}`;
 }
 
-function loadTemplates(consultantId: string): SmsTemplate[] {
+function parseTemplates(raw: unknown): SmsTemplate[] | null {
+  if (!Array.isArray(raw) || raw.length === 0) return null;
+  const list = raw.filter(
+    (t): t is SmsTemplate =>
+      !!t && typeof t === "object" &&
+      typeof (t as SmsTemplate).id === "string" &&
+      typeof (t as SmsTemplate).label === "string" &&
+      typeof (t as SmsTemplate).text === "string",
+  );
+  return list.length > 0 ? list : null;
+}
+
+function loadTemplatesLocal(consultantId: string): SmsTemplate[] {
   try {
     const raw = localStorage.getItem(storageKey(consultantId));
     if (!raw) return DEFAULT_SMS_TEMPLATES.map((t) => ({ ...t }));
-    const parsed = JSON.parse(raw) as SmsTemplate[];
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      return DEFAULT_SMS_TEMPLATES.map((t) => ({ ...t }));
-    }
-    return parsed.filter((t) => t?.id && t?.label && typeof t.text === "string");
+    return parseTemplates(JSON.parse(raw)) ?? DEFAULT_SMS_TEMPLATES.map((t) => ({ ...t }));
   } catch {
     return DEFAULT_SMS_TEMPLATES.map((t) => ({ ...t }));
   }
 }
 
-function persistTemplates(consultantId: string, list: SmsTemplate[]) {
+async function loadTemplates(consultantId: string): Promise<SmsTemplate[]> {
+  const { data, error } = await supabase
+    .from("consultants")
+    .select("voice_sms_templates")
+    .eq("id", consultantId)
+    .maybeSingle();
+  if (!error) {
+    const fromDb = parseTemplates((data as { voice_sms_templates?: unknown } | null)?.voice_sms_templates);
+    if (fromDb) {
+      try {
+        localStorage.setItem(storageKey(consultantId), JSON.stringify(fromDb));
+      } catch { /* quota */ }
+      return fromDb;
+    }
+  }
+  return loadTemplatesLocal(consultantId);
+}
+
+async function persistTemplates(consultantId: string, list: SmsTemplate[]): Promise<void> {
   try {
     localStorage.setItem(storageKey(consultantId), JSON.stringify(list));
   } catch { /* ignore quota */ }
+  const { error } = await supabase
+    .from("consultants")
+    .update({ voice_sms_templates: list } as never)
+    .eq("id", consultantId);
+  if (error) {
+    console.warn("[VoiceSmsPanel] falha ao persistir templates no banco", error.message);
+    throw error;
+  }
 }
 
 function renderPreview(text: string, name: string | null | undefined): string {
@@ -92,23 +126,28 @@ function fmtPhone(raw: string): string {
 
 export function VoiceSmsPanel({ consultantId, customers = [] }: Props) {
   const [phones, setPhones] = useState("");
-  const [templates, setTemplates] = useState<SmsTemplate[]>(() => loadTemplates(consultantId));
-  const [activeTplId, setActiveTplId] = useState<string>(() => loadTemplates(consultantId)[0]?.id ?? "");
-  const [tplLabel, setTplLabel] = useState(() => loadTemplates(consultantId)[0]?.label ?? "Meu template");
-  const [message, setMessage] = useState(() => loadTemplates(consultantId)[0]?.text ?? "");
+  const [templates, setTemplates] = useState<SmsTemplate[]>(() => loadTemplatesLocal(consultantId));
+  const [activeTplId, setActiveTplId] = useState<string>(() => loadTemplatesLocal(consultantId)[0]?.id ?? "");
+  const [tplLabel, setTplLabel] = useState(() => loadTemplatesLocal(consultantId)[0]?.label ?? "Meu template");
+  const [message, setMessage] = useState(() => loadTemplatesLocal(consultantId)[0]?.text ?? "");
   const [busy, setBusy] = useState(false);
   const [picked, setPicked] = useState<VozCustomer[]>([]);
   const [logs, setLogs] = useState<SmsLogRow[]>([]);
 
   useEffect(() => {
-    const list = loadTemplates(consultantId);
-    setTemplates(list);
-    const first = list[0];
-    if (first) {
-      setActiveTplId(first.id);
-      setTplLabel(first.label);
-      setMessage(first.text);
-    }
+    let cancelled = false;
+    void (async () => {
+      const list = await loadTemplates(consultantId);
+      if (cancelled) return;
+      setTemplates(list);
+      const first = list[0];
+      if (first) {
+        setActiveTplId(first.id);
+        setTplLabel(first.label);
+        setMessage(first.text);
+      }
+    })();
+    return () => { cancelled = true; };
   }, [consultantId]);
 
   const loadLogs = useCallback(async () => {
@@ -167,7 +206,9 @@ export function VoiceSmsPanel({ consultantId, customers = [] }: Props) {
 
   const saveTemplates = (next: SmsTemplate[]) => {
     setTemplates(next);
-    persistTemplates(consultantId, next);
+    void persistTemplates(consultantId, next).catch(() => {
+      toast.error("Não foi possível salvar os templates na nuvem (ficou só neste aparelho).");
+    });
   };
 
   const updateActiveTemplate = () => {

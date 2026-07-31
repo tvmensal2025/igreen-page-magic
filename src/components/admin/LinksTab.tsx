@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Copy, QrCode, FileText, LinkIcon, ExternalLink, ChevronDown, ChevronUp, BarChart3, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { LinksDashboard } from "./LinksDashboard";
 import { useProducts } from "@/features/produtos/catalogo";
@@ -84,8 +85,11 @@ export function LinksTab({ slug, baseUrl, consultantId: consultantIdProp, onCopy
         const club = (row.club_cadastro_url || "").trim()
           || (row.igreen_id ? `https://club.igreenenergy.com.br/?id=${String(row.igreen_id).replace(/\D/g, "")}` : "");
         setClubCadastroUrl(club);
-      } catch {
-        /* ignore */
+      } catch (e) {
+        console.warn("[LinksTab] resolvePublicConsultant", e);
+        if (!cancelled) {
+          toast.error("Não foi possível carregar os links do consultor.");
+        }
       }
     })();
     return () => { cancelled = true; };

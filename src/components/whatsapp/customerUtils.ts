@@ -103,10 +103,13 @@ export function getStatusBadge(status: string | null | undefined) {
 export function normalizePhone(raw: string): string {
   const digits = String(raw || "").replace(/\D/g, "");
   if (digits.length === 0) return "";
-  if (digits.startsWith("55") && digits.length >= 12) return digits;
-  if (digits.length === 11) return `55${digits}`;
-  if (digits.length === 10) return `55${digits}`;
-  if (digits.length >= 12) return digits;
+  // Já com país BR (55 + DDD + 8/9)
+  if (digits.startsWith("55") && digits.length >= 12 && digits.length <= 13) return digits;
+  // Celular/fixo nacional com DDD
+  if (digits.length === 11 || digits.length === 10) return `55${digits}`;
+  // 12–13 dígitos sem 55 reconhecível → mantém (já internacional/legado)
+  if (digits.length >= 12 && digits.length <= 13) return digits;
+  // Curto demais (<10) ou longo demais → vazio (não inventa DDD/país)
   return "";
 }
 
@@ -120,13 +123,18 @@ export function mapStatus(andamento: string | undefined): string {
   if (lower === "validado" || lower === "aprovado" || lower === "ativo") return "approved";
   if (lower === "devolutiva") return "devolutiva";
   if (lower === "reprovado" || lower === "cancelado") return "rejected";
-  if (lower.includes("falta assinatura")) return "awaiting_signature";
-  if (lower.includes("aguardando")) return "pending";
-  if (lower === "pendente" || lower === "em análise" || lower === "em analise") return "pending";
+  if (lower.includes("falta assinatura") || lower.includes("assinatura")) return "awaiting_signature";
+  if (lower.includes("facial") || lower.includes("biometr")) return "pending";
+  if (lower.includes("otp") || lower.includes("token")) return "pending";
+  if (lower.includes("aguardando") || lower.includes("em análise") || lower.includes("em analise")) {
+    return "pending";
+  }
+  if (lower === "pendente") return "pending";
   if (lower === "lead" || lower === "novo") return "lead";
   if (lower === "dados completos" || lower === "data_complete") return "data_complete";
   if (lower === "registrado" || lower === "registered_igreen") return "registered_igreen";
   if (lower === "contrato enviado" || lower === "contract_sent") return "contract_sent";
+  // Status desconhecido do portal: pending explícito (não inventa approved)
   return "pending";
 }
 

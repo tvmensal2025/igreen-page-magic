@@ -30,6 +30,7 @@ import { formatCerebroWastePauseSms, formatCerebroWastePauseWhatsApp } from "../
 import {
   evaluateAdWaste,
   evaluateCampaignWaste,
+  isTooNewForWaste,
   WASTE_LOOKBACK_DAYS,
   WASTE_MIN_AGE_MS,
 } from "../_shared/campaign-waste-guard.ts";
@@ -245,11 +246,12 @@ Deno.serve(async (req) => {
       const forced = forceIds.includes(c.id);
       const ageMs = Date.now() -
         new Date(c.started_at || c.created_at).getTime();
-      if (!forced && ageMs < WASTE_MIN_AGE_MS) {
+      if (isTooNewForWaste(c.started_at || c.created_at, { force: forced })) {
         actions.push({
           campaign_id: c.id,
           skipped: "too_new",
           age_h: +(ageMs / 3600000).toFixed(2),
+          min_age_h: +(WASTE_MIN_AGE_MS / 3600000).toFixed(2),
         });
         continue;
       }

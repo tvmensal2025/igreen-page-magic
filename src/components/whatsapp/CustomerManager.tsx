@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useQueryClient, useQuery } from "@tanstack/react-query";
 import { PaginatedList } from "@/components/ui/PaginatedList";
 import {
@@ -69,6 +69,13 @@ export function CustomerManager({
   const [notConfigured, setNotConfigured] = useState(false);
 
   const { toast } = useToast();
+  const syncAbortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    return () => {
+      syncAbortRef.current?.abort();
+    };
+  }, []);
   const queryClient = useQueryClient();
   const refreshIgreenQueries = async () => {
     onCustomersChange();
@@ -289,9 +296,18 @@ export function CustomerManager({
       await refreshIgreenQueries();
       // Worker às vezes finaliza segundos depois da resposta HTTP. Aguarda o
       // run terminar e refaz o fetch pra não deixar o consultor com a lista antiga.
+      syncAbortRef.current?.abort();
+      const ac = new AbortController();
+      syncAbortRef.current = ac;
       void (async () => {
-        const finished = await waitIgreenSyncFinished(consultantId, { minStartedAt: requestedAt, timeoutMs: 300_000 });
+        const finished = await waitIgreenSyncFinished(consultantId, {
+          minStartedAt: requestedAt,
+          timeoutMs: 300_000,
+          signal: ac.signal,
+        });
+        if (ac.signal.aborted) return;
         await refreshIgreenQueries();
+        if (ac.signal.aborted) return;
         if (finished) {
           const extras = (finished.counts?.extras ?? {}) as Record<string, any>;
           const telecom = extras.telecom?.telecom_received ?? extras.telecom?.telecom_saved;

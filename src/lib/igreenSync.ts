@@ -77,12 +77,18 @@ export async function runIgreenSync(
  */
 export async function waitIgreenSyncFinished(
   consultantId: string,
-  opts?: { timeoutMs?: number; intervalMs?: number; minStartedAt?: string },
+  opts?: {
+    timeoutMs?: number;
+    intervalMs?: number;
+    minStartedAt?: string;
+    signal?: AbortSignal;
+  },
 ): Promise<{ status: string; counts: Record<string, unknown> | null } | null> {
   const timeoutMs = opts?.timeoutMs ?? 150_000;
   const intervalMs = opts?.intervalMs ?? 4_000;
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
+    if (opts?.signal?.aborted) return null;
     let query = supabase
       .from("igreen_sync_runs")
       .select("mode, status, counts, finished_at")

@@ -68,8 +68,30 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
     const token = authHeader.replace("Bearer ", "");
-    // Decodifica JWT localmente pra evitar round-trip de rede (que estava travando em 150s).
-    const consultantId = decodeJwtSub(token);
+    // Prefer getUser (assinatura validada). Timeout curto evita hang histórico (~150s).
+    // Se o Auth estiver lento, cai no decode do sub — o gateway já exige JWT válido
+    // (verify_jwt=true nesta edge).
+    let consultantId: string | null = null;
+    try {
+      const userClient = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_ANON_KEY")!,
+        {
+          global: { headers: { Authorization: authHeader } },
+          auth: { persistSession: false },
+        },
+      );
+      const timed = await Promise.race([
+        userClient.auth.getUser().then((r) => r.data.user?.id ?? null),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 8_000)),
+      ]);
+      consultantId = timed;
+    } catch {
+      consultantId = null;
+    }
+    if (!consultantId) {
+      consultantId = decodeJwtSub(token);
+    }
     if (!consultantId) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
