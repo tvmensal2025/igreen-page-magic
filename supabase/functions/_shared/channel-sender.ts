@@ -364,9 +364,9 @@ export async function resolveChannelForCustomerWithFailover(
     }
   }
 
-  // Failover → Whapi SOMENTE se o consultor tiver instância whapi* própria.
-  // Token compartilhado = número do superadmin — proibido para terceiros.
-  if (originKind !== "whapi" && env.whapiToken) {
+  // Failover → Whapi SOMENTE para o dono do token (superadmin).
+  // Consultor comum nunca cai no número do Rafael.
+  if (originKind !== "whapi" && isWhapiAllowedForConsultant(env, consultantId)) {
     const { data: whapiInst } = await supabase
       .from("whatsapp_instances")
       .select("instance_name, status, manual_review_required, fatal_lock_until")
