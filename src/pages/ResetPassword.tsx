@@ -39,6 +39,15 @@ function humanUrlError(code: string | null, description: string | null): string 
   return "Não conseguimos validar o link de recuperação.";
 }
 
+/**
+ * Snapshot da URL no carregamento do módulo. O supabase-js (detectSessionInUrl)
+ * limpa o hash assim que a página monta, então precisamos guardar antes.
+ */
+const INITIAL_URL =
+  typeof window !== "undefined" ? window.location.href : "http://localhost/";
+const INITIAL_HASH =
+  typeof window !== "undefined" ? window.location.hash : "";
+
 export default function ResetPassword() {
   const navigate = useNavigate();
   const { toast } = useToast();
