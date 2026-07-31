@@ -71,6 +71,15 @@ export function StorageMigrationPanel() {
           </Button>
           <Button
             size="sm"
+            variant="secondary"
+            disabled={!!running}
+            onClick={() => run("base64", { buckets: ["base64_no_banco"], batchSize: 50 })}
+          >
+            {running === "base64" && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Tirar base64 do banco (50)
+          </Button>
+          <Button
+            size="sm"
             variant="outline"
             disabled={!!running}
             onClick={() => run("all", { buckets: ["whatsapp-media", "consultant-photos"], batchSize: 50 })}
@@ -79,6 +88,7 @@ export function StorageMigrationPanel() {
             Migrar lote geral (50)
           </Button>
         </div>
+
         {results.length > 0 && (
           <div className="space-y-2">
             {results.map((r) => (
