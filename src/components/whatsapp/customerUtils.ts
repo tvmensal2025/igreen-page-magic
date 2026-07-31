@@ -123,7 +123,9 @@ export function mapStatus(andamento: string | undefined): string {
   if (lower === "validado" || lower === "aprovado" || lower === "ativo") return "approved";
   if (lower === "devolutiva") return "devolutiva";
   if (lower === "reprovado" || lower === "cancelado") return "rejected";
-  if (lower.includes("falta assinatura") || lower.includes("assinatura")) return "awaiting_signature";
+  if (lower.includes("falta assinatura") || lower.includes("aguardando assinatura") || lower.includes("sem assinatura")) {
+    return "awaiting_signature";
+  }
   if (lower.includes("facial") || lower.includes("biometr")) return "pending";
   if (lower.includes("otp") || lower.includes("token")) return "pending";
   if (lower.includes("aguardando") || lower.includes("em análise") || lower.includes("em analise")) {
