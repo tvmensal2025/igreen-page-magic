@@ -102,10 +102,19 @@ serve(async (req: Request) => {
     return new Response(JSON.stringify({ ok: true, sent: 0 }), { status: 200 });
   }
 
+  const { data: superRow } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "superadmin_consultant_id")
+    .maybeSingle();
+
   const env = {
     evolutionUrl: Deno.env.get("EVOLUTION_API_URL"),
     evolutionKey: Deno.env.get("EVOLUTION_API_KEY"),
     whapiToken: Deno.env.get("WHAPI_TOKEN") || "",
+    // Whapi é só do superadmin; consultores saem por Evolution.
+    superadminConsultantId:
+      String((superRow as { value?: string } | null)?.value ?? "").replace(/^"|"$/g, "") || null,
   };
 
   let sent = 0;
