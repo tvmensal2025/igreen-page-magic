@@ -233,8 +233,17 @@ export default function SuperAdminRemoteSupport() {
                       onClick={async () => {
                         setBusy(s.id);
                         try {
-                          await acceptSession(s.id);
-                          toast.success("Código enviado ao consultor");
+                          const res = await acceptSession(s.id) as {
+                            broadcast_ok?: boolean;
+                            code?: string;
+                          };
+                          if (res?.broadcast_ok === false && res?.code) {
+                            toast.success(
+                              `Broadcast falhou — diga o código ao consultor: ${res.code}`,
+                            );
+                          } else {
+                            toast.success("Código enviado ao consultor");
+                          }
                         } catch (e) {
                           toast.error(e instanceof Error ? e.message : "Erro ao aceitar");
                         } finally {

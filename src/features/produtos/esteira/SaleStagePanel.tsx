@@ -16,7 +16,7 @@ import {
   useStageAttachments,
   useUploadAttachment,
 } from "./hooks";
-import { computeProgress, validateUpload } from "./logic";
+import { canCompleteStage, computeProgress, validateUpload } from "./logic";
 import { getAttachmentSignedUrl } from "./api";
 import type { SaleStage, StageAttachment } from "./types";
 
@@ -50,7 +50,7 @@ export function SaleStagePanel({ saleId }: SaleStagePanelProps) {
 
       <ol className="space-y-3">
         {stages.map((s) => (
-          <StageItem key={s.id} stage={s} saleId={saleId} />
+          <StageItem key={s.id} stage={s} saleId={saleId} allStages={stages} />
         ))}
       </ol>
     </div>
@@ -59,7 +59,15 @@ export function SaleStagePanel({ saleId }: SaleStagePanelProps) {
 
 // ---------------------------------------------------------------------------
 
-function StageItem({ stage, saleId }: { stage: SaleStage; saleId: string }) {
+function StageItem({
+  stage,
+  saleId,
+  allStages,
+}: {
+  stage: SaleStage;
+  saleId: string;
+  allStages: SaleStage[];
+}) {
   const [noteDraft, setNoteDraft] = useState(stage.note ?? "");
   const [showNote, setShowNote] = useState(Boolean(stage.note));
   const setStatus = useSetStageStatus(saleId);
@@ -67,8 +75,17 @@ function StageItem({ stage, saleId }: { stage: SaleStage; saleId: string }) {
   const { toast } = useToast();
 
   const done = stage.status === "concluido";
+  const canComplete = canCompleteStage(allStages, stage.id);
 
   const toggle = async () => {
+    if (!done && !canComplete) {
+      toast({
+        title: "Ordem das etapas",
+        description: "Conclua as etapas anteriores antes de avançar.",
+        variant: "destructive",
+      });
+      return;
+    }
     try {
       await setStatus.mutateAsync({
         stageId: stage.id,
@@ -102,9 +119,10 @@ function StageItem({ stage, saleId }: { stage: SaleStage; saleId: string }) {
         <button
           type="button"
           onClick={() => void toggle()}
-          disabled={setStatus.isPending}
-          className="mt-0.5 text-pv-accent"
+          disabled={setStatus.isPending || (!done && !canComplete)}
+          className="mt-0.5 text-pv-accent disabled:opacity-40"
           aria-label={done ? "Marcar como pendente" : "Marcar como concluído"}
+          title={!done && !canComplete ? "Conclua as etapas anteriores primeiro" : undefined}
         >
           {done ? (
             <CheckCircle2 className="h-5 w-5 text-emerald-600" />

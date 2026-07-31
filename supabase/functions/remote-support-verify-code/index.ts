@@ -1,5 +1,5 @@
 import { buildCors } from "../_shared/cors.ts";
-import { rs, sha256 } from "../_shared/remote-support.ts";
+import { rs, sha256, SESSION_MAX_DURATION_MS } from "../_shared/remote-support.ts";
 
 Deno.serve(async (req) => {
   const cors = buildCors(req);
@@ -19,6 +19,20 @@ Deno.serve(async (req) => {
       .from("remote_support_sessions").select("*").eq("id", session_id).single();
     if (!session) return json({ error: "session not found" }, 404);
     if (session.status !== "pending_code") return json({ error: "not pending code" }, 400);
+
+    const createdMs = new Date(session.created_at).getTime();
+    if (Number.isFinite(createdMs) && Date.now() - createdMs > SESSION_MAX_DURATION_MS) {
+      await admin.from("remote_support_sessions").update({
+        status: "ended",
+        ended_at: new Date().toISOString(),
+        end_reason: "max_duration",
+      }).eq("id", session_id);
+      await admin.from("remote_support_logs").insert({
+        session_id, actor: "system", action: "session_expired",
+        payload: { reason: "max_duration_before_verify" },
+      });
+      return json({ error: "session expired" }, 410);
+    }
 
     const { data: codeRow } = await admin
       .from("remote_support_codes")

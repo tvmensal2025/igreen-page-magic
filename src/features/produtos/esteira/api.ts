@@ -155,6 +155,37 @@ export async function setStageStatus(
   stageId: string,
   status: StageStatus,
 ): Promise<void> {
+  const { data: current, error: curErr } = await supabase
+    .from("sale_stage_progress" as never)
+    .select("id, sale_id, template_position, status")
+    .eq("id", stageId)
+    .single();
+  if (curErr || !current) {
+    throw curErr ?? new Error("Etapa não encontrada");
+  }
+  const row = current as unknown as {
+    id: string;
+    sale_id: string;
+    template_position: number;
+    status: StageStatus;
+  };
+
+  // Ordem da esteira: não concluir etapa se houver anterior pendente.
+  if (status === "concluido") {
+    const { data: siblings, error: sibErr } = await supabase
+      .from("sale_stage_progress" as never)
+      .select("id, template_position, status")
+      .eq("sale_id", row.sale_id)
+      .lt("template_position", row.template_position);
+    if (sibErr) throw sibErr;
+    const blocked = ((siblings as unknown as Array<{ status: StageStatus }>) || []).filter(
+      (s) => s.status !== "concluido",
+    );
+    if (blocked.length > 0) {
+      throw new Error("Conclua as etapas anteriores antes de avançar.");
+    }
+  }
+
   const userRes = await supabase.auth.getUser();
   const uid = userRes.data.user?.id ?? null;
   const patch: Record<string, unknown> = { status };

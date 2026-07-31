@@ -94,3 +94,15 @@ export function computeProgress(stages: SaleStage[]): {
   const ratio = total === 0 ? 0 : done / total;
   return { done, total, ratio };
 }
+
+/**
+ * Só permite concluir uma etapa se todas as anteriores (position menor)
+ * já estiverem concluídas. Reabrir (pendente) não usa esta guarda.
+ */
+export function canCompleteStage(stages: SaleStage[], stageId: string): boolean {
+  const target = stages.find((s) => s.id === stageId);
+  if (!target) return false;
+  return stages
+    .filter((s) => s.position < target.position)
+    .every((s) => s.status === "concluido");
+}

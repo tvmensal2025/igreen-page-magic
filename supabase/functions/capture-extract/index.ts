@@ -37,10 +37,14 @@ Deno.serve(async (req) => {
     // ─── Guarda de autenticação/posse (IDOR) — ANTES de qualquer efeito colateral ───
     const caller = await resolveCaller(req, sb);
     if (caller instanceof Response) return caller; // 401
+    if (!customer_id) {
+      return new Response(JSON.stringify({ error: "customer_id required" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     const deny = await assertOwnership(caller, { customerId: customer_id }, sb);
     if (deny) return deny; // 400/403
-
-    if (!customer_id) return new Response(JSON.stringify({ error: "customer_id required" }), { status: 400, headers: corsHeaders });
 
     const { data: customer } = await sb.from("customers")
       .select("id, consultant_id, capture_mode, name, cpf, rg, data_nascimento, phone_landline, email, cep, address_number, electricity_bill_value")
@@ -164,7 +168,26 @@ Inclua sempre "confidence": { campo: 0..1 }`;
 
     if (Object.keys(directUpdate).length > 0) {
       const { error: upErr } = await sb.from("customers").update(directUpdate).eq("id", customer_id);
-      if (upErr) console.warn("[capture-extract] direct update fail", upErr.message);
+      if (upErr) {
+        console.warn("[capture-extract] direct update fail", upErr.message);
+      } else {
+        // Trilha auditável: auto-apply também grava suggestion com status accepted.
+        const nowIso = new Date().toISOString();
+        const trailRows = autoApplied.map((field) => ({
+          customer_id,
+          consultant_id: customer.consultant_id,
+          field_name: field,
+          suggested_value: String(directUpdate[field]),
+          confidence: Math.min(1, Math.max(0, Number(conf[field] ?? 0.85))),
+          source_message_id: source_message_id || null,
+          status: "accepted",
+          resolved_at: nowIso,
+        }));
+        const { error: trailErr } = await sb.from("capture_field_suggestions").insert(trailRows);
+        if (trailErr) {
+          console.warn("[capture-extract] audit trail fail", trailErr.message);
+        }
+      }
     }
 
     return new Response(JSON.stringify({ ok: true, auto_applied: autoApplied, suggested }), {

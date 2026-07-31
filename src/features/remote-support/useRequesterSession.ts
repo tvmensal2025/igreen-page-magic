@@ -29,6 +29,9 @@ import { toast } from "sonner";
 // Constantes
 // ---------------------------------------------------------------------------
 
+/** Espelha SESSION_MAX_DURATION_MS das edge functions (_shared/remote-support.ts). */
+const SESSION_MAX_DURATION_MS = 2 * 60 * 60_000; // 2h
+
 /** Status que indicam sessão finalizada (não requer limpeza do peer). */
 const TERMINAL_STATUSES = ["ended", "rejected", "expired"] as const;
 
@@ -129,6 +132,45 @@ export function useRequesterSession(userId: string | null | undefined) {
 
     return () => { cancelled = true; };
   }, [userId]);
+
+  // -------------------------------------------------------------------------
+  // Watchdog: encerra sessão ativa após SESSION_MAX (paridade com Super Admin)
+  // -------------------------------------------------------------------------
+  useEffect(() => {
+    if (!session || session.status !== "active" || !session.started_at) return;
+
+    const startedMs = new Date(session.started_at).getTime();
+    if (!Number.isFinite(startedMs)) return;
+    const remaining = SESSION_MAX_DURATION_MS - (Date.now() - startedMs);
+
+    const expire = async () => {
+      const s = sessionRef.current;
+      if (!s || s.id !== session.id || s.status !== "active") return;
+      intentionalEndRef.current = true;
+      cancelReconnect();
+      cleanupPeer();
+      try {
+        await endSession(s.id, "max_duration");
+      } catch (e) {
+        console.warn("[remote-support] max_duration end:", e);
+      }
+      setSession(null);
+      setCode(null);
+      setCodeExpiresAt(null);
+      setSharing(false);
+      setShareSurface(null);
+      setPausedState(false);
+      setRemoteControlPaused(false);
+      toast.info("Sessão de suporte encerrada automaticamente (limite de 2h).");
+    };
+
+    if (remaining <= 0) {
+      void expire();
+      return;
+    }
+    const t = window.setTimeout(() => void expire(), remaining);
+    return () => window.clearTimeout(t);
+  }, [session, cancelReconnect, cleanupPeer]);
 
   // -------------------------------------------------------------------------
   // Realtime: mudanças na sessão

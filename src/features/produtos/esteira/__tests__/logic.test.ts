@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendStage,
   buildAttachmentPath,
+  canCompleteStage,
   computeProgress,
   isValidStageName,
   normalizePositions,
@@ -56,5 +57,18 @@ describe("esteira/logic", () => {
       { id: "3", saleId: "s", position: 2, name: "C", status: "concluido", note: null, completedAt: null, completedBy: null },
     ];
     expect(computeProgress(stages)).toEqual({ done: 2, total: 3, ratio: 2 / 3 });
+  });
+
+  it("canCompleteStage exige etapas anteriores concluídas", () => {
+    const stages: SaleStage[] = [
+      { id: "1", saleId: "s", position: 0, name: "A", status: "pendente", note: null, completedAt: null, completedBy: null },
+      { id: "2", saleId: "s", position: 1, name: "B", status: "pendente", note: null, completedAt: null, completedBy: null },
+      { id: "3", saleId: "s", position: 2, name: "C", status: "pendente", note: null, completedAt: null, completedBy: null },
+    ];
+    expect(canCompleteStage(stages, "1")).toBe(true);
+    expect(canCompleteStage(stages, "2")).toBe(false);
+    stages[0].status = "concluido";
+    expect(canCompleteStage(stages, "2")).toBe(true);
+    expect(canCompleteStage(stages, "3")).toBe(false);
   });
 });
