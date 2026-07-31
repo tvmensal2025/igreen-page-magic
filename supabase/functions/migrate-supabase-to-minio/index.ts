@@ -331,8 +331,13 @@ Deno.serve(async (req) => {
     const prefix: string | undefined = body.prefix ? String(body.prefix) : undefined;
     const results = [] as any[];
     for (const b of buckets) {
+      if (b === "base64_no_banco") {
+        results.push(await runBase64Docs(batchSize));
+        continue;
+      }
       results.push(await runForBucket({ bucket: b, batchSize, prefix }));
     }
+
 
     return new Response(JSON.stringify({ success: true, results }, null, 2), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
