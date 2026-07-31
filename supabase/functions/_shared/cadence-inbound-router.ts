@@ -470,6 +470,7 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     return pushToCadastro(input.customer, "cadence_intent_cadastro", knownBill);
   }
 
+
   // Pergunta / dúvida vem ANTES de empurrar pro cadastro: lead com valor já
   // conhecido que pergunta "é golpe?" precisa de resposta (FAQ/atalho), não de
   // um pulo mudo pro a2. O CTA no fim mantém o foco em cadastrar.
