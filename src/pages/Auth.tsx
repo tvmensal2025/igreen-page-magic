@@ -9,6 +9,8 @@ import { Eye, EyeOff, ArrowRight, Zap, RefreshCw, MailCheck } from "lucide-react
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import BrandLogo from "@/components/common/BrandLogo";
 import { hardReset } from "@/lib/hardReset";
+import { sendPasswordResetEmail } from "@/lib/passwordReset";
+
 
 function slugify(s: string) {
   return s
@@ -130,14 +132,12 @@ const Auth = () => {
     setLoading(true);
     try {
       if (!email.trim()) throw new Error("Informe seu e-mail.");
-      const { error } = await withAuthTimeout(
-        supabase.auth.resetPasswordForEmail(email.trim(), {
-          redirectTo: `${window.location.origin}/reset-password`,
-        }),
+      await withAuthTimeout(
+        sendPasswordResetEmail(email.trim()),
         "O envio do link demorou demais. Tente novamente."
       );
-      if (error) throw error;
       setForgotSentTo(email.trim());
+
     } catch (error: unknown) {
       toast({
         title: "Não foi possível enviar",

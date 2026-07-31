@@ -427,3 +427,6 @@ verify_jwt = false
 [functions.sim-upload-pdf]
 verify_jwt = false
 
+
+[functions.send-password-reset]
+verify_jwt = false

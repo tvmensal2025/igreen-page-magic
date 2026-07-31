@@ -13,6 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import BrandLogo from "@/components/common/BrandLogo";
+import { sendPasswordResetEmail } from "@/lib/passwordReset";
+
 import {
   ArrowLeft,
   ArrowRight,
@@ -159,10 +161,8 @@ export default function ResetPassword() {
     if (!resendEmail.trim() || resending) return;
     setResending(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(resendEmail.trim(), {
-        redirectTo: `${window.location.origin}/reset-password`,
-      });
-      if (error) throw error;
+      await sendPasswordResetEmail(resendEmail.trim());
+
       toast({
         title: "Link enviado",
         description: "Se este e-mail estiver cadastrado, o link chega em instantes. Olhe também o spam.",
