@@ -175,14 +175,15 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
       ]);
 
       setSaving(false);
-      if (err) {
-        setError(err.message);
+      // As duas gravações vão em paralelo (tabelas diferentes). Se uma falhar,
+      // a outra já foi gravada: recarrega do banco para a tela mostrar o estado
+      // real, em vez de ficar exibindo o que o consultor tentou salvar.
+      if (err || consUpd.error) {
+        setError((err ?? consUpd.error)!.message);
+        void reload();
         return false;
       }
-      if (consUpd.error) {
-        setError(consUpd.error.message);
-        return false;
-      }
+
 
       const row = rowFromData(consultantId, {
         ...(data as ConsultantAutomationPrefs),
@@ -194,7 +195,7 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
       setCerebroEnabled(nextCerebro);
       return true;
     },
-    [consultantId, draft, cerebroEnabled],
+    [consultantId, draft, cerebroEnabled, reload],
   );
 
   /** Liga/desliga só o toggle de validar sozinho (sem mexer no resto do draft). */
@@ -204,25 +205,46 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
       setSaving(true);
       setError(null);
 
-      const base = prefs ?? { consultant_id: consultantId, ...DEFAULT_CONSULTANT_AUTOMATION_PREFS };
-      const payload = {
-        consultant_id: consultantId,
-        group_a_enabled: !!base.group_a_enabled,
-        group_b_enabled: !!base.group_b_enabled,
-        group_c_enabled: !!base.group_c_enabled,
-        pos_venda_auto_enabled: !!base.pos_venda_auto_enabled,
-        pos_venda_auto_validate: enabled,
-        reminders_auto_enabled: !!base.reminders_auto_enabled,
-        acked_at: base.acked_at ?? new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        updated_by: consultantId,
-      };
-
-      const { data, error: err } = await supabase
+      // Update PARCIAL: só a coluna do toggle. O upsert de linha inteira usava
+      // o `prefs` em memória — e como este hook é montado em dois lugares
+      // (PosVendaKanban e PendingApprovalDialog), a cópia velha de um deles
+      // reescrevia por cima do que o outro acabou de salvar. Pior: se o load
+      // tivesse falhado (prefs = null), gravava os DEFAULTS por cima de tudo.
+      let { data, error: err } = await supabase
         .from("consultant_automation_prefs")
-        .upsert(payload, { onConflict: "consultant_id" })
+        .update({
+          pos_venda_auto_validate: enabled,
+          updated_at: new Date().toISOString(),
+          updated_by: consultantId,
+        })
+        .eq("consultant_id", consultantId)
         .select(PREFS_SELECT)
         .maybeSingle();
+
+      // Sem linha ainda (primeiro toggle antes do modal de automações): cria.
+      if (!err && !data) {
+        const base = prefs ?? { consultant_id: consultantId, ...DEFAULT_CONSULTANT_AUTOMATION_PREFS };
+        ({ data, error: err } = await supabase
+          .from("consultant_automation_prefs")
+          .upsert(
+            {
+              consultant_id: consultantId,
+              group_a_enabled: !!base.group_a_enabled,
+              group_b_enabled: !!base.group_b_enabled,
+              group_c_enabled: !!base.group_c_enabled,
+              pos_venda_auto_enabled: !!base.pos_venda_auto_enabled,
+              pos_venda_auto_validate: enabled,
+              reminders_auto_enabled: !!base.reminders_auto_enabled,
+              acked_at: base.acked_at ?? new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+              updated_by: consultantId,
+            },
+            { onConflict: "consultant_id" },
+          )
+          .select(PREFS_SELECT)
+          .maybeSingle());
+      }
+
 
       if (err) {
         setSaving(false);
