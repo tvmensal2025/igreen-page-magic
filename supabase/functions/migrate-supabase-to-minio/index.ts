@@ -238,10 +238,12 @@ Deno.serve(async (req) => {
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const buckets: string[] = body.buckets || ["whatsapp-media", "consultant-photos"];
     const batchSize: number = Math.min(Math.max(Number(body.batchSize) || 25, 1), 200);
+    const prefix: string | undefined = body.prefix ? String(body.prefix) : undefined;
     const results = [] as any[];
     for (const b of buckets) {
-      results.push(await runForBucket({ bucket: b, batchSize }));
+      results.push(await runForBucket({ bucket: b, batchSize, prefix }));
     }
+
     return new Response(JSON.stringify({ success: true, results }, null, 2), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
