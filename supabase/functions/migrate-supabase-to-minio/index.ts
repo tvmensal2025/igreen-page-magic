@@ -208,7 +208,7 @@ Deno.serve(async (req) => {
   try {
     // AUTH: migração em massa só por service-role ou admin logado.
     if (!isServiceRoleAuth(req)) {
-      const caller = await resolveCaller(req, admin);
+      const caller = await resolveCaller(req, admin as any);
       if (caller instanceof Response) return caller;
       if (caller.mode === "jwt" && !caller.isAdmin) {
         return new Response(JSON.stringify({ success: false, error: "forbidden" }), {

@@ -37,7 +37,7 @@ Deno.serve(async (req) => {
 
     // AUTH: a ficha traz PII (CPF, RG, nascimento, e-mail, endereço).
     // Só service interno, admin ou o consultor dono do lead pode seguir.
-    const caller = await resolveCaller(req, supabase);
+    const caller = await resolveCaller(req, supabase as any);
     if (caller instanceof Response) return caller;
 
     const { data: customer, error } = await supabase

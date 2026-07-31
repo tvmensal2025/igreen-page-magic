@@ -51,7 +51,7 @@ Deno.serve(async (req) => {
 
     // AUTH real: antes bastava qualquer Bearer (até a anon key). Agora exige
     // service interno, admin ou o próprio consultor informado no payload.
-    const caller = await resolveCaller(req, supabase);
+    const caller = await resolveCaller(req, supabase as any);
     if (caller instanceof Response) return caller;
 
     const body = (await req.json().catch(() => ({}))) as Partial<Body>;

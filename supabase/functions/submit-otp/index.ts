@@ -48,7 +48,7 @@ Deno.serve(async (req) => {
     // SERVICE_ROLE_KEY) ou header x-service-secret. Painel admin/consultor
     // dono também pode reenviar o OTP manualmente.
     if (!isServiceRoleAuth(req)) {
-      const caller = await resolveCaller(req, supabase);
+      const caller = await resolveCaller(req, supabase as any);
       if (caller instanceof Response) return caller;
       if (caller.mode === "jwt") {
         const deny = await assertOwnership(
