@@ -12,7 +12,6 @@ import {
 } from "@/components/ui/dialog";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import type { HandoffLead } from "@/lib/handoffReturnToPizza";
@@ -111,14 +110,19 @@ export function HandoffLeadPreviewDialog({ lead, open, onOpenChange, onOpenChat 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg max-h-[90vh] flex flex-col gap-3">
-        <DialogHeader>
+      <DialogContent
+        className={cn(
+          "w-[calc(100%-1rem)] max-w-lg p-0 gap-0 overflow-hidden flex flex-col",
+          "max-h-[min(92dvh,760px)] h-[min(92dvh,760px)] sm:h-auto sm:max-h-[min(90dvh,720px)]",
+        )}
+      >
+        <DialogHeader className="shrink-0 px-4 sm:px-6 pt-5 pb-3 pr-12 border-b text-left">
           <DialogTitle className="sr-only">Conversa com {lead.displayName}</DialogTitle>
           <DialogDescription className="sr-only">
             Nome, foto e mensagens deste lead
           </DialogDescription>
-          <div className="flex items-center gap-3 pt-1">
-            <Avatar className="h-14 w-14 border border-border">
+          <div className="flex items-center gap-3">
+            <Avatar className="h-12 w-12 sm:h-14 sm:w-14 border border-border shrink-0">
               {lead.photoUrl ? <AvatarImage src={lead.photoUrl} alt={lead.displayName} /> : null}
               <AvatarFallback className="text-sm font-semibold">
                 {initials(lead.displayName, lead.phone)}
@@ -134,64 +138,68 @@ export function HandoffLeadPreviewDialog({ lead, open, onOpenChange, onOpenChat 
           </div>
         </DialogHeader>
 
-        <ScrollArea className="flex-1 min-h-[280px] max-h-[50vh] rounded-md border border-border/60 px-3 py-2">
-          {loading ? (
-            <div className="flex justify-center py-10 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
-            </div>
-          ) : msgs.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-10">
-              Nenhuma mensagem registrada ainda.
-            </p>
-          ) : (
-            <div className="space-y-2 py-1">
-              {msgs.map((m) => {
-                const inbound = m.message_direction === "inbound";
-                const body = previewText(m.message_text, m.message_type);
-                if (!body) return null;
-                return (
-                  <div
-                    key={m.id}
-                    className={cn("flex", inbound ? "justify-start" : "justify-end")}
-                  >
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3">
+          <div className="rounded-md border border-border/60 px-3 py-2 min-h-[240px]">
+            {loading ? (
+              <div className="flex justify-center py-10 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" />
+              </div>
+            ) : msgs.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-10">
+                Nenhuma mensagem registrada ainda.
+              </p>
+            ) : (
+              <div className="space-y-2 py-1">
+                {msgs.map((m) => {
+                  const inbound = m.message_direction === "inbound";
+                  const body = previewText(m.message_text, m.message_type);
+                  if (!body) return null;
+                  return (
                     <div
-                      className={cn(
-                        "max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap break-words",
-                        inbound
-                          ? "bg-muted text-foreground rounded-bl-md"
-                          : "bg-primary text-primary-foreground rounded-br-md",
-                      )}
+                      key={m.id}
+                      className={cn("flex", inbound ? "justify-start" : "justify-end")}
                     >
-                      <div>{body}</div>
                       <div
                         className={cn(
-                          "text-[10px] mt-1 opacity-70",
-                          inbound ? "text-left" : "text-right",
+                          "max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap break-words",
+                          inbound
+                            ? "bg-muted text-foreground rounded-bl-md"
+                            : "bg-primary text-primary-foreground rounded-br-md",
                         )}
                       >
-                        {inbound ? "Cliente" : "Você / bot"} · {formatWhen(m.created_at)}
+                        <div>{body}</div>
+                        <div
+                          className={cn(
+                            "text-[10px] mt-1 opacity-70",
+                            inbound ? "text-left" : "text-right",
+                          )}
+                        >
+                          {inbound ? "Cliente" : "Você / bot"} · {formatWhen(m.created_at)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </ScrollArea>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
 
         {onOpenChat && lead.phone ? (
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full"
-            onClick={() => {
-              onOpenChat(lead.phone);
-              onOpenChange(false);
-            }}
-          >
-            <MessageCircle className="h-4 w-4 mr-2" />
-            Abrir no WhatsApp
-          </Button>
+          <div className="shrink-0 border-t px-4 sm:px-6 py-3">
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={() => {
+                onOpenChat(lead.phone);
+                onOpenChange(false);
+              }}
+            >
+              <MessageCircle className="h-4 w-4 mr-2" />
+              Abrir no WhatsApp
+            </Button>
+          </div>
         ) : null}
       </DialogContent>
     </Dialog>

@@ -329,10 +329,15 @@ export default function CustomerQuickViewDialog({ customerId, dealId, customerNa
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-[95vw] sm:max-w-2xl max-h-[92vh] overflow-y-auto p-4 sm:p-6">
-        <DialogHeader className="space-y-1">
+      <DialogContent
+        className={[
+          "w-[calc(100%-1rem)] max-w-2xl p-0 gap-0 overflow-hidden flex flex-col",
+          "max-h-[min(92dvh,860px)] h-[min(92dvh,860px)] sm:h-auto sm:max-h-[min(90dvh,820px)]",
+        ].join(" ")}
+      >
+        <DialogHeader className="shrink-0 space-y-1 px-4 sm:px-6 pt-5 pb-3 pr-12 border-b text-left">
           <DialogTitle className="text-sm sm:text-base font-bold flex items-center gap-2">
-            <User className="h-4 w-4 text-primary" />
+            <User className="h-4 w-4 text-primary shrink-0" />
             <span className="truncate">{displayName}</span>
           </DialogTitle>
           <DialogDescription className="text-[11px]">
@@ -346,87 +351,89 @@ export default function CustomerQuickViewDialog({ customerId, dealId, customerNa
           </div>
         </DialogHeader>
 
-        {loading ? (
-          <div className="flex items-center justify-center py-10">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <Tabs defaultValue="next" className="mt-2">
-            <TabsList className="grid grid-cols-3 w-full h-9">
-              <TabsTrigger value="next" className="text-[11px] sm:text-xs">Próxima msg</TabsTrigger>
-              <TabsTrigger value="timeline" className="text-[11px] sm:text-xs">Linha do tempo</TabsTrigger>
-              <TabsTrigger value="data" className="text-[11px] sm:text-xs">Dados</TabsTrigger>
-            </TabsList>
+        <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-6 py-3">
+          {loading ? (
+            <div className="flex items-center justify-center py-10">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : (
+            <Tabs defaultValue="next" className="w-full">
+              <TabsList className="grid grid-cols-3 w-full h-9 sticky top-0 z-10 bg-background">
+                <TabsTrigger value="next" className="text-[11px] sm:text-xs">Próxima msg</TabsTrigger>
+                <TabsTrigger value="timeline" className="text-[11px] sm:text-xs">Linha do tempo</TabsTrigger>
+                <TabsTrigger value="data" className="text-[11px] sm:text-xs">Dados</TabsTrigger>
+              </TabsList>
 
-            <TabsContent value="next" className="space-y-3 mt-3">
-              {currentStage && (
-                <StageBlock
-                  title={`Etapa atual: ${currentStage.label}`}
-                  badge={currentPvKey && lastSentByStage.has(currentPvKey)
-                    ? <Badge variant="outline" className="text-[9px] bg-primary/10 text-primary border-primary/30">enviada {fmt(lastSentByStage.get(currentPvKey).sent_at)}</Badge>
-                    : <Badge variant="outline" className="text-[9px]">pendente</Badge>}
-                  stage={currentStage}
-                  displayName={displayName}
-                />
-              )}
-              {nextStage ? (
-                <StageBlock
-                  title={`Próxima etapa: ${nextStage.label}`}
-                  badge={<Badge variant="outline" className="text-[9px] bg-info/10 text-info border-info/30">a enviar</Badge>}
-                  stage={nextStage}
-                  displayName={displayName}
-                  scheduledAt={nextDate}
-                />
-              ) : !currentStage ? (
-                <div className="text-[11px] text-muted-foreground italic p-4 text-center border border-dashed border-border rounded-lg">
-                  Sem etapa de pós-venda definida ainda.
-                </div>
-              ) : null}
+              <TabsContent value="next" className="space-y-3 mt-3">
+                {currentStage && (
+                  <StageBlock
+                    title={`Etapa atual: ${currentStage.label}`}
+                    badge={currentPvKey && lastSentByStage.has(currentPvKey)
+                      ? <Badge variant="outline" className="text-[9px] bg-primary/10 text-primary border-primary/30">enviada {fmt(lastSentByStage.get(currentPvKey).sent_at)}</Badge>
+                      : <Badge variant="outline" className="text-[9px]">pendente</Badge>}
+                    stage={currentStage}
+                    displayName={displayName}
+                  />
+                )}
+                {nextStage ? (
+                  <StageBlock
+                    title={`Próxima etapa: ${nextStage.label}`}
+                    badge={<Badge variant="outline" className="text-[9px] bg-info/10 text-info border-info/30">a enviar</Badge>}
+                    stage={nextStage}
+                    displayName={displayName}
+                    scheduledAt={nextDate}
+                  />
+                ) : !currentStage ? (
+                  <div className="text-[11px] text-muted-foreground italic p-4 text-center border border-dashed border-border rounded-lg">
+                    Sem etapa de pós-venda definida ainda.
+                  </div>
+                ) : null}
 
-              {dealStage && (
-                <StageBlock
-                  title={`Etapa atual do lead: ${dealStage.label}`}
-                  stage={dealStage}
-                  displayName={displayName}
-                />
-              )}
-            </TabsContent>
+                {dealStage && (
+                  <StageBlock
+                    title={`Etapa atual do lead: ${dealStage.label}`}
+                    stage={dealStage}
+                    displayName={displayName}
+                  />
+                )}
+              </TabsContent>
 
-            <TabsContent value="timeline" className="mt-3">
-              {timeline.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground italic text-center py-6">Sem eventos registrados.</p>
-              ) : (
-                <div className="space-y-0">
-                  {timeline.map((e, i) => (
-                    <TimelineItem key={i} {...e} />
-                  ))}
-                </div>
-              )}
-            </TabsContent>
+              <TabsContent value="timeline" className="mt-3">
+                {timeline.length === 0 ? (
+                  <p className="text-[11px] text-muted-foreground italic text-center py-6">Sem eventos registrados.</p>
+                ) : (
+                  <div className="space-y-0">
+                    {timeline.map((e, i) => (
+                      <TimelineItem key={i} {...e} />
+                    ))}
+                  </div>
+                )}
+              </TabsContent>
 
-            <TabsContent value="data" className="mt-3 space-y-1">
-              <Row icon={Phone} label="WhatsApp" value={display?.phone_whatsapp} />
-              <Row icon={Mail} label="Email" value={customer?.email} />
-              <Row icon={Hash} label="CPF" value={customer?.cpf} />
-              <Row icon={Hash} label="Código iGreen" value={customer?.igreen_code} />
-              <Row icon={MapPin} label="Cidade/UF" value={customer?.address_city ? `${customer.address_city}${customer.address_state ? "/" + customer.address_state : ""}` : null} />
-              <Row icon={Zap} label="Conta de luz" value={customer?.electricity_bill_value ? `R$ ${Number(customer.electricity_bill_value).toFixed(2)}` : null} />
-              <Row icon={Zap} label="Distribuidora" value={customer?.distribuidora} />
-              <Row icon={Hash} label="Nº Instalação" value={customer?.numero_instalacao} />
-              <Row icon={FileText} label="Andamento iGreen" value={customer?.andamento_igreen} />
-              <Row icon={FileText} label="Devolutiva" value={customer?.devolutiva} />
-              <Row icon={FileText} label="Observação" value={customer?.observacao} />
-              <Row icon={FileText} label="Motivo (pós-venda)" value={customer?.pos_venda_reason} />
-              <Row icon={User} label="Cadastrado por" value={customer?.registered_by_name} />
-              <Row icon={Calendar} label="Data cadastro" value={fmt(customer?.data_cadastro)} />
-              <Row icon={Calendar} label="Data ativação" value={fmt(customer?.data_ativo)} />
-              <Row icon={Calendar} label="Portal enviado em" value={fmt(customer?.portal_submitted_at, true)} />
-              <Row icon={LinkIcon} label="Link assinatura" value={customer?.link_assinatura} />
-              <Row icon={FileText} label="Etapa do bot" value={customer?.conversation_step || deal?.stage} />
-              <Row icon={FileText} label="Observações do cliente interessado" value={deal?.notes} />
-            </TabsContent>
-          </Tabs>
-        )}
+              <TabsContent value="data" className="mt-3 space-y-1">
+                <Row icon={Phone} label="WhatsApp" value={display?.phone_whatsapp} />
+                <Row icon={Mail} label="Email" value={customer?.email} />
+                <Row icon={Hash} label="CPF" value={customer?.cpf} />
+                <Row icon={Hash} label="Código iGreen" value={customer?.igreen_code} />
+                <Row icon={MapPin} label="Cidade/UF" value={customer?.address_city ? `${customer.address_city}${customer.address_state ? "/" + customer.address_state : ""}` : null} />
+                <Row icon={Zap} label="Conta de luz" value={customer?.electricity_bill_value ? `R$ ${Number(customer.electricity_bill_value).toFixed(2)}` : null} />
+                <Row icon={Zap} label="Distribuidora" value={customer?.distribuidora} />
+                <Row icon={Hash} label="Nº Instalação" value={customer?.numero_instalacao} />
+                <Row icon={FileText} label="Andamento iGreen" value={customer?.andamento_igreen} />
+                <Row icon={FileText} label="Devolutiva" value={customer?.devolutiva} />
+                <Row icon={FileText} label="Observação" value={customer?.observacao} />
+                <Row icon={FileText} label="Motivo (pós-venda)" value={customer?.pos_venda_reason} />
+                <Row icon={User} label="Cadastrado por" value={customer?.registered_by_name} />
+                <Row icon={Calendar} label="Data cadastro" value={fmt(customer?.data_cadastro)} />
+                <Row icon={Calendar} label="Data ativação" value={fmt(customer?.data_ativo)} />
+                <Row icon={Calendar} label="Portal enviado em" value={fmt(customer?.portal_submitted_at, true)} />
+                <Row icon={LinkIcon} label="Link assinatura" value={customer?.link_assinatura} />
+                <Row icon={FileText} label="Etapa do bot" value={customer?.conversation_step || deal?.stage} />
+                <Row icon={FileText} label="Observações do cliente interessado" value={deal?.notes} />
+              </TabsContent>
+            </Tabs>
+          )}
+        </div>
       </DialogContent>
     </Dialog>
   );

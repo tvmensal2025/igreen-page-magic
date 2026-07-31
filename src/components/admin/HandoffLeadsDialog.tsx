@@ -41,6 +41,7 @@ import {
   type HandoffLead,
 } from "@/lib/handoffReturnToPizza";
 import { HandoffLeadPreviewDialog } from "@/components/admin/HandoffLeadPreviewDialog";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
 const SESSION_AUTO_KEY = "igreen-handoff-modal-auto";
@@ -197,190 +198,289 @@ export function HandoffLeadsDialog({
 
   const selectedIds = Array.from(selected);
 
+  function renderLeadActions(row: HandoffLead, compact?: boolean) {
+    return (
+      <div className={cn("flex gap-1.5", compact ? "flex-col w-full" : "justify-end flex-wrap")}>
+        {onOpenChat && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={cn("h-8", compact && "w-full justify-start")}
+            onClick={() => openConversation(row)}
+            title="Abrir no WhatsApp"
+          >
+            <MessageCircle className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+            WhatsApp
+          </Button>
+        )}
+        <Button
+          type="button"
+          size="sm"
+          className={cn("h-8 text-xs", compact && "w-full justify-start")}
+          disabled={busy}
+          onClick={() => void returnSelected([row.cadenceId])}
+          title="Devolve o lead ao acompanhamento automático"
+        >
+          <RotateCcw className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+          Voltar ao acompanhamento
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          className={cn("h-8 text-xs", compact && "w-full justify-start")}
+          disabled={busy}
+          onClick={() => void forgetSelected([row.cadenceId])}
+          title="Sai do ciclo automático — use se já é cliente. WhatsApp manual continua ok"
+        >
+          <UserMinus className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+          Esquecer acompanhamento
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="destructive"
+          className={cn("h-8 text-xs", compact && "w-full justify-start")}
+          disabled={busy}
+          onClick={() => void blockContact(row)}
+          title="Bloqueia contato e remove sem voltar ao acompanhamento automático"
+        >
+          <Ban className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+          Bloquear
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <HandHelping className="h-5 w-5 text-amber-600" />
-              Atendimentos pausados — escolha o que fazer
+        <DialogContent
+          className={cn(
+            "w-[calc(100%-1rem)] max-w-4xl p-0 gap-0 overflow-hidden flex flex-col",
+            "max-h-[min(92dvh,900px)] h-[min(92dvh,900px)] sm:h-auto sm:max-h-[min(90dvh,860px)]",
+          )}
+        >
+          <DialogHeader className="px-4 sm:px-6 pt-5 pb-3 pr-12 border-b shrink-0 text-left space-y-2">
+            <DialogTitle className="flex items-center gap-2 text-base sm:text-lg">
+              <HandHelping className="h-5 w-5 text-amber-600 shrink-0" />
+              <span className="leading-snug">Atendimentos pausados</span>
             </DialogTitle>
-            <DialogDescription>
-              Todo contato em que a IA pausou (você assumiu ou pediu ajuda) entra aqui.
-              Clique no <strong>nome</strong> para ver a conversa.{" "}
-              <strong>Voltar ao acompanhamento</strong> reativa o ciclo;{" "}
-              <strong>Esquecer acompanhamento</strong> tira do automático (ex.: já é cliente);{" "}
+            <DialogDescription className="text-left text-xs sm:text-sm leading-relaxed">
+              Contatos em que a IA pausou. Toque no nome para ver a conversa.{" "}
+              <strong>Voltar</strong> reativa o ciclo · <strong>Esquecer</strong> tira do automático ·{" "}
               <strong>Bloquear</strong> encerra o contato.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex items-center justify-between gap-2 flex-wrap">
-            <span className="text-xs text-muted-foreground">
-              {counts.all} lead(s) aguardando você
-            </span>
+          <div className="px-4 sm:px-6 py-2.5 flex items-center justify-between gap-2 flex-wrap border-b bg-muted/30 shrink-0">
+            <Badge variant="secondary" className="text-xs">
+              {counts.all} aguardando você
+            </Badge>
             <Button
               type="button"
               variant="outline"
               size="sm"
+              className="h-8"
               onClick={() => void reload()}
               disabled={loading || busy}
             >
-              <RefreshCw className={`h-3.5 w-3.5 mr-1 ${loading ? "animate-spin" : ""}`} />
+              <RefreshCw className={cn("h-3.5 w-3.5 mr-1", loading && "animate-spin")} />
               Atualizar
             </Button>
           </div>
 
-          {loading && rows.length === 0 ? (
-            <div className="flex justify-center py-10 text-muted-foreground">
-              <Loader2 className="h-6 w-6 animate-spin" />
-            </div>
-          ) : filteredRows.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-6 text-center">
-              {rows.length === 0 ? "Nenhum atendimento pausado aguardando." : "Nenhum contato nesta categoria."}
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10">
+          <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-3 sm:px-4 py-3">
+            {loading && rows.length === 0 ? (
+              <div className="flex justify-center items-center gap-2 py-16 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" />
+                <span className="text-sm">Carregando…</span>
+              </div>
+            ) : filteredRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-12 text-center px-4">
+                {rows.length === 0
+                  ? "Nenhum atendimento pausado aguardando."
+                  : "Nenhum contato nesta categoria."}
+              </p>
+            ) : (
+              <>
+                {/* Mobile: cards (padrão SlaBacklog) */}
+                <div className="md:hidden space-y-3">
+                  <label className="flex items-center gap-2 px-2 py-2 rounded-md border border-border/50 bg-muted/40">
                     <Checkbox
                       checked={selected.size === filteredRows.length && filteredRows.length > 0}
                       onCheckedChange={(v) => toggleAll(!!v)}
                       aria-label="Selecionar todos"
                     />
-                  </TableHead>
-                  <TableHead>Lead</TableHead>
-                  <TableHead>Motivo</TableHead>
-                  <TableHead>Estágio</TableHead>
-                  <TableHead className="text-right">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredRows.map((row) => {
-                  return (
-                    <TableRow key={row.cadenceId}>
-                      <TableCell>
+                    <span className="text-xs font-medium">
+                      Selecionar todos ({filteredRows.length})
+                    </span>
+                  </label>
+                  {filteredRows.map((row) => (
+                    <div
+                      key={row.cadenceId}
+                      className="rounded-lg border border-border/70 bg-card p-3 space-y-3"
+                    >
+                      <div className="flex items-start gap-2">
                         <Checkbox
+                          className="mt-1.5"
                           checked={selected.has(row.cadenceId)}
                           onCheckedChange={(v) => toggleOne(row.cadenceId, !!v)}
                           aria-label={`Selecionar ${row.displayName}`}
                         />
-                      </TableCell>
-                      <TableCell>
                         <button
                           type="button"
-                          className="flex items-center gap-2 text-left w-full rounded-md hover:bg-muted/60 -mx-1 px-1 py-0.5 transition-colors"
+                          className="flex items-start gap-2 text-left min-w-0 flex-1 rounded-md hover:bg-muted/50 -m-1 p-1 transition-colors"
                           onClick={() => setPreviewLead(row)}
                           title="Ver conversa"
                         >
-                          <Avatar className="h-9 w-9 shrink-0 border border-border">
+                          <Avatar className="h-10 w-10 shrink-0 border border-border">
                             {row.photoUrl ? <AvatarImage src={row.photoUrl} alt="" /> : null}
                             <AvatarFallback className="text-[11px] font-semibold">
                               {initials(row.displayName, row.phone)}
                             </AvatarFallback>
                           </Avatar>
-                          <div className="min-w-0">
-                            <div className="font-medium text-sm truncate underline-offset-2 hover:underline">
+                          <div className="min-w-0 flex-1">
+                            <div className="font-semibold text-sm truncate underline-offset-2 hover:underline">
                               {row.displayName}
                             </div>
-                            <div className="text-xs text-muted-foreground">{row.phoneFormatted}</div>
+                            <div className="text-[11px] text-muted-foreground font-mono">
+                              {row.phoneFormatted}
+                            </div>
+                            <div className="text-[11px] text-muted-foreground mt-1">
+                              {row.grupoLabel} · {row.stageLabel}
+                            </div>
+                            <div className="mt-1.5 flex flex-wrap gap-1">
+                              <Badge variant="secondary" className="text-[10px]">
+                                Precisa de você
+                              </Badge>
+                              {row.botPaused && (
+                                <Badge variant="outline" className="text-[10px]">
+                                  Automático pausado
+                                </Badge>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-muted-foreground mt-1.5 leading-snug">
+                              {formatHandoffReason(
+                                row.alertReason || row.botPausedReason || "handoff_humano",
+                              )}
+                            </p>
                             {row.alertMessage && (
-                              <div className="text-[11px] italic text-foreground/70 mt-0.5 line-clamp-2">
+                              <p className="text-[11px] italic text-foreground/70 mt-1 line-clamp-2">
                                 “{row.alertMessage.slice(0, 120)}”
-                              </div>
+                              </p>
                             )}
                           </div>
                         </button>
-                      </TableCell>
-                      <TableCell className="text-xs max-w-[200px]">
-                        <Badge variant="secondary" className="mb-1 text-[10px]">
-                          Precisa de você
-                        </Badge>
-                        <div>
-                          {formatHandoffReason(
-                            row.alertReason || row.botPausedReason || "handoff_humano",
-                          )}
-                        </div>
-                        {row.botPaused && (
-                          <Badge variant="outline" className="mt-1 text-[10px]">
-                            Automático pausado
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-xs">
-                        <div>{row.grupoLabel}</div>
-                        <div className="text-muted-foreground">{row.stageLabel}</div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-1 flex-wrap">
-                          {onOpenChat && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-8"
-                              onClick={() => openConversation(row)}
-                              title="Abrir no WhatsApp"
-                            >
-                              <MessageCircle className="h-3.5 w-3.5" />
-                            </Button>
-                          )}
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="h-8 text-xs"
-                            disabled={busy}
-                            onClick={() => void returnSelected([row.cadenceId])}
-                            title="Devolve o lead ao acompanhamento automático"
-                          >
-                            <RotateCcw className="h-3.5 w-3.5 mr-1" />
-                            Voltar ao acompanhamento
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            className="h-8 text-xs"
-                            disabled={busy}
-                            onClick={() => void forgetSelected([row.cadenceId])}
-                            title="Sai do ciclo automático — use se já é cliente. WhatsApp manual continua ok"
-                          >
-                            <UserMinus className="h-3.5 w-3.5 mr-1" />
-                            Esquecer acompanhamento
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            variant="destructive"
-                            className="h-8 text-xs"
-                            disabled={busy}
-                            onClick={() => void blockContact(row)}
-                            title="Bloqueia contato e remove sem voltar ao acompanhamento automático"
-                          >
-                            <Ban className="h-3.5 w-3.5 mr-1" />
-                            Bloquear
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
+                      </div>
+                      {renderLeadActions(row, true)}
+                    </div>
+                  ))}
+                </div>
 
-          <DialogFooter className="flex-wrap gap-2 sm:justify-between">
-            <span className="text-xs text-muted-foreground self-center">
+                {/* Desktop: tabela */}
+                <div className="hidden md:block overflow-x-auto rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-10">
+                          <Checkbox
+                            checked={selected.size === filteredRows.length && filteredRows.length > 0}
+                            onCheckedChange={(v) => toggleAll(!!v)}
+                            aria-label="Selecionar todos"
+                          />
+                        </TableHead>
+                        <TableHead>Lead</TableHead>
+                        <TableHead>Motivo</TableHead>
+                        <TableHead>Estágio</TableHead>
+                        <TableHead className="text-right min-w-[280px]">Ações</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {filteredRows.map((row) => (
+                        <TableRow key={row.cadenceId}>
+                          <TableCell>
+                            <Checkbox
+                              checked={selected.has(row.cadenceId)}
+                              onCheckedChange={(v) => toggleOne(row.cadenceId, !!v)}
+                              aria-label={`Selecionar ${row.displayName}`}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <button
+                              type="button"
+                              className="flex items-center gap-2 text-left w-full rounded-md hover:bg-muted/60 -mx-1 px-1 py-0.5 transition-colors"
+                              onClick={() => setPreviewLead(row)}
+                              title="Ver conversa"
+                            >
+                              <Avatar className="h-9 w-9 shrink-0 border border-border">
+                                {row.photoUrl ? <AvatarImage src={row.photoUrl} alt="" /> : null}
+                                <AvatarFallback className="text-[11px] font-semibold">
+                                  {initials(row.displayName, row.phone)}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="min-w-0">
+                                <div className="font-medium text-sm truncate underline-offset-2 hover:underline">
+                                  {row.displayName}
+                                </div>
+                                <div className="text-xs text-muted-foreground">{row.phoneFormatted}</div>
+                                {row.alertMessage && (
+                                  <div className="text-[11px] italic text-foreground/70 mt-0.5 line-clamp-2">
+                                    “{row.alertMessage.slice(0, 120)}”
+                                  </div>
+                                )}
+                              </div>
+                            </button>
+                          </TableCell>
+                          <TableCell className="text-xs max-w-[200px]">
+                            <Badge variant="secondary" className="mb-1 text-[10px]">
+                              Precisa de você
+                            </Badge>
+                            <div>
+                              {formatHandoffReason(
+                                row.alertReason || row.botPausedReason || "handoff_humano",
+                              )}
+                            </div>
+                            {row.botPaused && (
+                              <Badge variant="outline" className="mt-1 text-[10px]">
+                                Automático pausado
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            <div>{row.grupoLabel}</div>
+                            <div className="text-muted-foreground">{row.stageLabel}</div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {renderLeadActions(row)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
+            )}
+          </div>
+
+          <DialogFooter className="shrink-0 border-t px-4 sm:px-6 py-3 gap-2 flex-col-reverse sm:flex-row sm:items-center sm:justify-between bg-background">
+            <span className="text-xs text-muted-foreground self-center sm:self-auto order-last sm:order-first">
               {selectedIds.length} selecionado(s)
             </span>
-            <div className="flex gap-2 flex-wrap">
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+            <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => onOpenChange(false)}
+              >
                 Fechar
               </Button>
               <Button
                 type="button"
                 variant="secondary"
+                className="w-full sm:w-auto"
                 disabled={busy || selectedIds.length === 0}
                 onClick={() => void forgetSelected(selectedIds)}
               >
@@ -389,10 +489,11 @@ export function HandoffLeadsDialog({
                 ) : (
                   <UserMinus className="h-4 w-4 mr-1" />
                 )}
-                Esquecer acompanhamento
+                Esquecer
               </Button>
               <Button
                 type="button"
+                className="w-full sm:w-auto"
                 disabled={busy || selectedIds.length === 0}
                 onClick={() => void returnSelected(selectedIds)}
               >
