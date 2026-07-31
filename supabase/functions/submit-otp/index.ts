@@ -41,6 +41,23 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { customer_id, otp_code } = body;
 
+    // ─── AUTH ────────────────────────────────────────────────────────────
+    // Chamadores legítimos: whapi-webhook / evolution-webhook (Bearer
+    // SERVICE_ROLE_KEY) ou header x-service-secret. Painel admin/consultor
+    // dono também pode reenviar o OTP manualmente.
+    if (!isServiceRoleAuth(req)) {
+      const caller = await resolveCaller(req, supabase);
+      if (caller instanceof Response) return caller;
+      if (caller.mode === "jwt") {
+        const deny = await assertOwnership(
+          caller,
+          { customerId: String(customer_id || "") },
+          supabase,
+        );
+        if (deny) return deny;
+      }
+    }
+
     if (!customer_id || !otp_code) {
       return new Response(JSON.stringify({ error: "customer_id e otp_code são obrigatórios" }), {
         status: 400,
