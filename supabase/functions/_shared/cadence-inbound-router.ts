@@ -609,7 +609,10 @@ export async function enrichCadenceFaqWithKnowledge(
     console.warn("[cadence-router] lookupKnowledge:", (e as Error).message);
   }
 
+  if (opts.kbOnly) return { text: opts.fallback, source: "fallback" };
+
   try {
+
     const { answerFaqWithAI } = await import("./ai-faq-answerer.ts");
     const ai = await answerFaqWithAI({
       supabase,
