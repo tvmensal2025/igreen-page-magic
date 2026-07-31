@@ -115,16 +115,23 @@ export function CustomerImportExport({ customers, filtered, consultantId, onCust
     const BATCH_SIZE = 100;
     for (let i = 0; i < toImport.length; i += BATCH_SIZE) {
       const batch = toImport.slice(i, i + BATCH_SIZE);
-      const batchData = batch.map((item) => ({
-        phone_whatsapp: item.phone,
-        name: item.name,
-        status: item.status,
-        consultant_id: consultantId,
-        // Importação por planilha = carteira/pós-venda. NUNCA vira lead do WhatsApp
-        // nem entra no funil do CRM. Para isso, marcamos a origem como igreen_sync.
-        customer_origin: "igreen_sync",
-        ...item.data,
-      })) as TablesInsert<"customers">[];
+      const batchData = batch.map((item) => {
+        const row: Record<string, unknown> = {
+          phone_whatsapp: item.phone,
+          consultant_id: consultantId,
+          // Importação por planilha = carteira/pós-venda. NUNCA vira lead do WhatsApp
+          // nem entra no funil do CRM. Para isso, marcamos a origem como igreen_sync.
+          customer_origin: "igreen_sync",
+          ...item.data,
+        };
+        // Em cliente já existente, só sobrescreve nome/status quando a planilha
+        // realmente trouxe o valor — planilha sem coluna não pode apagar o nome
+        // nem rebaixar um cliente aprovado para "pendente".
+        if (item.name || item.isNew) row.name = item.name;
+        if (item.hasStatus || item.isNew) row.status = item.status;
+        return row;
+      }) as TablesInsert<"customers">[];
+
 
       try {
         const { data: upserted, error } = await supabase
