@@ -483,9 +483,11 @@ Deno.test("Bug B FIX: QA hit emits in configured order (text→audio) for __qa__
 
   // Reply must be empty — QA emits everything inline.
   assertEquals(r.reply, "");
-  // The exact order is TEXT then AUDIO.
+  // Regra canônica: quando o FAQ tem áudio, o texto duplicado é suprimido —
+  // mesmo com ordem configurada (text→audio) sobra apenas o áudio.
   const seq = rec.events.map((e) => e.kind === "text" ? `T:${e.text}` : `${e.kind.toUpperCase()}`);
-  assertEquals(seq, ["T:Resposta do FAQ", "AUDIO"], `event sequence wrong:\n${seq.join("\n")}`);
+  assertEquals(seq, ["AUDIO"], `event sequence wrong:\n${seq.join("\n")}`);
+
 });
 
 // Sanity: legacy QA path (no order configured) still puts media first then text.
