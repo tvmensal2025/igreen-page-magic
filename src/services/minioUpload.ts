@@ -21,17 +21,20 @@ export interface UploadResult {
 }
 
 export interface UploadContext {
-  /** chat | template | avatar | admin | generic */
-  scope?: "chat" | "template" | "avatar" | "admin" | "generic";
+  /** chat | doc | template | avatar | admin | generic */
+  scope?: "chat" | "doc" | "template" | "avatar" | "admin" | "generic";
   consultant_id?: string;
   /** WhatsApp JID/telefone do cliente (só dígitos ou já com @) */
   customer_jid?: string;
   customer_name?: string;
+  /** UUID do cliente — usado no scope "doc" para montar documentos/{consultor}/{cliente}/ */
+  customer_id?: string;
   /** Sub-pasta dentro do scope (ex: image/audio/video/document, ou nome do template) */
   kind?: string;
   /** Nome amigável para o arquivo */
   slug?: string;
 }
+
 
 /**
  * Upload a file to MinIO (with Supabase Storage fallback) via the upload-media edge function.
