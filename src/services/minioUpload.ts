@@ -55,6 +55,8 @@ export async function uploadMedia(
     if (context.consultant_id) formData.append("consultant_id", context.consultant_id);
     if (context.customer_jid) formData.append("customer_jid", context.customer_jid);
     if (context.customer_name) formData.append("customer_name", context.customer_name);
+    if (context.customer_id) formData.append("customer_id", context.customer_id);
+
     if (context.kind) formData.append("kind", context.kind);
     if (context.slug) formData.append("slug", context.slug);
   }
