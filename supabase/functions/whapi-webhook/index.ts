@@ -2173,7 +2173,9 @@ Deno.serve(async (req) => {
           if (_lowBill.billValue != null) (customer as any).electricity_bill_value = _lowBill.billValue;
         }
       }
-      if (_isAutoStuckPause) {
+      if (_lowBill.reactivate) {
+        // já religado acima — segue o fluxo normal (Grupo A).
+      } else if (_isAutoStuckPause) {
         const { error: unpErr } = await supabase
           .from("customers")
           .update({
