@@ -1727,22 +1727,29 @@ export function ReheatCyclePizza({
   const saveToggle = async (key: "cadence_engine" | "daily_reheat", value: boolean) => {
     setSavingKey(key);
     try {
-      await (supabase as any)
+      const { error: tErr } = await (supabase as any)
         .from("automation_toggles")
         .update({ enabled: value, updated_at: new Date().toISOString() })
         .eq("key", key);
+      if (tErr) throw tErr;
       if (key === "cadence_engine") setToggleCadence(value);
       if (key === "daily_reheat") {
-        setToggleReheat(value);
-        await (supabase as any)
+        const { error: sErr } = await (supabase as any)
           .from("daily_reheat_settings")
           .update({ enabled: value, updated_at: new Date().toISOString() })
           .eq("id", "global");
+        if (sErr) throw sErr;
+        setToggleReheat(value);
         setSettings((prev) => (prev ? { ...prev, enabled: value } : prev));
       }
       toast({ title: value ? "Ligado" : "Desligado", description: key });
     } catch (e: any) {
-      toast({ title: "Falha ao salvar", description: String(e?.message || e), variant: "destructive" });
+      toast({
+        title: value ? "NÃO foi ligado" : "NÃO foi desligado",
+        description: String(e?.message || e),
+        variant: "destructive",
+      });
+      await loadAdmin();
     } finally {
       setSavingKey(null);
     }
@@ -1760,15 +1767,17 @@ export function ReheatCyclePizza({
         dbPatch.cap_b = patch.cap_b;
         dbPatch.daily_whapi_cap = patch.cap_b;
       }
-      await (supabase as any)
+      const { error } = await (supabase as any)
         .from("daily_reheat_settings")
         .update(dbPatch)
         .eq("id", "global");
+      if (error) throw error;
       setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
       if (patch.live_dispatch_enabled != null) setToggleLive(!!patch.live_dispatch_enabled);
       toast({ title: "Salvo" });
     } catch (e: any) {
       toast({ title: "Falha ao salvar", description: String(e?.message || e), variant: "destructive" });
+      await loadAdmin();
     } finally {
       setSavingKey(null);
     }
