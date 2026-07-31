@@ -657,10 +657,32 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
     const text = drafts[key];
     if (text === undefined) return;
     setSaving(key);
+
+    // O nome da IA é lido em produção de `consultants.assistant_name`.
+    // Sem gravar lá, salvar aqui não mudava nada no bot (e ainda pulava o
+    // trigger de nomes reservados). Grava primeiro na fonte da verdade.
+    if (field === "persona_name") {
+      const nome = text.trim();
+      if (!nome) { setSaving(null); toast.error("Informe o nome da IA"); return; }
+      const { error: consErr } = await supabase
+        .from("consultants")
+        .update({ assistant_name: nome })
+        .eq("id", consultantId);
+      if (consErr) {
+        setSaving(null);
+        toast.error(
+          /reserv/i.test(consErr.message)
+            ? `O nome "${nome}" é reservado/já pertence a outro consultor. Escolha outro.`
+            : consErr.message,
+        );
+        return;
+      }
+    }
+
     const { error } = await (supabase as any)
       .from("ai_agent_config")
       .upsert(
-        { consultant_id: consultantId, [field]: text },
+        { consultant_id: consultantId, [field]: field === "persona_name" ? text.trim() : text },
         { onConflict: "consultant_id" },
       );
     setSaving(null);
@@ -669,6 +691,7 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
     toast.success("Agente IA atualizado");
     await load();
   }
+
 
   async function addHoliday() {
     if (!newHolidayDate || !newHolidayLabel) {
