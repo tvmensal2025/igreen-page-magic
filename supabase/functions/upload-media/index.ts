@@ -267,11 +267,29 @@ Deno.serve(async (req) => {
     // ── Optional context fields ───────────────────────────────────────
     // scope: "chat" | "template" | "avatar" | "doc" | "generic"
     const scope = String(formData.get("scope") || "").trim() || (userIsAdmin ? "admin" : "generic");
-    const consultantIdField = String(formData.get("consultant_id") || userId || "").trim();
+    let consultantIdField = String(formData.get("consultant_id") || userId || "").trim();
     const customerJid = String(formData.get("customer_jid") || "").trim();
-    const customerNameField = String(formData.get("customer_name") || "").trim();
+    let customerNameField = String(formData.get("customer_name") || "").trim();
+    const customerIdField = String(formData.get("customer_id") || "").trim();
     const slugHint = String(formData.get("slug") || "").trim();
     const kindField = String(formData.get("kind") || inferKind(normalizedType)).trim();
+
+    // ── scope=doc: resolve consultor/cliente a partir do customer_id ──
+    // Mantém a MESMA pasta usada pelo bot (_shared/media-storage.ts):
+    // documentos/{consultor}/{cliente}/  — documento do cliente fica junto.
+    let customerBirth: string | null = null;
+    if (scope === "doc" && customerIdField) {
+      const { data: cust } = await supabase
+        .from("customers")
+        .select("name, consultant_id, birth_date")
+        .eq("id", customerIdField)
+        .maybeSingle();
+      if (cust) {
+        if (!customerNameField) customerNameField = String((cust as any).name || "");
+        if ((cust as any).consultant_id) consultantIdField = String((cust as any).consultant_id);
+        customerBirth = (cust as any).birth_date ? String((cust as any).birth_date) : null;
+      }
+    }
 
     // ── Resolve consultor slug ────────────────────────────────────────
     let consultantSlug = "sem_consultor";
@@ -297,6 +315,19 @@ Deno.serve(async (req) => {
         objectKey = `whatsapp/${consultantSlug}/${jid}/${kindField}/${safeFileBase}.${ext}`;
         break;
       }
+      case "doc": {
+        const parts = (customerNameField || "cliente").trim().split(/\s+/);
+        const first = normalizeName(parts[0] || "cliente");
+        const last = normalizeName(parts[parts.length - 1] || "x");
+        let dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        const mBr = customerBirth?.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+        const mIso = customerBirth?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (mBr) dateStr = `${mBr[3]}${mBr[2]}${mBr[1]}`;
+        else if (mIso) dateStr = `${mIso[1]}${mIso[2]}${mIso[3]}`;
+        const customerSlug = `${first}_${last}_${dateStr}`;
+        objectKey = `documentos/${consultantSlug}/${customerSlug}/${normalizeName(kindField)}_${ts}.${ext}`;
+        break;
+      }
       case "template": {
         objectKey = `templates/${consultantSlug}/${kindField}/${safeFileBase}.${ext}`;
         break;
@@ -313,6 +344,7 @@ Deno.serve(async (req) => {
           ? `private/${userId}/${safeFileBase}.${ext}`
           : `public/uploads/${safeFileBase}.${ext}`;
     }
+
 
     console.log(`📦 [upload-media] scope=${scope} key=${objectKey} (${file.type}, ${file.size}B)`);
 
