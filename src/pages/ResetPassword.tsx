@@ -67,8 +67,10 @@ export default function ResetPassword() {
     let alive = true;
 
     (async () => {
-      const url = new URL(window.location.href);
-      const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
+      const url = new URL(INITIAL_URL);
+      const hash = new URLSearchParams(
+        (INITIAL_HASH || window.location.hash).replace(/^#/, ""),
+      );
 
       // 1) O link já veio com erro embutido (expirado / já usado).
       const errCode = url.searchParams.get("error_code") ?? hash.get("error_code");
