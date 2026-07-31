@@ -106,7 +106,12 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
         nm = (legacy as any)?.persona_name?.trim() || "";
       }
       if (cancelled) return;
-      if (nm) setPersonaName(nm);
+      if (nm) {
+        setPersonaName(nm);
+        // Mantém o form global em sincronia — evita que "Salvar Dados"
+        // reenvie um assistant_name antigo por cima do valor real.
+        onFormChange({ assistant_name: nm });
+      }
       setPersonaLoading(false);
     })();
     return () => { cancelled = true; };
