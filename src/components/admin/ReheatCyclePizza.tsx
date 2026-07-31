@@ -1777,11 +1777,16 @@ export function ReheatCyclePizza({
         dbPatch.cap_b = patch.cap_b;
         dbPatch.daily_whapi_cap = patch.cap_b;
       }
-      const { error } = await (supabase as any)
+      const { data: sRow, error } = await (supabase as any)
         .from("daily_reheat_settings")
         .update(dbPatch)
-        .eq("id", "global");
+        .eq("id", "global")
+        .select("id")
+        .maybeSingle();
       if (error) throw error;
+      // 0 linhas sem erro = RLS negou; não pode dizer "Salvo".
+      if (!sRow) throw new Error("O banco recusou a gravação (sem permissão de administrador). Os valores antigos continuam valendo.");
+
       setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
       if (patch.live_dispatch_enabled != null) setToggleLive(!!patch.live_dispatch_enabled);
       toast({ title: "Salvo" });
