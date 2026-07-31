@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Camera, Loader2, RefreshCw, FileImage, Paperclip } from "lucide-react";
 import { fireRandomCelebration } from "@/lib/captureGame";
+import { uploadCaptureDoc } from "@/lib/captacao/uploadCaptureDoc";
 import { resolveStorageDisplayUrl } from "@/lib/captacao/storageDisplayUrl";
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
 
