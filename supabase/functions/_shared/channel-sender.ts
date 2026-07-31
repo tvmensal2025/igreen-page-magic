@@ -330,8 +330,16 @@ export async function resolveChannelForCustomer(
       detail: "WHAPI_TOKEN ausente", instanceName, kind,
     };
   }
-  // Whapi é do superadmin: lead de outro consultor nunca sai pelo chip do dono.
-  if (!isWhapiAllowedForConsultant(env, c?.consultant_id)) {
+  // Whapi é do superadmin: lead de outro consultor só sai pelo chip quando a
+  // instância `whapi*` de origem está cadastrada NO consultor (compartilhamento
+  // intencional, ex.: whapi-sirlene).
+  const whapiOk = await isWhapiAllowedForConsultantDb(
+    supabase,
+    env,
+    c?.consultant_id,
+    instanceName,
+  );
+  if (!whapiOk) {
     return {
       unavailable: true, reason: "missing_credentials",
       detail:
@@ -339,6 +347,7 @@ export async function resolveChannelForCustomer(
       instanceName, kind,
     };
   }
+
 
   const adapter = getAdapter({
     kind: "whapi",
