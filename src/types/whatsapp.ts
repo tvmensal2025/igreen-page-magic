@@ -20,6 +20,11 @@ export interface TemplateItem {
   media_url: string | null;
   image_url: string | null;
   delay_seconds: number;
+  /**
+   * Identidade estável apenas para a UI (React key) de itens ainda não salvos.
+   * Nunca é persistido: o gravador em useTemplates monta as linhas campo a campo.
+   */
+  _uiKey?: string;
 }
 
 export interface MessageTemplate {

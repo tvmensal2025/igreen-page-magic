@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +58,7 @@ const Auth = () => {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const recoveryRef = useRef(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
 
   // Escuta o evento global disparado pelo version gate em src/main.tsx.
@@ -83,8 +84,14 @@ const Auth = () => {
     }
   };
 
+  // Volta para a página que o usuário tentou abrir antes do login (guardada pelo
+  // ProtectedRoute em location.state.from). Sem isso, todo login caía em /admin.
   const checkAdminAndNavigate = async (_userId: string) => {
-    navigate("/admin");
+    const from = (location.state as { from?: string } | null)?.from;
+    const safeFrom = typeof from === "string" && from.startsWith("/") && !from.startsWith("//") && from !== "/auth"
+      ? from
+      : "/admin";
+    navigate(safeFrom, { replace: true });
   };
 
   useEffect(() => {

@@ -962,16 +962,17 @@ export function NetworkPanel({ consultantId }: NetworkPanelProps) {
     }
   }, []);
 
+  // Contagem regressiva do cooldown de sync.
+  // Depende apenas de "está ativo?" (booleano) para não recriar o setInterval a
+  // cada tique — antes o effect remontava 1x por segundo por depender do número.
+  const cooldownActive = syncCooldown > 0;
   useEffect(() => {
-    if (syncCooldown <= 0) return;
+    if (!cooldownActive) return;
     const timer = setInterval(() => {
-      setSyncCooldown((prev) => {
-        if (prev <= 1) { clearInterval(timer); return 0; }
-        return prev - 1;
-      });
+      setSyncCooldown((prev) => (prev <= 1 ? 0 : prev - 1));
     }, 1000);
     return () => clearInterval(timer);
-  }, [syncCooldown]);
+  }, [cooldownActive]);
 
   const startCooldown = () => {
     const seconds = 30;

@@ -30,7 +30,17 @@ const ITEM_TYPES: { value: TemplateMediaType; label: string; icon: React.Element
 ];
 
 export function emptyTemplateItem(position: number): TemplateItem {
-  return { position, message_type: "text", message_text: "", media_url: null, image_url: null, delay_seconds: position > 0 ? 3 : 0 };
+  return {
+    position,
+    message_type: "text",
+    message_text: "",
+    media_url: null,
+    image_url: null,
+    delay_seconds: position > 0 ? 3 : 0,
+    _uiKey: typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `tmp-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -253,7 +263,7 @@ export function TemplateItemsEditor({
     <div className="space-y-3">
       {items.map((it, i) => (
         <ItemCard
-          key={i}
+          key={it.id ?? it._uiKey ?? `pos-${i}`}
           item={it}
           index={i}
           total={items.length}
