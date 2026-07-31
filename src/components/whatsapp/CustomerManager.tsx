@@ -173,21 +173,33 @@ export function CustomerManager({
   const myCustomers = useMemo(() => {
     const normalize = (p: string) => (p || "").replace(/\D/g, "");
     if (selectedTipo === "telefonia") {
-      // Enriquece telecom com dados do cliente energia (nome/foto/status) quando bate telefone
-      const byPhone = new Map(energiaBase.map((c) => [normalize(c.phone_whatsapp), c]));
+      // Enriquece telecom com dados do cliente energia (nome/foto/status) quando bate telefone.
+      // Telefone vazio NUNCA pode servir de chave (colidiria todos os sem-número).
+      const byPhone = new Map(
+        energiaBase
+          .map((c) => [normalize(c.phone_whatsapp), c] as const)
+          .filter(([p]) => p.length >= 10),
+      );
       return telecomAsCustomers.map((t) => {
-        const match = byPhone.get(t.phone_whatsapp);
+        const key = normalize(t.phone_whatsapp);
+        const match = key.length >= 10 ? byPhone.get(key) : undefined;
         return match ? { ...match, id: t.id, tipo_produto: "telefonia", observacao: t.observacao } : t;
       });
     }
     if (selectedTipo === "seguros") return segurosAsCustomers;
     if (selectedTipo === "all") {
-      const phones = new Set(energiaBase.map((c) => normalize(c.phone_whatsapp)));
-      const telecomNew = telecomAsCustomers.filter((t) => !t.phone_whatsapp || !phones.has(t.phone_whatsapp));
+      const phones = new Set(
+        energiaBase.map((c) => normalize(c.phone_whatsapp)).filter((p) => p.length >= 10),
+      );
+      const telecomNew = telecomAsCustomers.filter((t) => {
+        const key = normalize(t.phone_whatsapp);
+        return key.length < 10 || !phones.has(key);
+      });
       return [...energiaBase, ...telecomNew, ...segurosAsCustomers];
     }
     return energiaBase;
   }, [energiaBase, telecomAsCustomers, segurosAsCustomers, selectedTipo]);
+
 
   const dealsByCustomer = useCustomerDeals(consultantId, myCustomers);
 
