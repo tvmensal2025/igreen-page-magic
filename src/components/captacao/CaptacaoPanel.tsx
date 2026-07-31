@@ -303,15 +303,27 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
     setTogglingBot(true);
     try {
       if (botActive) {
-        const { error } = await supabase.from("customers")
+        // RLS: só o dono (ou assigned) atualiza `customers`. Admin/líder tem
+        // SELECT mas não UPDATE → 0 linhas SEM erro. Exigimos a linha de volta
+        // e usamos a edge `customer-takeover` como fallback.
+        const { data: row, error } = await supabase.from("customers")
           .update({
             bot_paused: true,
             bot_paused_reason: "humano_assumiu",
             bot_paused_at: new Date().toISOString(),
             bot_paused_until: null,
           } as never)
-          .eq("id", selectedId);
-        if (error) throw error;
+          .eq("id", selectedId)
+          .select("id")
+          .maybeSingle();
+        if (error || !row) {
+          const { data: res, error: invErr } = await supabase.functions.invoke("customer-takeover", {
+            body: { customerId: selectedId, paused: true, reason: "humano_assumiu" },
+          });
+          if (invErr || (res as any)?.error) {
+            throw new Error((res as any)?.message || (res as any)?.error || invErr?.message || error?.message || "Não foi possível desligar a IA");
+          }
+        }
         setBotPaused(true);
         sonnerToast.success("IA desligada neste lead");
       } else {
@@ -323,10 +335,19 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
           assigned_human_id: null,
         };
         if (!globalAiEnabled) patch.bot_force_enabled = true;
-        const { error } = await supabase.from("customers")
+        const { data: row, error } = await supabase.from("customers")
           .update(patch as never)
-          .eq("id", selectedId);
-        if (error) throw error;
+          .eq("id", selectedId)
+          .select("id")
+          .maybeSingle();
+        if (error || !row) {
+          const { data: res, error: invErr } = await supabase.functions.invoke("customer-takeover", {
+            body: { customerId: selectedId, paused: false },
+          });
+          if (invErr || (res as any)?.error) {
+            throw new Error((res as any)?.message || (res as any)?.error || invErr?.message || error?.message || "Não foi possível ligar a IA");
+          }
+        }
         setBotPaused(false);
         if (!globalAiEnabled) setBotForceEnabled(true);
         sonnerToast.success(
@@ -335,6 +356,7 @@ export function CaptacaoPanel({ consultantId, onOpenChat, instanceName = null, i
             : "IA ligada só neste número (global continua off)",
         );
       }
+
     } catch (e) {
       sonnerToast.error((e as Error)?.message || "Falha ao alternar IA");
     } finally {
