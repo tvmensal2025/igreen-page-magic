@@ -89,15 +89,18 @@ export function CustomerManager({
       queryClient.invalidateQueries({ queryKey: ["my-clients-settings", consultantId] }),
     ]);
   };
-  const { data: myClientsSettings } = useMyClientsSettings(consultantId, {
+  const { data: myClientsSettings, isPending: myClientsSettingsLoading } = useMyClientsSettings(consultantId, {
     myIgreenId: consultantIgreenId || null,
     consultantName: consultantName ?? null,
     cadastroIgreenIds: [],
   });
-  const energiaBase = useMemo(
-    () => (myClientsSettings ? filterMyClients(customers, myClientsSettings) : customers),
-    [customers, myClientsSettings],
-  );
+  const energiaBase = useMemo(() => {
+    if (myClientsSettings) return filterMyClients(customers, myClientsSettings);
+    // Enquanto as regras de "meus clientes" carregam, não vazar a base inteira.
+    if (myClientsSettingsLoading && consultantId) return [];
+    return customers;
+  }, [customers, myClientsSettings, myClientsSettingsLoading, consultantId]);
+
 
   // Telecom (iGreen) — clientes do consultor vindos da tabela dedicada
   const { data: telecomRows = [] } = useQuery({
