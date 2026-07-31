@@ -42,3 +42,15 @@ Deno.test("outra pausa (humano assumiu) não é afetada", () => {
     false,
   );
 });
+
+Deno.test("parseBillValueFromText: ignora CEP, CPF, telefone e data", () => {
+  assertEquals(parseBillValueFromText("meu cep é 38400-100"), null);
+  assertEquals(parseBillValueFromText("cpf 12345678900"), null);
+  assertEquals(parseBillValueFromText("meu numero 34999991920"), null);
+  assertEquals(parseBillValueFromText("nasci em 10/05/1990"), null);
+  assertEquals(parseBillValueFromText("agora veio R$ 780,50"), 780.5);
+});
+
+Deno.test("CEP não reativa lead de conta baixa", () => {
+  assertEquals(evaluateLowBillReentry(paused, "meu cep é 38400-100").reactivate, false);
+});
