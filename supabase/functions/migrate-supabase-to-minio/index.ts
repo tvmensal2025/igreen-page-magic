@@ -1,7 +1,7 @@
 // Migra mídias do Supabase Storage (whatsapp-media, consultant-photos) para o MinIO
 // Idempotente, processa em lotes. Pode ser chamado repetidamente até concluir.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
-import { uploadToMinioPath, normalizeName, buildConsultantSlug, sanitizeJid, extFromMime } from "../_shared/minio-upload.ts";
+import { uploadToMinioPath, normalizeName, buildConsultantSlug, sanitizeJid, extFromMime, base64ToBytes } from "../_shared/minio-upload.ts";
 import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
 import { resolveCaller } from "../_shared/caller-auth.ts";
 
