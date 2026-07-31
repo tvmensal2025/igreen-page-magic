@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveWorker } from "../_shared/portal-worker.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { assertOwnership, resolveCaller } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
