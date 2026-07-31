@@ -137,13 +137,12 @@ Deno.serve(async (req) => {
     }
 
     if (requestId) {
+      // Status/approved_by já foram gravados na trava de idempotência acima.
       await admin.from("wallet_manual_topup_requests").update({
-        status: "approved",
-        approved_by: user.id,
-        approved_at: new Date().toISOString(),
         wallet_transaction_id: tx?.id ?? null,
       }).eq("id", requestId);
     }
+
 
     return json({ ok: true, balance_cents: newBalance, debt_cents: newDebt, transaction_id: tx?.id });
   } catch (err) {
