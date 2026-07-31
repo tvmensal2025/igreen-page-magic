@@ -98,6 +98,38 @@ Deno.serve(async (req) => {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+    // Endpoint é público (widget de ajuda nas landing pages). Sem teto, um script
+    // externo queimaria créditos de IA à vontade — limitamos tamanho e frequência.
+    if (message.length > 2000) {
+      return new Response(JSON.stringify({ error: "message_too_long" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    const chatIp = (req.headers.get("x-forwarded-for") || "").split(",")[0].trim();
+    if (chatIp) {
+      try {
+        const rl = createClient(
+          Deno.env.get("SUPABASE_URL") || "",
+          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "",
+        );
+        const { data: ipOk } = await rl.rpc("try_acquire_rate_limit" as any, {
+          p_phone: `igreen-chat:ip:${chatIp}`,
+          p_window_ms: 60_000,
+          p_max_count: 15,
+        });
+        if (ipOk === false) {
+          return new Response(JSON.stringify({ error: "rate_limited" }), {
+            status: 429,
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+      } catch (e) {
+        // Fail-open: hiccup do Postgres não pode derrubar o chat da landing.
+        console.warn("[igreen-chat] rate limit falhou (fail-open):", (e as Error)?.message);
+      }
+    }
+
 
     // Prioriza Lovable AI Gateway (mais estável, sem limites de free-tier do Google)
     // Fallback para Google AI direto se Lovable AI não estiver disponível

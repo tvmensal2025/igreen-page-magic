@@ -99,7 +99,10 @@ const App = () => (
         <Toaster />
         <Sonner />
         <UpdateAvailableToast />
-        <BrowserRouter>
+        {/* future flags: elimina os avisos de deprecação do React Router v6→v7
+            e já adota o comportamento definitivo (startTransition + splat path). */}
+        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+
           <TourStateProvider>
           <GuideCoachProvider>
           <Suspense fallback={

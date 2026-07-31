@@ -122,7 +122,19 @@ export async function uploadMediaUnified(
     throw new Error(`Both MinIO and Supabase Storage failed: ${upErr.message}`);
   }
 
-  const { data: pub } = supabase.storage.from("whatsapp-media").getPublicUrl(objectKey);
-  console.log(`📦✅ Supabase Storage OK [${opts.kind}]: ${pub.publicUrl}`);
-  return { url: pub.publicUrl, storage: "supabase" };
+  // O bucket `whatsapp-media` é PRIVADO: `getPublicUrl` devolveria uma URL que
+  // responde 400 para o provedor (Whapi/Evolution) na hora de baixar a mídia.
+  // Usamos URL assinada de longa duração (1 ano) para o fallback funcionar.
+  const { data: signed, error: signErr } = await supabase.storage
+    .from("whatsapp-media")
+    .createSignedUrl(objectKey, 60 * 60 * 24 * 365);
+
+  if (signErr || !signed?.signedUrl) {
+    console.error(`📦❌ Falha ao assinar URL [${opts.kind}]:`, signErr?.message);
+    throw new Error(`Supabase Storage signed URL failed: ${signErr?.message || "sem URL"}`);
+  }
+
+  console.log(`📦✅ Supabase Storage OK [${opts.kind}]: ${objectKey}`);
+  return { url: signed.signedUrl, storage: "supabase" };
 }
+
