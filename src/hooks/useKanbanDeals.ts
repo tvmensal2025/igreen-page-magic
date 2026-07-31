@@ -22,13 +22,27 @@ export function useKanbanDeals(consultantId: string, options?: { includeTests?: 
     const from = append ? offsetRef.current : 0;
     const to = from + DEALS_PAGE - 1;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("crm_deals")
       .select("*, customers!inner(name, phone_whatsapp, customer_origin, lead_source, conversation_step, last_step_advanced_at, is_test_lead, is_sandbox)")
       .eq("consultant_id", consultantId)
       .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null", { foreignTable: "customers" })
       .order("created_at", { ascending: false })
       .range(from, to);
+
+    // Falha de rede/RLS NÃO pode esvaziar o Kanban em silêncio.
+    if (error) {
+      console.error("[useKanbanDeals] fetchDeals", error);
+      toast({
+        title: "Erro ao carregar o funil",
+        description: error.message || "Tente novamente em instantes.",
+        variant: "destructive",
+      });
+      if (append) setLoadingMore(false);
+      return;
+    }
+
+
     const enriched: any[] = (data || []).map((d: any) => ({
       ...d,
       customer_name: d.customers?.name || null,
