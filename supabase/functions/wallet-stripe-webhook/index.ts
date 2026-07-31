@@ -2,6 +2,7 @@
 // e credita o saldo do consultor de forma idempotente.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
+import { notifySuperAdminOpsAlert } from "../_shared/superadmin-alert.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -84,29 +85,42 @@ Deno.serve(async (req) => {
     if (event.type === "charge.refunded" || event.type === "charge.dispute.funds_withdrawn") {
       const charge = event.data.object as Stripe.Charge;
       const piId = typeof charge.payment_intent === "string" ? charge.payment_intent : null;
-      if (piId) {
-        const admin = createClient(
-          Deno.env.get("SUPABASE_URL")!,
-          Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-        );
-        // Busca a transação original pra achar o consultor + session_id
-        const { data: orig } = await admin.from("wallet_transactions")
+      const admin = createClient(
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      );
+      const refundCents = Number(charge.amount_refunded || charge.amount || 0);
+      // Busca a transação original pra achar o consultor + session_id
+      const { data: orig } = piId
+        ? await admin.from("wallet_transactions")
           .select("consultant_id,stripe_session_id,amount_cents")
           .eq("stripe_payment_intent_id", piId)
           .eq("type", "topup")
-          .maybeSingle();
-        if (orig?.consultant_id) {
-          const refundCents = Number(charge.amount_refunded || charge.amount || 0);
-          await admin.rpc("refund_consultant_wallet", {
-            _consultant_id: orig.consultant_id,
-            _amount_cents: refundCents,
-            _stripe_session_id: orig.stripe_session_id,
-            _stripe_payment_intent_id: piId,
-            _description: event.type === "charge.refunded" ? "Estorno Stripe" : "Chargeback Stripe",
+          .maybeSingle()
+        : { data: null };
+      if (orig?.consultant_id) {
+        await admin.rpc("refund_consultant_wallet", {
+          _consultant_id: orig.consultant_id,
+          _amount_cents: refundCents,
+          _stripe_session_id: orig.stripe_session_id,
+          _stripe_payment_intent_id: piId,
+          _description: event.type === "charge.refunded" ? "Estorno Stripe" : "Chargeback Stripe",
+        });
+      } else {
+        // Nunca engolir um estorno: sem transação original o saldo fica inflado.
+        console.error("[wallet-stripe-webhook] estorno sem transação original", { piId, event: event.type });
+        try {
+          await notifySuperAdminOpsAlert(admin, {
+            key: `stripe_refund_orphan:${piId ?? charge.id}`,
+            severity: "critical",
+            text: `⚠️ Estorno Stripe SEM transação original.\nEvento: ${event.type}\nPaymentIntent: ${piId ?? "—"}\nCharge: ${charge.id}\nValor: R$ ${(refundCents / 100).toFixed(2)}\nAjuste a carteira manualmente.`,
           });
+        } catch (alertErr) {
+          console.error("[wallet-stripe-webhook] falha ao alertar superadmin", alertErr);
         }
       }
     }
+
 
     return new Response(JSON.stringify({ received: true }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },

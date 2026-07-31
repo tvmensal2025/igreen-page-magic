@@ -148,24 +148,43 @@ Deno.serve(async (req) => {
     return json(400, { error: "too_many_phones", message: "Máximo 200 SMS por lote." });
   }
 
-  const { data: dncRows } = await admin
+  const { data: dncRows, error: dncListErr } = await admin
     .from("voice_dnc_list")
     .select("phone")
     .eq("consultant_id", consultantId);
+  if (dncListErr) {
+    console.error("[voice-sms-send] falha ao ler voice_dnc_list", dncListErr);
+    return json(503, { error: "dnc_check_failed", message: "Não foi possível validar a lista de bloqueio. Tente novamente." });
+  }
   const blocked = new Set(
     (dncRows ?? []).map((r: { phone: string }) => String(r.phone || "").replace(/\D/g, "")).filter(Boolean),
   );
 
-  const { data: dncCust } = await admin
-    .from("customers")
-    .select("phone_whatsapp")
-    .eq("consultant_id", consultantId)
-    .eq("do_not_contact", true)
-    .limit(5000);
-  for (const row of dncCust || []) {
-    const d = String((row as { phone_whatsapp?: string }).phone_whatsapp || "").replace(/\D/g, "");
-    if (d) blocked.add(d);
+
+  // DNC de clientes: consulta apenas os telefones DESTE lote (≤200),
+  // em vez de baixar 5000 linhas e correr o risco de truncar a lista.
+  const batchDigits = Array.from(
+    new Set(recipients.map((r) => String(r.phone || "").replace(/\D/g, "")).filter(Boolean)),
+  );
+  for (let i = 0; i < batchDigits.length; i += 100) {
+    const slice = batchDigits.slice(i, i + 100);
+    const { data: dncCust, error: dncErr } = await admin
+      .from("customers")
+      .select("phone_whatsapp")
+      .eq("consultant_id", consultantId)
+      .eq("do_not_contact", true)
+      .in("phone_whatsapp", slice);
+    if (dncErr) {
+      // Fail-closed: sem confirmação de DNC não enviamos o lote.
+      console.error("[voice-sms-send] falha ao ler DNC de customers", dncErr);
+      return json(503, { error: "dnc_check_failed", message: "Não foi possível validar a lista de bloqueio. Tente novamente." });
+    }
+    for (const row of dncCust || []) {
+      const d = String((row as { phone_whatsapp?: string }).phone_whatsapp || "").replace(/\D/g, "");
+      if (d) blocked.add(d);
+    }
   }
+
 
   let sent = 0;
   let failed = 0;

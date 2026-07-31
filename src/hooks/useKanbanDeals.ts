@@ -22,13 +22,27 @@ export function useKanbanDeals(consultantId: string, options?: { includeTests?: 
     const from = append ? offsetRef.current : 0;
     const to = from + DEALS_PAGE - 1;
 
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("crm_deals")
       .select("*, customers!inner(name, phone_whatsapp, customer_origin, lead_source, conversation_step, last_step_advanced_at, is_test_lead, is_sandbox)")
       .eq("consultant_id", consultantId)
       .or("customer_origin.in.(whatsapp_lead,manual),customer_origin.is.null", { foreignTable: "customers" })
       .order("created_at", { ascending: false })
       .range(from, to);
+
+    // Falha de rede/RLS NÃO pode esvaziar o Kanban em silêncio.
+    if (error) {
+      console.error("[useKanbanDeals] fetchDeals", error);
+      toast({
+        title: "Erro ao carregar o funil",
+        description: error.message || "Tente novamente em instantes.",
+        variant: "destructive",
+      });
+      if (append) setLoadingMore(false);
+      return;
+    }
+
+
     const enriched: any[] = (data || []).map((d: any) => ({
       ...d,
       customer_name: d.customers?.name || null,
@@ -81,7 +95,7 @@ export function useKanbanDeals(consultantId: string, options?: { includeTests?: 
     setHasMore(pageLen >= DEALS_PAGE);
     setDeals((prev) => (append ? [...prev, ...(enriched as CrmDealRow[])] : (enriched as CrmDealRow[])));
     if (append) setLoadingMore(false);
-  }, [consultantId, includeTests]);
+  }, [consultantId, includeTests, toast]);
 
   const loadMore = useCallback(() => fetchDeals({ append: true }), [fetchDeals]);
 
@@ -89,13 +103,25 @@ export function useKanbanDeals(consultantId: string, options?: { includeTests?: 
   const resolveNames = useCallback(async (rawDeals: CrmDealRow[]) => {
     const needsLookup = rawDeals.filter((d) => !(d as any).customer_name && d.remote_jid && !(d as any).__synthetic);
     if (needsLookup.length === 0) return;
-    const phones = needsLookup.map((d) => d.remote_jid!.split("@")[0]);
-    const { data: customers } = await supabase
-      .from("customers")
-      .select("name, phone_whatsapp, conversation_step, last_step_advanced_at")
-      .in("phone_whatsapp", phones);
-    if (!customers || customers.length === 0) return;
+    const phones = Array.from(
+      new Set(needsLookup.map((d) => d.remote_jid!.split("@")[0]).filter(Boolean)),
+    );
+    // Batches de 300 — `.in()` com lista grande estoura o tamanho da URL do PostgREST.
+    const customers: any[] = [];
+    for (let i = 0; i < phones.length; i += 300) {
+      const { data, error } = await supabase
+        .from("customers")
+        .select("name, phone_whatsapp, conversation_step, last_step_advanced_at")
+        .in("phone_whatsapp", phones.slice(i, i + 300));
+      if (error) {
+        console.error("[useKanbanDeals] resolveNames", error);
+        break;
+      }
+      if (data?.length) customers.push(...data);
+    }
+    if (customers.length === 0) return;
     const phoneMap = new Map(customers.map((c: any) => [c.phone_whatsapp, c]));
+
     setDeals((prev) =>
       prev.map((d) => {
         if ((d as any).customer_name) return d;

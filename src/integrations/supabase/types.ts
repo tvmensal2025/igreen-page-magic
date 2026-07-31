@@ -89,6 +89,45 @@ export type Database = {
         }
         Relationships: []
       }
+      academy_progress: {
+        Row: {
+          created_at: string
+          done: boolean
+          id: string
+          item_key: string
+          kind: string
+          passed: boolean
+          pct: number
+          score: number | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          done?: boolean
+          id?: string
+          item_key: string
+          kind?: string
+          passed?: boolean
+          pct?: number
+          score?: number | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          done?: boolean
+          id?: string
+          item_key?: string
+          kind?: string
+          passed?: boolean
+          pct?: number
+          score?: number | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       ad_account_managers: {
         Row: {
           consultant_id: string

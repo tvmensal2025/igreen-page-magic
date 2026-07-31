@@ -52,14 +52,39 @@ Deno.serve(async (req) => {
     );
 
     if (action === "reject" && requestId) {
-      await admin.from("wallet_manual_topup_requests").update({
+      // Só rejeita pedido AINDA pendente (evita reverter algo já aprovado).
+      const { data: rejected } = await admin.from("wallet_manual_topup_requests").update({
         status: "rejected",
         approved_by: user.id,
         approved_at: new Date().toISOString(),
         rejection_reason: note || "Rejeitado pelo Super Admin",
-      }).eq("id", requestId);
+      }).eq("id", requestId).eq("status", "pending").select("id");
+      if (!rejected || rejected.length === 0) {
+        return json({ error: "Pedido já processado (não está mais pendente)." }, 409);
+      }
       return json({ ok: true, action: "rejected" });
     }
+
+    // ---- Trava de idempotência do APPROVE ----
+    // Marca o pedido como aprovado ANTES de creditar. Se outro clique/replay
+    // chegar junto, o segundo update afeta 0 linhas e abortamos sem creditar 2x.
+    if (requestId) {
+      const { data: claimed, error: claimErr } = await admin
+        .from("wallet_manual_topup_requests")
+        .update({
+          status: "approved",
+          approved_by: user.id,
+          approved_at: new Date().toISOString(),
+        })
+        .eq("id", requestId)
+        .eq("status", "pending")
+        .select("id, amount_cents");
+      if (claimErr) return json({ error: "Falha ao reservar o pedido: " + claimErr.message }, 500);
+      if (!claimed || claimed.length === 0) {
+        return json({ error: "Pedido já aprovado ou não está pendente." }, 409);
+      }
+    }
+
 
     // Lê carteira atual
     const { data: wallet } = await admin
@@ -112,13 +137,12 @@ Deno.serve(async (req) => {
     }
 
     if (requestId) {
+      // Status/approved_by já foram gravados na trava de idempotência acima.
       await admin.from("wallet_manual_topup_requests").update({
-        status: "approved",
-        approved_by: user.id,
-        approved_at: new Date().toISOString(),
         wallet_transaction_id: tx?.id ?? null,
       }).eq("id", requestId);
     }
+
 
     return json({ ok: true, balance_cents: newBalance, debt_cents: newDebt, transaction_id: tx?.id });
   } catch (err) {
