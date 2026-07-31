@@ -42,6 +42,8 @@
 // ============================================================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { resolveCaller } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -95,6 +97,21 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
+
+  // ─── AUTH: service-role ou admin logado ──────────────────────────────
+  // Sem isto, qualquer anônimo pausaria leads em massa (verify_jwt = false).
+  if (!isServiceRoleAuth(req)) {
+    const adminUrl = Deno.env.get("SUPABASE_URL");
+    const adminKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!adminUrl || !adminKey) return jsonResponse({ ok: false, error: "misconfigured" }, 500);
+    const adminClient = createClient(adminUrl, adminKey, { auth: { persistSession: false } });
+    const caller = await resolveCaller(req, adminClient as any);
+    if (caller instanceof Response) return caller;
+    if (caller.mode === "jwt" && !caller.isAdmin) {
+      return jsonResponse({ ok: false, error: "forbidden" }, 403);
+    }
+  }
+
 
   const startedAt = Date.now();
 

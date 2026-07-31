@@ -5,6 +5,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { validateForClub } from "../_shared/clubValidation.ts";
 import { dispatchClubWorker, resolveClubIdconsultor } from "../_shared/club-worker.ts";
+import { resolveCaller } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,6 +35,11 @@ Deno.serve(async (req) => {
     const dryRun = body?.dryRun !== false;
     if (!customerId) return jres({ error: "customerId obrigatório" }, 400);
 
+    // AUTH: a ficha traz PII (CPF, RG, nascimento, e-mail, endereço).
+    // Só service interno, admin ou o consultor dono do lead pode seguir.
+    const caller = await resolveCaller(req, supabase as any);
+    if (caller instanceof Response) return caller;
+
     const { data: customer, error } = await supabase
       .from("customers")
       .select(
@@ -49,6 +55,13 @@ Deno.serve(async (req) => {
 
     if (error || !customer) {
       return jres({ error: error?.message || "Cliente não encontrado" }, 404);
+    }
+
+    if (caller.mode === "jwt" && !caller.isAdmin) {
+      const owner = (customer as Record<string, unknown>).consultant_id as string | null;
+      if (owner && owner !== caller.consultantId) {
+        return jres({ error: "forbidden" }, 403);
+      }
     }
 
     if (String(customer.club_status || "") === "submitted") {

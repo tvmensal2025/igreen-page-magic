@@ -9,6 +9,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { sendRawToNumber } from "../_shared/notify-consultant.ts";
+import { resolveCaller } from "../_shared/caller-auth.ts";
 
 type Attribution =
   | { kind: "campaign"; id: string; campaignId?: string | null; partnerId?: string | null }
@@ -48,10 +49,10 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
 
-    const authHeader = req.headers.get("Authorization") || "";
-    if (!authHeader.replace(/^Bearer\s+/i, "")) {
-      return json({ ok: false, error: "unauthorized" }, 401);
-    }
+    // AUTH real: antes bastava qualquer Bearer (até a anon key). Agora exige
+    // service interno, admin ou o próprio consultor informado no payload.
+    const caller = await resolveCaller(req, supabase as any);
+    if (caller instanceof Response) return caller;
 
     const body = (await req.json().catch(() => ({}))) as Partial<Body>;
     const customerId = String(body.customerId || "").trim();
@@ -59,6 +60,10 @@ Deno.serve(async (req) => {
     const outcome = body.outcome === "lost" ? "lost" : body.outcome === "won" ? "won" : null;
     if (!customerId || !consultantId || !outcome) {
       return json({ ok: false, error: "missing_fields" }, 400);
+    }
+
+    if (caller.mode === "jwt" && !caller.isAdmin && caller.consultantId !== consultantId) {
+      return json({ ok: false, error: "forbidden" }, 403);
     }
 
     // 1) Cliente

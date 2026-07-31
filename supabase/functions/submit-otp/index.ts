@@ -1,5 +1,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveWorker } from "../_shared/portal-worker.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { assertOwnership, resolveCaller } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -40,6 +42,23 @@ Deno.serve(async (req) => {
 
     const body = await req.json().catch(() => ({}));
     const { customer_id, otp_code } = body;
+
+    // ─── AUTH ────────────────────────────────────────────────────────────
+    // Chamadores legítimos: whapi-webhook / evolution-webhook (Bearer
+    // SERVICE_ROLE_KEY) ou header x-service-secret. Painel admin/consultor
+    // dono também pode reenviar o OTP manualmente.
+    if (!isServiceRoleAuth(req)) {
+      const caller = await resolveCaller(req, supabase as any);
+      if (caller instanceof Response) return caller;
+      if (caller.mode === "jwt") {
+        const deny = await assertOwnership(
+          caller,
+          { customerId: String(customer_id || "") },
+          supabase as any,
+        );
+        if (deny) return deny;
+      }
+    }
 
     if (!customer_id || !otp_code) {
       return new Response(JSON.stringify({ error: "customer_id e otp_code são obrigatórios" }), {
@@ -152,6 +171,13 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } else {
+        // Bug pré-existente: `errorKind` não existia neste escopo e estourava
+        // ReferenceError, derrubando a marcação de OTP inválido. Agora lemos o
+        // `error_kind` do corpo do worker (quando for JSON).
+        let errorKind = "";
+        try {
+          errorKind = String(JSON.parse(data)?.error_kind || "");
+        } catch { /* corpo não-JSON: cai no regex abaixo */ }
         const isBadOtp = errorKind === "otp_invalid_or_expired"
           || /c[oó]digo inv[aá]lido ou expirado/i.test(data);
         if (isBadOtp) {

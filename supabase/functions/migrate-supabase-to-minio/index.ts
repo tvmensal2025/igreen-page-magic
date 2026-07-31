@@ -2,6 +2,8 @@
 // Idempotente, processa em lotes. Pode ser chamado repetidamente até concluir.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { uploadToMinioPath, normalizeName, buildConsultantSlug, sanitizeJid, extFromMime } from "../_shared/minio-upload.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { resolveCaller } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -204,6 +206,16 @@ async function runForBucket(opts: RunOpts) {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
+    // AUTH: migração em massa só por service-role ou admin logado.
+    if (!isServiceRoleAuth(req)) {
+      const caller = await resolveCaller(req, admin as any);
+      if (caller instanceof Response) return caller;
+      if (caller.mode === "jwt" && !caller.isAdmin) {
+        return new Response(JSON.stringify({ success: false, error: "forbidden" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
     const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
     const buckets: string[] = body.buckets || ["whatsapp-media", "consultant-photos"];
     const batchSize: number = Math.min(Math.max(Number(body.batchSize) || 25, 1), 200);
