@@ -96,17 +96,26 @@ export function useAutomationToggles() {
       return;
     }
     setBusyKey("__all__");
-    const { error } = await supabase
+    // Mesmo caso: RLS admin-only. 0 linhas = nada mudou, não pode dizer
+    // "todas desligadas — modo seguro" com os motores ainda ligados.
+    const { data: rows, error } = await supabase
       .from("automation_toggles")
       .update({ enabled: next })
-      .neq("id", "00000000-0000-0000-0000-000000000000");
+      .neq("id", "00000000-0000-0000-0000-000000000000")
+      .select("id");
     setBusyKey(null);
     if (error) {
       toast.error(error.message);
       return;
     }
+    if (!rows || rows.length === 0) {
+      toast.error("Sem permissão. Nenhuma automação foi alterada.");
+      await load();
+      return;
+    }
     toast.success(next ? "Todas ligadas" : "Todas desligadas — modo seguro");
     await load();
+
   }
 
   return {
