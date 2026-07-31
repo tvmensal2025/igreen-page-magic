@@ -183,12 +183,24 @@ export function AIAgentTab({ userId, initialSubTab }: { userId: string; initialS
               type="text"
               value={personaName}
               onChange={(e) => setPersonaName(e.target.value)}
-              onBlur={savePersonaName}
-              onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void savePersonaName(); } }}
+              placeholder="nome da IA"
               className="text-lg font-bold font-heading text-foreground bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none px-1 -mx-1 w-32"
               maxLength={20}
-              title="Clique para renomear (só você vê esse nome)"
+              disabled={savingPersona}
+              title="Digite e clique em Salvar"
             />
+            {personaName.trim() !== savedPersonaName ? (
+              <button
+                type="button"
+                onClick={() => void savePersonaName()}
+                disabled={savingPersona || personaName.trim().length < 2}
+                className="text-xs font-semibold px-2 py-1 rounded-md border border-primary/40 text-primary hover:bg-primary/10 disabled:opacity-50"
+              >
+                {savingPersona ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Salvar"}
+              </button>
+            ) : null}
+
           </div>
           <p className="text-xs text-muted-foreground">
             Atendimento humanizado 24/7. Desligar bloqueia a IA para clientes interessados atuais e futuros.
