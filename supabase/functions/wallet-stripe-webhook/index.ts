@@ -2,6 +2,7 @@
 // e credita o saldo do consultor de forma idempotente.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import Stripe from "https://esm.sh/stripe@14.21.0?target=deno";
+import { notifySuperAdminOpsAlert } from "../_shared/superadmin-alert.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -109,7 +110,7 @@ Deno.serve(async (req) => {
         // Nunca engolir um estorno: sem transação original o saldo fica inflado.
         console.error("[wallet-stripe-webhook] estorno sem transação original", { piId, event: event.type });
         try {
-          await sendSuperAdminAlert(admin, {
+          await notifySuperAdminOpsAlert(admin, {
             key: `stripe_refund_orphan:${piId ?? charge.id}`,
             severity: "critical",
             text: `⚠️ Estorno Stripe SEM transação original.\nEvento: ${event.type}\nPaymentIntent: ${piId ?? "—"}\nCharge: ${charge.id}\nValor: R$ ${(refundCents / 100).toFixed(2)}\nAjuste a carteira manualmente.`,
