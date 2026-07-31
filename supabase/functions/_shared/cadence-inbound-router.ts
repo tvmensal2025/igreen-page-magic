@@ -350,6 +350,24 @@ function nudgeReply(customer: CadenceInboundInput["customer"]): string {
 }
 
 /**
+ * Texto do lead parece dúvida/pergunta (dispara FAQ + atalhos do consultor).
+ * Conservador: interrogação, termos clássicos de objeção OU frase com ≥4
+ * palavras (nome próprio / "ok" / "blz" continuam fora).
+ */
+export function looksLikeQuestion(text: string | null | undefined): boolean {
+  const t = String(text || "").trim();
+  if (t.length < 4) return false;
+  if (/\?/.test(t)) return true;
+  if (
+    /(como\s+funciona|é\s+seguro|e\s+seguro|é\s+golpe|e\s+golpe|tem\s+taxa|cobra|aceita\s+pix|quanto\s+custa|quanto\s+fica|fidelidade|multa|cancelar|aluguel|titular|economiz|desconto|painel\s+solar|placa|minha\s+cidade|tem\s+cobertura|atende\s+(?:na\s+)?minha|preciso\s+|posso\s+|voc[eê]s\s+|qual\s+|quando\s+|onde\s+|por\s?que|pq\b)/i
+      .test(t)
+  ) return true;
+  return t.split(/\s+/).filter(Boolean).length >= 4;
+}
+
+
+
+/**
  * Resolve o destino de um inbound pós-cadência.
  * Retorna `null` quando o contexto não é retorno de cadência B/C.
  */
