@@ -519,5 +519,7 @@ Deno.test("Bug B FIX: QA hit with no configured order falls back to media-first/
 
   await runConversationalFlow(ctx);
   const seq = rec.events.map((e) => e.kind === "text" ? "TEXT" : "AUDIO");
-  assertEquals(seq, ["AUDIO", "TEXT"], `legacy fallback order wrong: ${seq.join(",")}`);
+  // Regra canônica: FAQ com áudio NÃO repete o mesmo conteúdo em texto.
+  assertEquals(seq, ["AUDIO"], `legacy fallback order wrong: ${seq.join(",")}`);
+
 });
