@@ -499,11 +499,24 @@ export function AgendamentosZeroLeadPanel({
   async function desligar() {
     setBusy(true);
     const now = new Date().toISOString();
-    await supabase.from("app_settings").update({ cadence_engine_enabled: false }).eq("id", "global");
-    await supabase.from("automation_toggles").update({ enabled: false, updated_at: now }).eq("key", "cadence_engine");
+    // Simétrico ao ligar(): se a gravação falhar (RLS/permissão), NÃO pode
+    // dizer "DESLIGADO" — o motor continuaria enviando sem o usuário saber.
+    const { data: sRow, error: e1 } = await supabase.from("app_settings")
+      .update({ cadence_engine_enabled: false }).eq("id", "global").select("id").maybeSingle();
+    if (e1 || !sRow) {
+      toast.error(e1?.message || "Sem permissão — envio NÃO foi desligado");
+      setBusy(false); await load(); return;
+    }
+    const { data: tRow, error: e2 } = await supabase.from("automation_toggles")
+      .update({ enabled: false, updated_at: now }).eq("key", "cadence_engine").select("key").maybeSingle();
+    if (e2 || !tRow) {
+      toast.error(e2?.message || "Sem permissão — envio NÃO foi desligado");
+      setBusy(false); await load(); return;
+    }
     toast.success("Envio DESLIGADO");
     setBusy(false); await load();
   }
+
 
   function tryLigar() {
     if (naoLeadsAtivos.length > 0) {
