@@ -27,6 +27,13 @@ import {
 import { buildPartnerPublicShortLink } from "@/lib/partnerShortLink";
 import { useToast } from "@/hooks/use-toast";
 
+export type PortalDownloadTarget = {
+  kind: "geral" | "local";
+  name: string;
+  code?: string;
+  keyword?: string;
+};
+
 type Props = {
   open: boolean;
   onClose: () => void;
@@ -36,12 +43,7 @@ type Props = {
   consultantName: string;
   consultantIgreenId: string;
   consultantPhone: string;
-  target: {
-    kind: "geral" | "local";
-    name: string;
-    code?: string;
-    keyword?: string;
-  } | null;
+  target: PortalDownloadTarget | null;
 };
 
 /**
