@@ -51,6 +51,7 @@ const Auth = () => {
   // aparece quando o usuário volta pelo link do e-mail (evento PASSWORD_RECOVERY).
   const [forgotMode, setForgotMode] = useState(false);
   const [recoveryMode, setRecoveryMode] = useState(false);
+  const [forgotSentTo, setForgotSentTo] = useState<string | null>(null);
   const [resettingApp, setResettingApp] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const recoveryRef = useRef(false);
@@ -96,6 +97,20 @@ const Auth = () => {
         checkAdminAndNavigate(session.user.id);
       }
     });
+    // Se o link do e-mail cair em /auth (fallback do Site URL do Supabase),
+    // levamos o usuário para a tela dedicada preservando code/hash.
+    const search = window.location.search;
+    const rawHash = window.location.hash;
+    if (
+      new URLSearchParams(search).get("code") ||
+      rawHash.includes("type=recovery") ||
+      rawHash.includes("access_token") ||
+      new URLSearchParams(search).get("error_code")
+    ) {
+      recoveryRef.current = true;
+      window.location.replace(`/reset-password${search}${rawHash}`);
+      return () => subscription.unsubscribe();
+    }
     supabase.auth.getSession().then(({ data: { session } }) => {
       const isRecoveryUrl = window.location.hash.includes("type=recovery");
       if (isRecoveryUrl) {
@@ -117,16 +132,12 @@ const Auth = () => {
       if (!email.trim()) throw new Error("Informe seu e-mail.");
       const { error } = await withAuthTimeout(
         supabase.auth.resetPasswordForEmail(email.trim(), {
-          redirectTo: `${window.location.origin}/auth`,
+          redirectTo: `${window.location.origin}/reset-password`,
         }),
         "O envio do link demorou demais. Tente novamente."
       );
       if (error) throw error;
-      toast({
-        title: "Link enviado!",
-        description: "Se este e-mail estiver cadastrado, você receberá um link para redefinir a senha. Verifique sua caixa de entrada e o spam.",
-      });
-      setForgotMode(false);
+      setForgotSentTo(email.trim());
     } catch (error: unknown) {
       toast({
         title: "Não foi possível enviar",
