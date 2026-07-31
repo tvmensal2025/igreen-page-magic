@@ -165,26 +165,36 @@ const C_STAGES = [
 ];
 
 /** Pessoas distintas tocadas hoje (BRT) por grupo B e C. Grupo A não é contado. */
-async function countOutreachTouchesToday(supabase: any): Promise<{ b: number; c: number }> {
+async function countOutreachTouchesToday(
+  supabase: any,
+): Promise<{ b: number; c: number; ok: boolean }> {
   const fmt = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
     year: "numeric", month: "2-digit", day: "2-digit",
   });
   const day = fmt.format(new Date());
   const startIso = new Date(`${day}T00:00:00-03:00`).toISOString();
-  const { data } = await supabase
+  // Limite alto explícito: o default do PostgREST (1000) truncaria a contagem
+  // em dias cheios e o cap anti-ban passaria a contar menos do que foi enviado.
+  const { data, error } = await supabase
     .from("cadence_action_log")
     .select("customer_id, stage")
     .eq("status", "sent")
     .gte("created_at", startIso)
-    .in("stage", [...B_STAGES, ...C_STAGES]);
+    .in("stage", [...B_STAGES, ...C_STAGES])
+    .limit(20000);
+  if (error) {
+    // Fail-closed: sem contagem confiável NÃO liberamos outreach (risco de ban).
+    console.warn("[cadence-tick] count_outreach_failed (fail-closed):", error.message);
+    return { b: 0, c: 0, ok: false };
+  }
   const b = new Set<string>();
   const c = new Set<string>();
   for (const r of (data || []) as { customer_id: string; stage: string }[]) {
     if (stageGroup(r.stage) === "C") c.add(r.customer_id);
     else b.add(r.customer_id);
   }
-  return { b: b.size, c: c.size };
+  return { b: b.size, c: c.size, ok: true };
 }
 
 /** Lead engajou desde o último toque da cadência? (anti-spam: skip SMS/call). */
@@ -1078,6 +1088,7 @@ Deno.serve(async (req) => {
   const loadAvail = createAvailabilityLoader(supabase);
   const caps = await loadOutreachCaps(supabase);
   const touchedToday = await countOutreachTouchesToday(supabase);
+  const capCountReliable = touchedToday.ok;
   let touchedB = touchedToday.b;
   let touchedC = touchedToday.c;
   const alertedThresholds = new Set<string>(); // ex: "B:60", "C:100", "G:85"
@@ -1419,6 +1430,13 @@ Deno.serve(async (req) => {
     {
       const grp = stageGroup(stage);
       if (grp !== "A") {
+        if (!capCountReliable) {
+          // Contagem do dia falhou: adiar 30min (não jogar para amanhã por erro transitório).
+          await finishRow(row.id, claimToken, {
+            next_action_at: new Date(now.getTime() + 30 * 60_000).toISOString(),
+          });
+          deferred++; continue;
+        }
         const usedGlobal = touchedB + touchedC;
         const overGlobal = usedGlobal >= caps.capGlobal;
         const overGroup = grp === "B" ? touchedB >= caps.capB : touchedC >= caps.capC;
