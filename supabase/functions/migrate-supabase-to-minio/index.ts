@@ -183,11 +183,18 @@ async function migrateOne(bucket: string, path: string): Promise<{ ok: boolean; 
       const owner = await findOwnerForWhatsappPath(path);
       consultantId = owner.consultant_id;
       jid = owner.jid;
-      kind = owner.kind || guessKindFromMime(contentType);
       const slug = owner.consultant_slug || normalizeName(owner.consultant_id || "sem_consultor");
-      const jidFolder = sanitizeJid(jid || "sem_cliente");
       const ts = Date.now();
-      objectKey = `whatsapp/${slug}/${jidFolder}/${kind}/legacy_${ts}.${ext}`;
+      if (owner.customer_slug) {
+        // Documento da ficha de captação → mesma pasta do bot/upload-media.
+        kind = owner.kind || "documento";
+        objectKey = `documentos/${slug}/${owner.customer_slug}/${normalizeName(kind)}_${ts}.${ext}`;
+      } else {
+        kind = owner.kind || guessKindFromMime(contentType);
+        const jidFolder = sanitizeJid(jid || "sem_cliente");
+        objectKey = `whatsapp/${slug}/${jidFolder}/${kind}/legacy_${ts}.${ext}`;
+      }
+
     } else {
       throw new Error(`Bucket não suportado: ${bucket}`);
     }
