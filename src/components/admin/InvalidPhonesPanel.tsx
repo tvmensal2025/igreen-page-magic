@@ -135,11 +135,16 @@ export function InvalidPhonesPanel() {
       return;
     }
     try {
-      const { error } = await supabase
+      // UPDATE negado por RLS não gera erro (0 linhas). Sem checar a linha,
+      // a tela dizia "Não Perturbe" e o número seguia recebendo.
+      const { data, error } = await supabase
         .from("customers")
         .update({ do_not_contact: true })
-        .eq("id", row.customer.id);
+        .eq("id", row.customer.id)
+        .select("id")
+        .maybeSingle();
       if (error) throw error;
+      if (!data) throw new Error("Sem permissão: este lead é de outro consultor. Nada foi alterado.");
       toast({ title: "Lead marcado como Não Perturbe" });
       void load();
     } catch (e) {
