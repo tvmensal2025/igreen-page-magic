@@ -861,7 +861,7 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
                     </div>
                     {selected.id === "ext_motor_cadencia" && (
                       <Button asChild variant="outline" className="rounded-xl w-fit">
-                        <Link to="/admin/motor-cadencia">
+                        <Link to="/admin/motor">
                           <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
                           Abrir Motor de Cadência
                         </Link>

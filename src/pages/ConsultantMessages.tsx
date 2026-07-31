@@ -127,7 +127,7 @@ export default function ConsultantMessages() {
     <div className="min-h-screen bg-background p-4 md:p-8">
       <div className="max-w-5xl mx-auto space-y-6">
         <div className="flex flex-wrap items-center gap-3">
-          <Button variant="ghost" size="icon" asChild className="shrink-0"><Link to="/consultor"><ArrowLeft className="h-4 w-4" /></Link></Button>
+          <Button variant="ghost" size="icon" asChild className="shrink-0"><Link to="/admin"><ArrowLeft className="h-4 w-4" /></Link></Button>
           <div className="min-w-0 flex-1">
             <h1 className="text-xl sm:text-2xl font-bold">Minhas mensagens</h1>
             <p className="text-sm text-muted-foreground">

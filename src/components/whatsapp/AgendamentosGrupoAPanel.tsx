@@ -65,7 +65,7 @@ export function AgendamentosGrupoAPanel() {
           </Link>
         </Button>
         <Button asChild variant="ghost" className="rounded-xl text-xs gap-2">
-          <Link to="/admin/fluxo-builder">
+          <Link to="/admin/fluxos">
             Fluxo do bot <ExternalLink className="w-3 h-3" />
           </Link>
         </Button>

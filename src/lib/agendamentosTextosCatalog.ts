@@ -364,7 +364,7 @@ export const TEXTOS_CATALOGO: TextoCatalogItem[] = [
     nome: "Painel completo do Motor de Cadência",
     oQueFaz: "Delays, mídia e TTS por estágio (além dos textos abaixo).",
     fonte: "externo",
-    externoHint: "/admin/motor-cadencia",
+    externoHint: "/admin/motor",
     toggle: "cadence_engine",
     prioridade: "media",
   },
