@@ -195,7 +195,7 @@ export function useConsultantAutomationPrefs(consultantId: string | null | undef
       setCerebroEnabled(nextCerebro);
       return true;
     },
-    [consultantId, draft, cerebroEnabled],
+    [consultantId, draft, cerebroEnabled, reload],
   );
 
   /** Liga/desliga só o toggle de validar sozinho (sem mexer no resto do draft). */
