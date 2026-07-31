@@ -58,23 +58,53 @@ async function listAll(bucket: string, prefix = "", limit = 1000): Promise<any[]
 }
 
 async function findOwnerForWhatsappPath(path: string): Promise<{ consultant_id?: string; consultant_slug?: string; jid?: string; kind?: string }> {
-  // Find a message that references this storage path/url
-  const like = `%${path}%`;
+  // A tabela de chat é `conversations` (não existe `messages`). Ela não guarda
+  // media_url, então o dono só é resolvido quando o path já é `documentos/...`
+  // ou `captacao/{customer_id}/...` — o resto vira legado sem dono.
+  const m = path.match(/^captacao\/([0-9a-f-]{36})\//i);
+  if (!m) return {};
   const { data } = await admin
-    .from("messages")
-    .select("consultant_id,from_jid,to_jid,direction,media_type,consultants:consultant_id(igreen_id,name)")
-    .or(`media_url.ilike.${like},message_text.ilike.${like}`)
-    .limit(1)
+    .from("customers")
+    .select("id,consultant_id,phone_whatsapp,consultants:consultant_id(igreen_id,name)")
+    .eq("id", m[1])
     .maybeSingle();
   if (!data) return {};
-  const jid = (data as any).direction === "in" ? (data as any).from_jid : (data as any).to_jid;
   const c = (data as any).consultants;
   return {
-    consultant_id: (data as any).consultant_id,
+    consultant_id: (data as any).consultant_id || undefined,
     consultant_slug: c ? buildConsultantSlug(c.igreen_id || (data as any).consultant_id, c.name) : undefined,
-    jid,
-    kind: (data as any).media_type || undefined,
+    jid: (data as any).phone_whatsapp || undefined,
   };
+}
+
+/** Colunas de documento do cliente que podem apontar para o Storage antigo. */
+const CUSTOMER_DOC_COLUMNS = [
+  "document_front_url",
+  "document_back_url",
+  "electricity_bill_photo_url",
+  "electricity_boleto_photo_url",
+] as const;
+
+async function rewriteCustomerDocRefs(oldUrl: string, path: string, newUrl: string): Promise<number> {
+  let changed = 0;
+  for (const col of CUSTOMER_DOC_COLUMNS) {
+    const { data } = await admin
+      .from("customers")
+      .select("id")
+      .ilike(col, `%${path}%`)
+      .limit(500);
+    for (const row of (data || []) as any[]) {
+      const { error } = await admin.from("customers").update({ [col]: newUrl }).eq("id", row.id);
+      if (!error) changed++;
+    }
+  }
+  if (!changed && oldUrl) {
+    for (const col of CUSTOMER_DOC_COLUMNS) {
+      const { data } = await admin.from("customers").update({ [col]: newUrl }).eq(col, oldUrl).select("id");
+      changed += (data || []).length;
+    }
+  }
+  return changed;
 }
 
 async function migrateOne(bucket: string, path: string): Promise<{ ok: boolean; error?: string; target?: string }> {
@@ -116,6 +146,9 @@ async function migrateOne(bucket: string, path: string): Promise<{ ok: boolean; 
       const { data: cons } = await admin.from("consultants").select("igreen_id,name").eq("id", cid).maybeSingle();
       const slug = cons ? buildConsultantSlug((cons as any).igreen_id || cid, (cons as any).name) : normalizeName(cid);
       objectKey = `consultores/${slug}/avatar_legacy_${Date.now()}.${ext}`;
+    } else if (bucket === "whatsapp-media" && path.startsWith("documentos/")) {
+      // Já está no layout canônico do MinIO — copia com a mesma pasta.
+      objectKey = path;
     } else if (bucket === "whatsapp-media") {
       const owner = await findOwnerForWhatsappPath(path);
       consultantId = owner.consultant_id;
@@ -136,21 +169,7 @@ async function migrateOne(bucket: string, path: string): Promise<{ ok: boolean; 
     const oldUrl = pubData.publicUrl;
 
     if (bucket === "whatsapp-media") {
-      // Update messages.media_url and message_text (text may contain old URL for inbound)
-      await admin.from("messages").update({ media_url: up.url }).eq("media_url", oldUrl);
-      // Try replacing in message_text
-      const { data: msgs } = await admin
-        .from("messages")
-        .select("id,message_text")
-        .ilike("message_text", `%${path}%`)
-        .limit(500);
-      for (const m of (msgs || []) as any[]) {
-        const newText = (m.message_text || "").replaceAll(oldUrl, up.url);
-        if (newText !== m.message_text) {
-          await admin.from("messages").update({ message_text: newText }).eq("id", m.id);
-        }
-      }
-      // Templates with media_url
+      await rewriteCustomerDocRefs(oldUrl, path, up.url);
       await admin.from("message_templates").update({ media_url: up.url }).eq("media_url", oldUrl);
       await admin.from("message_templates").update({ image_url: up.url }).eq("image_url", oldUrl);
     } else if (bucket === "consultant-photos") {
