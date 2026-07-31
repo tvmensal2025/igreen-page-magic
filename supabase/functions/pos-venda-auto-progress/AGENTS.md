@@ -6,6 +6,7 @@ Domínio: `#pos-venda` · mapa id `pos-venda`.
 - Marcos **D30…D210** + retentativa 60d
 - Canal: Whapi primeiro (`resolveChannelForCustomerWithFailover`)
 - **NÃO** consulta `bot_global_enabled` — só `pos_venda_auto_messages` + `pos_venda_manual=true`
+- Antes do envio: `isPausedByPhone` + **`assertCanContact`** (DNC/opt-out canônico)
 - Idempotência: `customer_auto_message_log` (`sent` / `dismissed` / `skipped_prior` = não retenta; `failed` / `partial:*` / `no_channel:*` = retenta)
 - Pacote Zap: **imagem + áudio** (`forbidText`); áudio preferencialmente de `pos_venda_prepared_audio` (prep cron)
 

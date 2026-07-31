@@ -21,7 +21,12 @@ Revogados de `anon`/`PUBLIC` (mantém `authenticated`/`service_role`):
 `sync_objection_shortcut_all`, `ensure_qa_media_slots`, `lead_research_sweep_bump`,
 `admin_clear_ban`, `admin_mark_instance_banned`, `publish_flow_as_public`, `sync_bot_flow_c_from_a`.  
 **Ainda com anon (proposital):** `refresh_objection_shortcut`, `generate_partner_protocol(_v2)`,
-`has_role`, `count_captured_leads_by_channel`, `filter_dispatched_phones` — front autenticado.
+`has_role` — front autenticado / fluxo público parceiro.
+
+**Fechado 2026-07-31:** `count_captured_leads_by_channel`, `filter_dispatched_phones`
+— `REVOKE` de `anon` + ownership (`auth.uid() = p_consultant_id` OU `is_super_admin`;
+`service_role` com `auth.uid()` null segue ok). Migration:
+`20260731011000_revoke_anon_captacao_rpcs_ownership.sql`.
 
 > DEFINER bypassa RLS das tabelas base. Se `anon` pode chamar via `/rest/v1/rpc/...` sem JWT, o risco é real mesmo com “ninguém usa no front”.
 
@@ -50,8 +55,8 @@ Crons de edge devem continuar via `assertCronAuth` + service role — **não** v
 | `ensure_qa_media_slots(...)` | **P1** | Escreve slots de mídia QA |
 | `lead_research_sweep_bump(...)` | **P1** | Incrementa contadores de sweep |
 | `generate_partner_protocol` / `_v2` | **P1** | Consome sequência de protocolo |
-| `count_captured_leads_by_channel(p_consultant_id)` | **P1** | Lê agregados por UUID (IDOR se UUID vazado) |
-| `filter_dispatched_phones(...)` | **P1** | Filtra phones de bulk por consultor (IDOR) |
+| `count_captured_leads_by_channel(p_consultant_id)` | **P1 → fechado** | Anon revogado + ownership no corpo (2026-07-31) |
+| `filter_dispatched_phones(...)` | **P1 → fechado** | Anon revogado + ownership no corpo (2026-07-31) |
 | `has_role(_user_id, _role)` | **P1** | Oráculo de papel para qualquer UUID |
 
 ## P2 — médio (tem `is_super_admin(auth.uid())`, mas grant anon é errado)

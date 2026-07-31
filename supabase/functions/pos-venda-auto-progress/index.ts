@@ -33,6 +33,7 @@ import {
   getConsultantAutomationPrefs,
   isConsultantAutoAllowed,
 } from "../_shared/consultant-automation-prefs.ts";
+import { assertCanContact } from "../_shared/contact-suppression.ts";
 import {
   PV_RETENTATIVA_BUTTON_ID,
   PV_RETENTATIVA_BUTTON_TITLE,
@@ -422,6 +423,46 @@ async function processCustomer(
       }).eq("id", staleClaimId);
     }
     return { moved: true, sent: false };
+  }
+
+  // Gate canônico DNC/opt-out (fail-closed). Complementa isPausedByPhone
+  // com match de telefone mais robusto + customerId.
+  {
+    const suppression = await assertCanContact(supabase, {
+      customerId: customer.id,
+      phone,
+      consultantId: ownerId,
+      channel: "whatsapp",
+    });
+    if (!suppression.allowed) {
+      console.warn(
+        `[pos-venda] skip DNC customer=${customer.id} reason=${suppression.reason}`,
+      );
+      await logSkipped(supabase, "pos_venda_auto_messages", {
+        reason: `dnc:${suppression.reason || "blocked"}`,
+        pack: "pos_venda",
+        consultant_id: ownerId,
+        customer_id: customer.id,
+        stage: targetStage,
+      });
+      if (staleClaimId) {
+        await supabase.from("customer_auto_message_log").update({
+          status: "dismissed",
+          message_preview: `[blocked:dnc:${suppression.reason || "blocked"}]`,
+        }).eq("id", staleClaimId);
+      } else {
+        await supabase.from("customer_auto_message_log").upsert({
+          customer_id: customer.id,
+          consultant_id: ownerId,
+          stage_key: stageKey,
+          remote_jid: `${phone}@s.whatsapp.net`,
+          customer_name: customer.name,
+          message_preview: `[blocked:dnc:${suppression.reason || "blocked"}]`,
+          status: "dismissed",
+        }, { onConflict: "customer_id,stage_key", ignoreDuplicates: true });
+      }
+      return { moved: true, sent: false };
+    }
   }
 
   const channel = await resolveChannelForCustomerWithFailover(supabase, customer.id, env);
