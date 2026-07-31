@@ -137,12 +137,14 @@ export function AgendamentosMotorPanel() {
       setConfirmGrupoB(false);
       return;
     }
-    const { error: e1 } = await supabase
+    const { data: sRow, error: e1 } = await supabase
       .from("app_settings")
       .update({ cadence_engine_enabled: true })
-      .eq("id", "global");
-    if (e1) {
-      toast.error(e1.message);
+      .eq("id", "global")
+      .select("id")
+      .maybeSingle();
+    if (e1 || !sRow) {
+      toast.error(e1?.message || "Sem permissão para ligar o motor (precisa super_admin).");
       setBusy(false);
       setConfirmGrupoB(false);
       return;
