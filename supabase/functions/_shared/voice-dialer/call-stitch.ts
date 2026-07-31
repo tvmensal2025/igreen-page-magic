@@ -278,12 +278,20 @@ export async function resolvePersonalizedCallAudio(
 
   const { data: clipRaw } = await admin
     .from("voice_audio_clips")
-    .select("id, audio_url, name, velip_audio_id, voice_id, model_id, consultant_id")
+    .select("id, audio_url, name, velip_audio_id, voice_id, model_id, consultant_id, is_call_body")
     .eq("id", opts.bodyClipId)
     .maybeSingle();
-  const clip = clipRaw as VoiceClipRow | null;
+  const clip = clipRaw as (VoiceClipRow & { is_call_body?: boolean | null }) | null;
 
   if (!clip?.audio_url) return { ok: false, error: "body_clip_not_found" };
+  // Identidade de outro consultor nunca pode ser discada.
+  if (
+    clip.is_call_body && clip.consultant_id && opts.consultantId &&
+    String(clip.consultant_id) !== String(opts.consultantId)
+  ) {
+    return { ok: false, error: "clip_identity_other_owner" };
+  }
+
 
   const voiceId = String(clip.voice_id || DEFAULT_VOICE).trim() || DEFAULT_VOICE;
   const baseModel = String(clip.model_id || DEFAULT_MODEL).split(":")[0] || DEFAULT_MODEL;
