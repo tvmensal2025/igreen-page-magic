@@ -55,6 +55,19 @@ async function fetchWithRetry(
       clearTimeout(timer);
       // 401/403 = auth error, não retry
       if (res.status === 401 || res.status === 403) return res;
+      // 429 = rate limit da Meta: respeita Retry-After (ou backoff exponencial maior)
+      if (res.status === 429) {
+        if (attempt < maxAttempts - 1) {
+          const retryAfter = Number(res.headers.get("retry-after") || 0);
+          const waitMs = retryAfter > 0
+            ? Math.min(retryAfter * 1000, 30_000)
+            : Math.pow(2, attempt + 2) * 1000; // 4s, 8s...
+          console.warn(`[meta-ads-import] 429 rate limit, aguardando ${waitMs}ms`);
+          await new Promise((r) => setTimeout(r, waitMs));
+          continue;
+        }
+        return res;
+      }
       // 5xx = retry com backoff
       if (res.status >= 500) {
         if (attempt < maxAttempts - 1) {
@@ -62,6 +75,7 @@ async function fetchWithRetry(
           continue;
         }
       }
+
       return res;
     } catch (e) {
       lastError = e;
