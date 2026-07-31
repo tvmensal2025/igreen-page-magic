@@ -3937,6 +3937,7 @@ export type Database = {
           solar_public_widget_enabled: boolean
           timezone: string | null
           use_engine_v3: boolean
+          voice_sms_templates: Json | null
         }
         Insert: {
           ab_test_counter?: number
@@ -3989,6 +3990,7 @@ export type Database = {
           solar_public_widget_enabled?: boolean
           timezone?: string | null
           use_engine_v3?: boolean
+          voice_sms_templates?: Json | null
         }
         Update: {
           ab_test_counter?: number
@@ -4041,6 +4043,7 @@ export type Database = {
           solar_public_widget_enabled?: boolean
           timezone?: string | null
           use_engine_v3?: boolean
+          voice_sms_templates?: Json | null
         }
         Relationships: [
           {
@@ -14956,6 +14959,10 @@ export type Database = {
       remote_support_topic_session: {
         Args: { _topic: string }
         Returns: string
+      }
+      reorder_sale_stage_templates: {
+        Args: { p_items: Json }
+        Returns: undefined
       }
       repair_bot_flow: { Args: { _flow_id: string }; Returns: Json }
       reserve_media_send: {
