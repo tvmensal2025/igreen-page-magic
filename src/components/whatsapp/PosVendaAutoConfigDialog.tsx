@@ -57,14 +57,37 @@ export default function PosVendaAutoConfigDialog({ consultantId }: { consultantI
   useEffect(() => { if (open) load(); }, [open, consultantId]);
 
   async function toggleEnabled(stage: PvStage, value: boolean) {
+    const prevValue = stage.auto_message_enabled;
     setStages((prev) => prev.map((s) => s.id === stage.id ? { ...s, auto_message_enabled: value } : s));
-    await supabase.from("kanban_stages").update({ auto_message_enabled: value }).eq("id", stage.id);
+    const { data, error } = await supabase
+      .from("kanban_stages")
+      .update({ auto_message_enabled: value })
+      .eq("id", stage.id)
+      .select("id")
+      .maybeSingle();
+    if (error || !data) {
+      setStages((prev) => prev.map((s) => s.id === stage.id ? { ...s, auto_message_enabled: prevValue } : s));
+      toast.error(error?.message || "NÃO foi salvo: sem permissão para alterar esta etapa.");
+      return;
+    }
+    toast.success(value ? "Mensagem automática LIGADA" : "Mensagem automática DESLIGADA");
   }
 
   async function patchStage(stage: PvStage, patch: Partial<PvStage>) {
-    setStages((prev) => prev.map((s) => s.id === stage.id ? { ...s, ...patch } : s));
-    await supabase.from("kanban_stages").update(patch as any).eq("id", stage.id);
+    const prev = { ...stage };
+    setStages((list) => list.map((s) => s.id === stage.id ? { ...s, ...patch } : s));
+    const { data, error } = await supabase
+      .from("kanban_stages")
+      .update(patch as any)
+      .eq("id", stage.id)
+      .select("id")
+      .maybeSingle();
+    if (error || !data) {
+      setStages((list) => list.map((s) => s.id === stage.id ? prev : s));
+      toast.error(error?.message || "NÃO foi salvo: sem permissão para alterar esta etapa.");
+    }
   }
+
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
