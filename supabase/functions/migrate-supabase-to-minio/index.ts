@@ -210,7 +210,9 @@ async function migrateOne(bucket: string, path: string): Promise<{ ok: boolean; 
       await admin.from("message_templates").update({ media_url: up.url }).eq("media_url", oldUrl);
       await admin.from("message_templates").update({ image_url: up.url }).eq("image_url", oldUrl);
     } else if (bucket === "consultant-photos") {
+      // A URL salva pode ter cache-buster (?t=123), então casa por trecho do path.
       await admin.from("consultants").update({ photo_url: up.url }).eq("photo_url", oldUrl);
+      await admin.from("consultants").update({ photo_url: up.url }).ilike("photo_url", `%${path}%`);
       if (consultantId) await admin.from("consultants").update({ photo_url: up.url }).eq("id", consultantId).is("photo_url", null);
     }
 
