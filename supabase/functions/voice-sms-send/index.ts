@@ -148,13 +148,18 @@ Deno.serve(async (req) => {
     return json(400, { error: "too_many_phones", message: "Máximo 200 SMS por lote." });
   }
 
-  const { data: dncRows } = await admin
+  const { data: dncRows, error: dncListErr } = await admin
     .from("voice_dnc_list")
     .select("phone")
     .eq("consultant_id", consultantId);
+  if (dncListErr) {
+    console.error("[voice-sms-send] falha ao ler voice_dnc_list", dncListErr);
+    return json(503, { error: "dnc_check_failed", message: "Não foi possível validar a lista de bloqueio. Tente novamente." });
+  }
   const blocked = new Set(
     (dncRows ?? []).map((r: { phone: string }) => String(r.phone || "").replace(/\D/g, "")).filter(Boolean),
   );
+
 
   // DNC de clientes: consulta apenas os telefones DESTE lote (≤200),
   // em vez de baixar 5000 linhas e correr o risco de truncar a lista.
