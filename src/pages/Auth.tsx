@@ -58,6 +58,7 @@ const Auth = () => {
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const recoveryRef = useRef(false);
   const navigate = useNavigate();
+  const location = useLocation();
   const { toast } = useToast();
 
   // Escuta o evento global disparado pelo version gate em src/main.tsx.
