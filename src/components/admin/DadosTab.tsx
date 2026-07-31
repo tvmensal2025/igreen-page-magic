@@ -307,7 +307,13 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
                 licenciada_cadastro_url: id ? `https://expansao.igreenenergy.com.br/?id=${id}&checkout=true` : "",
                 club_cadastro_url: buildClubCadastroUrl(id),
               });
-              if (id) void persistPortalKind("autoconexao", url);
+              // NÃO grava aqui: antes, cada tecla digitada disparava um update no
+              // banco (e um toast), salvando IDs pela metade. Agora só ao sair do
+              // campo, com o valor completo — e o "Salvar" persiste do mesmo jeito.
+            }} onBlur={(e) => {
+              const id = e.target.value.trim();
+              if (!id) return;
+              void persistPortalKind("autoconexao", `https://green.igreenenergy.com.br/autoconexao/?id=${id}`);
             }} placeholder="ex: 126928" className="bg-secondary border-border" />
           </div>
         </div>
