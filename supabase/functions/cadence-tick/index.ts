@@ -275,10 +275,26 @@ async function loadStageConfig(
     return null;
   }
 
-  // Política global: Multicanal oficial — só config global (consultant_id IS NULL).
-  // Overrides por consultor no banco ficam órfãos (não apagados).
-  return await pick(null);
+  // Política global: Multicanal oficial — textos/janelas/delays vêm SEMPRE da
+  // config global (consultant_id IS NULL).
+  // EXCEÇÃO de identidade: o áudio da ligação não pode ser o do super admin
+  // ("Eu sou a Sofia, assistente virtual do Rafael") tocando para o lead de
+  // outro consultor. Se o consultor tem clip de identidade próprio
+  // (consultant-identity-bootstrap), ele sobrescreve só o áudio.
+  const globalCfg = await pick(null);
+  if (!globalCfg || !consultantId) return globalCfg;
+
+  const ownCfg = await pick(consultantId);
+  if (ownCfg?.voice_audio_clip_id) {
+    return {
+      ...globalCfg,
+      voice_audio_clip_id: ownCfg.voice_audio_clip_id,
+      velip_audio_id: ownCfg.velip_audio_id ?? null,
+    };
+  }
+  return globalCfg;
 }
+
 
 /** Verifica se `now` (São Paulo) cai na janela específica do estágio. */
 function isInStageWindow(now: Date, cfg: StageConfig): boolean {
