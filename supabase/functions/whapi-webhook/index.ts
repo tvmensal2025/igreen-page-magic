@@ -31,6 +31,7 @@ import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead, not
 import { mirrorCustomerToCaptation } from "../_shared/captation/mirror-customer.ts";
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isCustomerPausedByHuman, isConsultantAIDisabled, wrapSenderWithLivePauseGuard } from "../_shared/bot/paused.ts";
+import { evaluateLowBillReentry } from "../_shared/bot/low-bill-reentry.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
 import { extractShortCodeMarker } from "../_shared/qr-phrase.ts";
@@ -2143,7 +2144,38 @@ Deno.serve(async (req) => {
       // (portal ou WhatsApp app) NUNCA despausa sozinho — consultor precisa religar.
       const _isAutoStuckPause = _autoReason.startsWith("lead_travado_recovery")
         && !(customer as any).assigned_human_id;
-      if (_isAutoStuckPause) {
+      // Lead pausado por conta baixa que volta com valor novo (≥ mínimo) ou
+      // intenção clara de cadastro → religa e segue para o Grupo A.
+      const _lowBill = evaluateLowBillReentry(customer as any, messageText);
+      if (_lowBill.reactivate) {
+        const _upd: Record<string, unknown> = {
+          bot_paused: false,
+          bot_paused_reason: null,
+          bot_paused_until: null,
+          bot_paused_at: null,
+          status: "pending",
+          conversation_step: "qualificacao",
+          flow_variant: "A",
+          updated_at: new Date().toISOString(),
+        };
+        if (_lowBill.billValue != null) _upd.electricity_bill_value = _lowBill.billValue;
+        const { error: lbErr } = await supabase.from("customers").update(_upd).eq("id", customer.id);
+        if (lbErr) {
+          console.error("⚠️ falha ao religar low_bill_value:", lbErr);
+        } else {
+          console.log(`▶️ Lead low_bill_value reativado ${phone} (${_lowBill.reason}, valor=${_lowBill.billValue ?? "—"})`);
+          (customer as any).bot_paused = false;
+          (customer as any).bot_paused_reason = null;
+          (customer as any).bot_paused_until = null;
+          (customer as any).status = "pending";
+          (customer as any).conversation_step = "qualificacao";
+          (customer as any).flow_variant = "A";
+          if (_lowBill.billValue != null) (customer as any).electricity_bill_value = _lowBill.billValue;
+        }
+      }
+      if (_lowBill.reactivate) {
+        // já religado acima — segue o fluxo normal (Grupo A).
+      } else if (_isAutoStuckPause) {
         const { error: unpErr } = await supabase
           .from("customers")
           .update({

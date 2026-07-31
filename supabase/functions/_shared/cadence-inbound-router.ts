@@ -350,6 +350,24 @@ function nudgeReply(customer: CadenceInboundInput["customer"]): string {
 }
 
 /**
+ * Texto do lead parece dúvida/pergunta (dispara FAQ + atalhos do consultor).
+ * Conservador: interrogação, termos clássicos de objeção OU frase com ≥4
+ * palavras (nome próprio / "ok" / "blz" continuam fora).
+ */
+export function looksLikeQuestion(text: string | null | undefined): boolean {
+  const t = String(text || "").trim();
+  if (t.length < 4) return false;
+  if (/\?/.test(t)) return true;
+  if (
+    /(como\s+funciona|é\s+seguro|e\s+seguro|é\s+golpe|e\s+golpe|tem\s+taxa|cobra|aceita\s+pix|quanto\s+custa|quanto\s+fica|fidelidade|multa|cancelar|aluguel|titular|economiz|desconto|painel\s+solar|placa|minha\s+cidade|tem\s+cobertura|atende\s+(?:na\s+)?minha|preciso\s+|posso\s+|voc[eê]s\s+|qual\s+|quando\s+|onde\s+|por\s?que|pq\b)/i
+      .test(t)
+  ) return true;
+  return t.split(/\s+/).filter(Boolean).length >= 4;
+}
+
+
+
+/**
  * Resolve o destino de um inbound pós-cadência.
  * Retorna `null` quando o contexto não é retorno de cadência B/C.
  */
@@ -470,11 +488,10 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     return pushToCadastro(input.customer, "cadence_intent_cadastro", knownBill);
   }
 
-  // Já tem valor → qualquer ambiguidade ainda avança (sem loop)
-  if (knownBill != null && knownBill >= 100) {
-    return pushToCadastro(input.customer, "cadence_known_bill_forward", knownBill);
-  }
 
+  // Pergunta / dúvida vem ANTES de empurrar pro cadastro: lead com valor já
+  // conhecido que pergunta "é golpe?" precisa de resposta (FAQ/atalho), não de
+  // um pulo mudo pro a2. O CTA no fim mantém o foco em cadastrar.
   if (text && isCoverageCityIntent(text)) {
     return {
       handled: true,
@@ -486,17 +503,27 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     };
   }
 
-  if (text && /\?|como\s+funciona|é\s+seguro|é\s+golpe|tem\s+taxa|aceita\s+pix|quanto\s+custa|fidelidade|aluguel|titular|economiz|painel\s+solar|minha\s+cidade|tem\s+cobertura|atende\s+(?:na\s+)?minha/i.test(text)) {
+  if (text && looksLikeQuestion(text)) {
+    const known = knownBill != null && knownBill >= 100;
     return {
       handled: true,
       continueBotFlow: false,
       updates: { origin_recovery: "cadence", flow_variant: "A", conversation_step: "qualificacao" },
       reply:
-        "Sem taxa para iniciar a análise e sem pedir Pix ao consultor. Funciona com créditos de energia na sua fatura — sem obra.\n\nQual a faixa da sua conta hoje? 👇",
-      buttons: [...BILL_RANGE_BUTTONS],
+        "Sem taxa para iniciar a análise e sem pedir Pix ao consultor. Funciona com créditos de energia na sua fatura — sem obra.\n\n" +
+        (known
+          ? "Me envie a *foto ou PDF da sua conta de luz* que eu já sigo com o cadastro 📸"
+          : "Qual a faixa da sua conta hoje? 👇"),
+      buttons: known ? [...ANALYZE_OR_CALL_BUTTONS] : [...BILL_RANGE_BUTTONS],
       reason: "cadence_faq_nudge",
     };
   }
+
+  // Já tem valor → qualquer ambiguidade ainda avança (sem loop)
+  if (knownBill != null && knownBill >= 100) {
+    return pushToCadastro(input.customer, "cadence_known_bill_forward", knownBill);
+  }
+
 
   return {
     handled: true,
@@ -559,10 +586,13 @@ export async function enrichCadenceFaqWithKnowledge(
     consultantId?: string | null;
     leadName?: string;
     fallback: string;
+    /** true → só FAQ/atalhos + seções (sem IA livre). */
+    kbOnly?: boolean;
   },
 ): Promise<{ text: string; source: "kb" | "ai" | "fallback" }> {
   const q = String(opts.question || "").trim();
   if (q.length < 4) return { text: opts.fallback, source: "fallback" };
+
 
   try {
     const { lookupKnowledge } = await import("./knowledge-lookup.ts");
@@ -579,7 +609,10 @@ export async function enrichCadenceFaqWithKnowledge(
     console.warn("[cadence-router] lookupKnowledge:", (e as Error).message);
   }
 
+  if (opts.kbOnly) return { text: opts.fallback, source: "fallback" };
+
   try {
+
     const { answerFaqWithAI } = await import("./ai-faq-answerer.ts");
     const ai = await answerFaqWithAI({
       supabase,
@@ -646,9 +679,13 @@ export async function applyCadenceInboundRoute(
   if (!route) return { routed: false, continueBotFlow: true };
 
   // Pergunta aberta / educativo: enriquecer com a base de conhecimento.
+  // `cadence_default_nudge` também consulta FAQ/atalhos, mas só no modo
+  // determinístico (bot_flow_qa + seções) — sem IA livre, para que um nome
+  // próprio ou "oi" nunca vire resposta inventada.
   const reason = String(route.reason || "");
   const wantsKb =
     reason === "cadence_faq_nudge" ||
+    reason === "cadence_default_nudge" ||
     reason.startsWith("cadence_educational_");
   if (
     wantsKb &&
@@ -664,12 +701,14 @@ export async function applyCadenceInboundRoute(
       consultantId: opts.customer.consultant_id,
       leadName: firstName(opts.customer),
       fallback: route.reply,
+      kbOnly: reason === "cadence_default_nudge",
     });
     route.reply = enriched.text;
     if (enriched.source !== "fallback") {
       console.log(`[cadence-router] faq via ${enriched.source} reason=${reason}`);
     }
   }
+
 
   const now = new Date().toISOString();
   const updates = { ...route.updates, updated_at: now };
