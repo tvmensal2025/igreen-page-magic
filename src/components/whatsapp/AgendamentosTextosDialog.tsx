@@ -392,7 +392,23 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
       })),
     );
     setAiKnow((aiKnowRes.data || []) as AiKnowRow[]);
-    setAiAgent((aiAgentRes.data as AiAgentRow) || null);
+    // Fonte da verdade do nome da IA é `consultants.assistant_name` (é o que o
+    // runtime lê em ai-agent-router / render-vars). `ai_agent_config.persona_name`
+    // é só espelho legado — exibimos sempre o valor real do consultor.
+    const { data: consRow } = await supabase
+      .from("consultants")
+      .select("assistant_name")
+      .eq("id", consultantId)
+      .maybeSingle();
+    const realAssistantName = ((consRow as { assistant_name?: string | null } | null)?.assistant_name || "").trim();
+    const agentRow = (aiAgentRes.data as AiAgentRow) || null;
+    setAiAgent(
+      agentRow
+        ? { ...agentRow, persona_name: realAssistantName || agentRow.persona_name }
+        : realAssistantName
+          ? ({ consultant_id: consultantId, persona_name: realAssistantName, tone: null, system_prompt: null, step_prompts: null, enabled: null } as unknown as AiAgentRow)
+          : null,
+    );
     setRodizio((rodizioRes.data || []) as RodizioRow[]);
     setPosVendaGlobal((posGlobalRes.data || []) as PosVendaDefaultRow[]);
     setHolidays((holidaysRes.data || []) as HolidayRow[]);
@@ -641,10 +657,32 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
     const text = drafts[key];
     if (text === undefined) return;
     setSaving(key);
+
+    // O nome da IA é lido em produção de `consultants.assistant_name`.
+    // Sem gravar lá, salvar aqui não mudava nada no bot (e ainda pulava o
+    // trigger de nomes reservados). Grava primeiro na fonte da verdade.
+    if (field === "persona_name") {
+      const nome = text.trim();
+      if (!nome) { setSaving(null); toast.error("Informe o nome da IA"); return; }
+      const { error: consErr } = await supabase
+        .from("consultants")
+        .update({ assistant_name: nome })
+        .eq("id", consultantId);
+      if (consErr) {
+        setSaving(null);
+        toast.error(
+          /reserv/i.test(consErr.message)
+            ? `O nome "${nome}" é reservado/já pertence a outro consultor. Escolha outro.`
+            : consErr.message,
+        );
+        return;
+      }
+    }
+
     const { error } = await (supabase as any)
       .from("ai_agent_config")
       .upsert(
-        { consultant_id: consultantId, [field]: text },
+        { consultant_id: consultantId, [field]: field === "persona_name" ? text.trim() : text },
         { onConflict: "consultant_id" },
       );
     setSaving(null);
@@ -653,6 +691,7 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
     toast.success("Agente IA atualizado");
     await load();
   }
+
 
   async function addHoliday() {
     if (!newHolidayDate || !newHolidayLabel) {
