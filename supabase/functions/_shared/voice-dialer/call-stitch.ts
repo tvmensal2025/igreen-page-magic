@@ -423,16 +423,27 @@ export async function resolveCallDialAudio(
 export async function ensureBodyClipOnVelip(
   admin: AdminClient,
   clipId: string,
-  _consultantId: string,
+  consultantId: string,
 ): Promise<{ ok: true; audio_id: string } | { ok: false; error: string }> {
   const { data: clipRaw } = await admin
     .from("voice_audio_clips")
-    .select("id, audio_url, name, velip_audio_id")
+    .select("id, audio_url, name, velip_audio_id, consultant_id, is_call_body")
     .eq("id", clipId)
     .maybeSingle();
-  const clip = clipRaw as Pick<VoiceClipRow, "id" | "audio_url" | "name" | "velip_audio_id"> | null;
+  const clip = clipRaw as
+    | (Pick<VoiceClipRow, "id" | "audio_url" | "name" | "velip_audio_id">
+      & { consultant_id?: string | null; is_call_body?: boolean | null })
+    | null;
   if (!clip?.audio_url) return { ok: false, error: "clip_not_found" };
+  // Nunca tocar áudio de identidade ("sou a X, assistente do Y") de outro dono.
+  if (
+    clip.is_call_body && clip.consultant_id && consultantId &&
+    String(clip.consultant_id) !== String(consultantId)
+  ) {
+    return { ok: false, error: "clip_identity_other_owner" };
+  }
   if (clip.velip_audio_id) return { ok: true, audio_id: clip.velip_audio_id };
+
   try {
     const r = await fetch(clip.audio_url, { signal: AbortSignal.timeout(45_000) });
     if (!r.ok) return { ok: false, error: `download_${r.status}` };
