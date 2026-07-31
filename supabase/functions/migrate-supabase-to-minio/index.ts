@@ -59,7 +59,21 @@ async function listAll(bucket: string, prefix = "", limit = 1000): Promise<any[]
   return all;
 }
 
-async function findOwnerForWhatsappPath(path: string): Promise<{ consultant_id?: string; consultant_slug?: string; jid?: string; kind?: string }> {
+/** Slot da ficha → nome de arquivo no MinIO (mesmo padrão do upload-media). */
+const KIND_BY_SLOT: Record<string, string> = {
+  document_front_url: "doc_frente",
+  document_back_url: "doc_verso",
+  electricity_bill_photo_url: "conta",
+  electricity_boleto_photo_url: "boleto",
+};
+
+async function findOwnerForWhatsappPath(path: string): Promise<{
+  consultant_id?: string;
+  consultant_slug?: string;
+  jid?: string;
+  kind?: string;
+  customer_slug?: string;
+}> {
   // A tabela de chat é `conversations` (não existe `messages`). Ela não guarda
   // media_url, então o dono só é resolvido quando o path já é `documentos/...`
   // ou `captacao/{customer_id}/...` — o resto vira legado sem dono.
@@ -67,17 +81,31 @@ async function findOwnerForWhatsappPath(path: string): Promise<{ consultant_id?:
   if (!m) return {};
   const { data } = await admin
     .from("customers")
-    .select("id,consultant_id,phone_whatsapp,consultants:consultant_id(igreen_id,name)")
+    .select("id,name,consultant_id,phone_whatsapp,data_nascimento_iso,data_nascimento,consultants:consultant_id(igreen_id,name)")
     .eq("id", m[1])
     .maybeSingle();
   if (!data) return {};
   const c = (data as any).consultants;
+  const slotMatch = path.split("/").pop()?.match(/^([a-z_]+)-\d+/i);
+  const birth: string | null =
+    (data as any).data_nascimento_iso || (data as any).data_nascimento || null;
+  const mBr = birth?.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  const mIso = birth?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  const dateStr = mBr
+    ? `${mBr[3]}${mBr[2]}${mBr[1]}`
+    : mIso
+      ? `${mIso[1]}${mIso[2]}${mIso[3]}`
+      : new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  const parts = String((data as any).name || "cliente").trim().split(/\s+/);
   return {
     consultant_id: (data as any).consultant_id || undefined,
     consultant_slug: c ? buildConsultantSlug(c.igreen_id || (data as any).consultant_id, c.name) : undefined,
     jid: (data as any).phone_whatsapp || undefined,
+    kind: slotMatch ? KIND_BY_SLOT[slotMatch[1]] : undefined,
+    customer_slug: `${normalizeName(parts[0] || "cliente")}_${normalizeName(parts[parts.length - 1] || "x")}_${dateStr}`,
   };
 }
+
 
 /** Colunas de documento do cliente que podem apontar para o Storage antigo. */
 const CUSTOMER_DOC_COLUMNS = [
