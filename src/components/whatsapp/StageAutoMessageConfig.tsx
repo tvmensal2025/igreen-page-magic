@@ -488,7 +488,13 @@ export function StageAutoMessageConfig({
   const handleSave = async () => {
     setSaving(true);
     try {
-      await supabase.from("stage_auto_messages").delete().eq("stage_id", stageId).eq("consultant_id", consultantId);
+      const { error: delError } = await supabase
+        .from("stage_auto_messages")
+        .delete()
+        .eq("stage_id", stageId)
+        .eq("consultant_id", consultantId);
+      if (delError) throw delError;
+
 
       if (messages.length > 0) {
         const inserts = messages.map((m, i) => ({
