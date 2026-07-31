@@ -88,6 +88,32 @@ const AdminContent = () => {
   const { loading, approved, userId, form, photoPreview, setPhotoPreview, handleFormChange, handleLogout, setForm } = useAdminAuth();
   const { isSuperAdmin } = useUserRole(userId);
   const { saving, photoPreview: localPhotoPreview, handlePhotoChange, handleSave } = useConsultantForm(userId, form, setForm, setPhotoPreview);
+  // Identidade JÁ GRAVADA no banco (nunca o que está sendo digitado agora).
+  // Sem isso, o modal de automações abria no meio da digitação do nome /
+  // do nome da IA e "cortava" o campo. Só atualiza depois de salvar.
+  const [savedIdentity, setSavedIdentity] = useState<{ name: string; assistant: string }>({ name: "", assistant: "" });
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from("consultants")
+        .select("name, assistant_name")
+        .eq("id", userId)
+        .maybeSingle();
+      if (cancelled || !data) return;
+      setSavedIdentity({
+        name: String((data as { name?: string | null }).name || ""),
+        assistant: String((data as { assistant_name?: string | null }).assistant_name || ""),
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+  const handleSaveAndSyncIdentity = async (e: React.FormEvent): Promise<boolean> => {
+    const ok = await handleSave(e);
+    if (ok) setSavedIdentity({ name: form.name, assistant: form.assistant_name });
+    return ok;
+  };
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
