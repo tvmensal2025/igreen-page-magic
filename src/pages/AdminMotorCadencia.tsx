@@ -366,8 +366,17 @@ export default function AdminMotorCadencia() {
   async function saveAll() {
     setSaving(true);
     try {
-      const { error: e1 } = await supabase.from("app_settings").update({ cadence_window: window as any }).eq("id", "global");
+      // RLS bloqueando UPDATE não gera erro: retorna 0 linhas. Exigir a linha
+      // de volta, senão "Salvo" mentiria e a janela antiga continuaria valendo.
+      const { data: wRow, error: e1 } = await supabase
+        .from("app_settings")
+        .update({ cadence_window: window as any })
+        .eq("id", "global")
+        .select("id")
+        .maybeSingle();
       if (e1) throw e1;
+      if (!wRow) throw new Error("Sem permissão para salvar a janela de horário (precisa super_admin).");
+
 
       for (const s of STAGES) {
         const row = stages[s];

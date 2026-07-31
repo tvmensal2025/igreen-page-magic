@@ -31,15 +31,18 @@ export function DevToolsBlockToggle() {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase
+      const { data: row, error } = await supabase
         .from("app_settings")
         .update({
           devtools_blocked: next,
           updated_at: new Date().toISOString(),
           updated_by: user?.id ?? null,
         })
-        .eq("id", "global");
+        .eq("id", "global")
+        .select("id")
+        .maybeSingle();
       if (error) throw error;
+      if (!row) throw new Error("Sem permissão (precisa super_admin) — nada foi alterado.");
       setBlocked(next);
       toast({
         title: next ? "Bloqueio de inspecionar ativado" : "Bloqueio de inspecionar desativado",
