@@ -58,13 +58,15 @@ export default function PersonaPanel() {
 
   async function save() {
     setSaving(true);
-    const { error } = await supabase
+    const { data: row, error } = await supabase
       .from("app_settings")
       .update({ fluxo_b_persona: text, updated_at: new Date().toISOString() })
-      .eq("id", "global");
+      .eq("id", "global")
+      .select("id")
+      .maybeSingle();
     setSaving(false);
-    if (error) {
-      toast({ title: "Erro salvando", description: error.message, variant: "destructive" });
+    if (error || !row) {
+      toast({ title: "Erro salvando", description: error?.message || "Sem permissão (precisa super_admin).", variant: "destructive" });
       return;
     }
     setOriginal(text);
