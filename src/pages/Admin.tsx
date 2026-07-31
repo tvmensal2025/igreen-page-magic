@@ -109,9 +109,20 @@ const AdminContent = () => {
     })();
     return () => { cancelled = true; };
   }, [userId]);
+  // O nome da IA também pode ser salvo em Dados / Atendente IA (grava direto
+  // no banco). Escuta o evento para não ficar com valor velho aqui.
+  useEffect(() => {
+    const onSaved = (ev: Event) => {
+      const nm = String((ev as CustomEvent).detail || "").trim();
+      if (!nm) return;
+      setSavedIdentity((prev) => ({ ...prev, assistant: nm }));
+    };
+    window.addEventListener("igreen:assistant-name-saved", onSaved);
+    return () => window.removeEventListener("igreen:assistant-name-saved", onSaved);
+  }, []);
   const handleSaveAndSyncIdentity = async (e: React.FormEvent): Promise<boolean> => {
     const ok = await handleSave(e);
-    if (ok) setSavedIdentity({ name: form.name, assistant: form.assistant_name });
+    if (ok) setSavedIdentity((prev) => ({ name: form.name, assistant: form.assistant_name?.trim() || prev.assistant }));
     return ok;
   };
   const { toast } = useToast();

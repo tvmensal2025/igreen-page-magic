@@ -101,10 +101,18 @@ export function useConsultantForm(
         club_cadastro_url: form.club_cadastro_url || buildClubCadastroUrl(form.igreen_id) || null,
         facebook_pixel_id: form.facebook_pixel_id || null, google_analytics_id: form.google_analytics_id || null,
         igreen_portal_email: form.igreen_portal_email || null,
-        assistant_name: form.assistant_name?.trim() || null,
+        // assistant_name NÃO vai aqui: quem manda é o campo "Nome da IA"
+        // (DadosTab / Atendente IA), que grava direto em consultants.
+        // Enviar o valor do form (carregado no login) revertia o nome novo.
         gender: form.gender === "consultor" || form.gender === "consultora" ? form.gender : null,
         portal_kind: form.portal_kind === "autoconexao" ? "autoconexao" : "digital",
       };
+      // Nome da IA: só envia se o form tiver um valor preenchido (onboarding).
+      // Vazio = não mexe, para não apagar/reverter o que foi salvo no campo
+      // "Nome da IA" (DadosTab / Atendente IA), que grava direto no banco.
+      if (form.assistant_name && form.assistant_name.trim()) {
+        consultantFields.assistant_name = form.assistant_name.trim();
+      }
       // Só envia a senha se o usuário digitou um valor novo (campo vem vazio do banco por segurança).
       if (form.igreen_portal_password && form.igreen_portal_password.trim()) {
         consultantFields.igreen_portal_password = form.igreen_portal_password;
