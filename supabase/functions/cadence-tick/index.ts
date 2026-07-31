@@ -700,17 +700,48 @@ async function checkPhoneDeadForChannel(
   const { consultantId, phoneCandidates, channel } = opts;
   if (!consultantId || phoneCandidates.length === 0) return { block: false };
 
-  // 1) Lista Não Perturbe (fonte auto do webhook Velip / guard prévio / SMS UNDELIV).
-  const { data: dnc } = await supabase
+  // 1) Lista Não Perturbe (fonte auto do webhook Velip / guard prévio / SMS UNDELIV
+  //    + cadastro MANUAL na aba Voz → "Não Perturbe").
+  //    IMPORTANTE: o cadastro manual grava só os dígitos do que o consultor digitou
+  //    ("34997081920", sem o 55), enquanto aqui os candidatos vêm em formato Velip
+  //    ("5534997081920"). Match exato (.in) deixava passar todo DNC digitado sem DDI.
+  //    Por isso comparamos também pelo sufixo de 10 dígitos (DDD + número), igual ao
+  //    helper canônico `assertCanContact`.
+  const dncTails = [...new Set(
+    phoneCandidates
+      .map((p) => String(p || "").replace(/\D/g, ""))
+      .filter((p) => p.length >= 10)
+      .map((p) => p.slice(-10)),
+  )];
+  let dncQuery = supabase
     .from("voice_dnc_list")
-    .select("reason, source")
-    .eq("consultant_id", consultantId)
-    .in("phone", phoneCandidates)
-    .limit(3);
-  const dncRow = (dnc as { reason: string | null; source: string | null }[] | null)?.[0] ?? null;
+    .select("phone, reason, source")
+    .eq("consultant_id", consultantId);
+  dncQuery = dncTails.length
+    ? dncQuery.or(
+      [
+        `phone.in.(${phoneCandidates.join(",")})`,
+        ...dncTails.map((t) => `phone.ilike.%${t}`),
+      ].join(","),
+    )
+    : dncQuery.in("phone", phoneCandidates);
+  const { data: dnc } = await dncQuery.limit(5);
+  const candidateDigits = phoneCandidates.map((p) => String(p || "").replace(/\D/g, ""));
+  const dncRow = ((dnc as { phone: string; reason: string | null; source: string | null }[] | null) ?? [])
+    .find((r) => {
+      const d = String(r.phone || "").replace(/\D/g, "");
+      if (!d) return false;
+      // Só aceita sufixo quando os dois lados têm ao menos 10 dígitos (DDD + número),
+      // para não bloquear número errado por coincidência de final curto.
+      return candidateDigits.some((c) =>
+        c === d || (c.length >= 10 && d.length >= 10 && (c.endsWith(d) || d.endsWith(c)))
+      );
+
+    }) ?? null;
   if (dncRow) {
     return { block: true, reason: `dnc:${dncRow.source || "unknown"}`, dnc_reason: dncRow.reason || undefined };
   }
+
 
   // 2) Voz reprovada — bloqueia próximas ligações E SMS.
   const { data: calls } = await supabase
