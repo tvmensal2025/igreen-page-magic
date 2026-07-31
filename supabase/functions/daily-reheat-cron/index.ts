@@ -203,6 +203,10 @@ Deno.serve(async (req) => {
       for (const s of settingsRows || []) {
         if (s.key === "whapi_token" && !env.whapiToken) env.whapiToken = String(s.value || "");
         if (s.key === "whapi_api_url" && s.value) env.whapiBaseUrl = String(s.value);
+        // Whapi é do superadmin: consultores só saem por Evolution.
+        if (s.key === "superadmin_consultant_id" && s.value) {
+          (env as Record<string, unknown>).superadminConsultantId = String(s.value).replace(/^"|"$/g, "");
+        }
       }
 
       dispatchResult = await dispatchPlans(supabase, duePlans, settings, env);

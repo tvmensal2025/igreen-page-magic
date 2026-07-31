@@ -205,10 +205,17 @@ Deno.serve(async (req) => {
 
           const phone = String(customer.phone_whatsapp || "").replace(/\D/g, "");
           if (phone && customer.consultant_id) {
+            const { data: waOwnerRow } = await supabase
+              .from("settings")
+              .select("value")
+              .eq("key", "superadmin_consultant_id")
+              .maybeSingle();
             const env: ChannelEnv = {
               evolutionUrl: Deno.env.get("EVOLUTION_API_URL") ?? undefined,
               evolutionKey: Deno.env.get("EVOLUTION_API_KEY") ?? undefined,
               whapiToken: Deno.env.get("WHAPI_TOKEN") || "",
+              superadminConsultantId:
+                String((waOwnerRow as any)?.value ?? "").replace(/^"|"$/g, "") || null,
             };
             const channel = await resolveChannelForCustomer(supabase, customer.id, env);
             if (isUnavailable(channel)) {
