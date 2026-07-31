@@ -93,24 +93,20 @@ export function useCaptureAttach() {
         const nameExt = fileName?.split(".").pop()?.toLowerCase();
         const ext = nameExt && nameExt.length <= 5 ? nameExt : detected;
 
-        const path = `captacao/${customerId}/${key}-${Date.now()}.${ext}`;
-        const { error: upErr } = await supabase.storage
-          .from("whatsapp-media")
-          .upload(path, blob, {
-            upsert: true,
-            contentType: blob.type || "application/octet-stream",
-          });
-        if (upErr) throw upErr;
-
-        const { data: pub } = supabase.storage
-          .from("whatsapp-media")
-          .getPublicUrl(path);
+        const { url: storedUrl } = await uploadCaptureDoc({
+          customerId,
+          slot: key,
+          file: blob,
+          fileName: fileName || `${key}.${ext}`,
+          ext,
+        });
 
         const { error: updErr } = await supabase
           .from("customers")
-          .update({ [key]: pub.publicUrl } as any)
+          .update({ [key]: storedUrl } as any)
           .eq("id", customerId);
         if (updErr) throw updErr;
+
 
         toast({
           title: `📎 Anexado como ${label}`,
