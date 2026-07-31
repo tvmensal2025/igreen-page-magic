@@ -47,9 +47,12 @@ export interface ParsedCustomer {
   phone: string;
   name: string | null;
   status: string;
+  /** true quando a planilha realmente trouxe a coluna de status para esta linha */
+  hasStatus?: boolean;
   data: Record<string, unknown>;
   isNew: boolean;
 }
+
 
 export type StatusFilter = "all" | "approved" | "pending" | "devolutiva" | "awaiting_signature" | "lead" | "rejected";
 
