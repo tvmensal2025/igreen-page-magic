@@ -2,6 +2,7 @@ import { useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { whapiDownloadMedia } from "@/services/whapiApi";
+import { uploadCaptureDoc } from "@/lib/captacao/uploadCaptureDoc";
 
 export type CaptureDocKey =
   | "document_front_url"
@@ -123,7 +124,7 @@ export function useCaptureAttach() {
         // Boleto bancário só anexa — sem OCR de conta/documento.
         // Verso sozinho: OCR de doc precisa da frente (mesma guarda dos tiles).
         if (key === "document_back_url") {
-          return pub.publicUrl;
+          return storedUrl;
         }
         if (key !== "electricity_boleto_photo_url") {
           const kind = key === "electricity_bill_photo_url" ? "bill" : "doc";
@@ -157,7 +158,7 @@ export function useCaptureAttach() {
           }
         }
 
-        return pub.publicUrl;
+        return storedUrl;
       } catch (e: any) {
         toast({
           title: "Erro ao anexar",
