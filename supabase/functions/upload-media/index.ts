@@ -281,13 +281,13 @@ Deno.serve(async (req) => {
     if (scope === "doc" && customerIdField) {
       const { data: cust } = await supabase
         .from("customers")
-        .select("name, consultant_id, birth_date")
+        .select("name, consultant_id, data_nascimento_iso, data_nascimento")
         .eq("id", customerIdField)
         .maybeSingle();
       if (cust) {
         if (!customerNameField) customerNameField = String((cust as any).name || "");
         if ((cust as any).consultant_id) consultantIdField = String((cust as any).consultant_id);
-        customerBirth = (cust as any).birth_date ? String((cust as any).birth_date) : null;
+        customerBirth = (cust as any).data_nascimento_iso || (cust as any).data_nascimento || null;
       }
     }
 
