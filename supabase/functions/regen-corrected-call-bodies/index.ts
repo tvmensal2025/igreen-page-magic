@@ -10,15 +10,17 @@
  *
  * POST body opcional: { consultant_id?: string, stages?: string[] }
  *
- * Mesmo padrão de regen-a2-audio (sem JWT de usuário; usa secrets do server).
+ * Auth: service_role / x-service-secret / JWT admin.
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
 import { resolvePublicConsultantLabel } from "../_shared/consultant-public-label.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { resolveCaller } from "../_shared/caller-auth.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret",
 };
 
 const SOFIA_VOICE = "EJV7H2baGt5ab95tOoSG";
@@ -100,13 +102,18 @@ Deno.serve(async (req) => {
   if (!ELEVENLABS_KEY) return json(503, { error: "ELEVENLABS_API_KEY_missing" });
   if (!SUPABASE_URL || !SERVICE_ROLE) return json(503, { error: "supabase_env_missing" });
 
+  const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
+  if (!isServiceRoleAuth(req)) {
+    const caller = await resolveCaller(req, admin as any);
+    if (caller instanceof Response) return caller;
+    if (caller.mode === "jwt" && !caller.isAdmin) return json(403, { error: "forbidden" });
+  }
+
   const payload = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const consultantId = String(payload.consultant_id || DEFAULT_CONSULTANT).trim();
   const stages = Array.isArray(payload.stages) && payload.stages.length
     ? payload.stages.map((s) => String(s)).filter(Boolean)
     : [...DEFAULT_STAGES];
-
-  const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
   const { data: cons } = await admin
     .from("consultants")

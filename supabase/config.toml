@@ -387,3 +387,39 @@ verify_jwt = false
 [functions.platform-sales-dispatch]
 verify_jwt = false
 
+# ─── Hardening 2026-07-31: tools admin/debug/IA ─────────────────────────────
+# Gateway JWT off (igual ao deploy atual); auth REAL no corpo via
+# isServiceRoleAuth + resolveCaller (+ assertOwnership / admin-only).
+[functions.ai-summarize-conversation]
+verify_jwt = false
+
+[functions.ai-extract-memory]
+verify_jwt = false
+
+[functions.fluxo-b-ai]
+verify_jwt = false
+
+[functions.captacao-backfill-ctwa]
+verify_jwt = false
+
+[functions.regen-a2-audio]
+verify_jwt = false
+
+[functions.regen-corrected-call-bodies]
+verify_jwt = false
+
+[functions.dump-igreen-detail]
+verify_jwt = false
+
+[functions.spy-igreen-spa]
+verify_jwt = false
+
+[functions.probe-igreen-detail]
+verify_jwt = false
+
+[functions.igreen-endpoint-probe]
+verify_jwt = false
+
+[functions.sim-upload-pdf]
+verify_jwt = false
+

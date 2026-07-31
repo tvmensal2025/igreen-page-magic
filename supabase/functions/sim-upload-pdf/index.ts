@@ -1,24 +1,33 @@
 // One-shot helper: recebe { filename, content_base64, content_type } e sobe no
 // bucket público `simulator-uploads` usando service role. Retorna URL pública.
 // Usado pelo simulador E2E para hospedar PDFs/imagens reais sem mexer em RLS.
+//
+// Auth: service_role / x-service-secret / JWT admin.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.4";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { resolveCaller } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const ANON = Deno.env.get("SUPABASE_ANON_KEY")!;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
-    // Auth dropped: one-shot helper for E2E sandbox uploads (will be deleted after test).
     const svc = createClient(SUPABASE_URL, SERVICE_ROLE);
 
+    if (!isServiceRoleAuth(req)) {
+      const caller = await resolveCaller(req, svc as any);
+      if (caller instanceof Response) return caller;
+      if (caller.mode === "jwt" && !caller.isAdmin) {
+        return json({ error: "forbidden" }, 403);
+      }
+    }
 
     const body = await req.json();
     const filename = String(body?.filename || `upload-${Date.now()}.bin`).replace(/[^a-zA-Z0-9._-]/g, "_");

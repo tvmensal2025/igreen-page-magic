@@ -3,14 +3,16 @@
  * e faz upload no bucket público `tts-cache`. Retorna a URL pública.
  *
  * POST body: { gender: "masculino" | "feminino" }
- * Não exige JWT (usa service role internamente e a ELEVENLABS_API_KEY do servidor).
+ * Auth: service_role / x-service-secret / JWT admin.
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "jsr:@supabase/supabase-js@2";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { resolveCaller } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret",
 };
 
 const SOFIA_VOICE = "EJV7H2baGt5ab95tOoSG";
@@ -45,6 +47,25 @@ Deno.serve(async (req) => {
   if (req.method !== "POST") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+
+  const supaUrl = Deno.env.get("SUPABASE_URL") || "";
+  const supaKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  if (supaUrl && supaKey) {
+    const admin = createClient(supaUrl, supaKey);
+    if (!isServiceRoleAuth(req)) {
+      const caller = await resolveCaller(req, admin as any);
+      if (caller instanceof Response) return caller;
+      if (caller.mode === "jwt" && !caller.isAdmin) {
+        return new Response(JSON.stringify({ error: "forbidden" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
+  } else if (!isServiceRoleAuth(req)) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   }
 
@@ -87,9 +108,9 @@ Deno.serve(async (req) => {
 
     const audioBuf = new Uint8Array(await elRes.arrayBuffer());
 
-    const supaUrl = Deno.env.get("SUPABASE_URL")!;
-    const supaKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const admin = createClient(supaUrl, supaKey);
+    const uploadUrl = Deno.env.get("SUPABASE_URL")!;
+    const uploadKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const admin = createClient(uploadUrl, uploadKey);
 
     // Garante bucket
     const { data: buckets } = await admin.storage.listBuckets();

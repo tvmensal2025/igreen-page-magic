@@ -29,6 +29,7 @@ const OUT_DIR = arg("out", `/mnt/documents/vendedora-runs/${TS}`)!;
 // ─── env ─────────────────────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL;
 const ANON_KEY = process.env.VITE_SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY;
+const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const LOVABLE_API_KEY = process.env.LOVABLE_API_KEY;
 if (!SUPABASE_URL || !ANON_KEY) {
   console.error("[fatal] VITE_SUPABASE_URL e VITE_SUPABASE_PUBLISHABLE_KEY são obrigatórios.");
@@ -357,7 +358,8 @@ async function callFluxoB(body: any): Promise<{ status: number; json: any; ms: n
       headers: {
         "Content-Type": "application/json",
         apikey: ANON_KEY!,
-        Authorization: `Bearer ${ANON_KEY}`,
+        // Auth no corpo exige service_role ou JWT de usuário (anon key sozinha → 401).
+        Authorization: `Bearer ${SERVICE_ROLE_KEY || ANON_KEY}`,
       },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(160_000),

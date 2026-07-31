@@ -11,10 +11,12 @@
 
 import { createClient } from "npm:@supabase/supabase-js@2.50.0";
 import { processarTurnoFluxoB } from "../_shared/fluxo-b-ia/agent.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { resolveCaller, assertOwnership } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-service-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -43,6 +45,14 @@ Deno.serve(async (req) => {
     Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     { auth: { persistSession: false } },
   );
+
+  // Auth: service_role / x-service-secret / JWT dono (ou admin).
+  if (!isServiceRoleAuth(req)) {
+    const caller = await resolveCaller(req, supabase as any);
+    if (caller instanceof Response) return caller;
+    const deny = await assertOwnership(caller, { consultantId }, supabase as any);
+    if (deny) return deny;
+  }
 
   const dryRun = body?.dryRun !== false; // default TRUE no simulador
 

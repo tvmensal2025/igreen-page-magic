@@ -5,6 +5,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
 import { aiChat } from "../_shared/ai-gateway.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { resolveCaller, assertOwnership } from "../_shared/caller-auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -54,6 +56,13 @@ Deno.serve(async (req) => {
       });
     }
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    if (!isServiceRoleAuth(req)) {
+      const caller = await resolveCaller(req, supabase as any);
+      if (caller instanceof Response) return caller;
+      const deny = await assertOwnership(caller, { customerId: String(customer_id) }, supabase as any);
+      if (deny) return deny;
+    }
 
     const { data: customer } = await supabase
       .from("customers")

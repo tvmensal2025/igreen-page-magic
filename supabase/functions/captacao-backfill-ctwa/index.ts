@@ -12,10 +12,12 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { ingestLead } from "../_shared/captation/lead-ingest.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { resolveCaller } from "../_shared/caller-auth.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, content-type, x-client-info, apikey",
+  "Access-Control-Allow-Headers": "authorization, content-type, x-client-info, apikey, x-service-secret",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
@@ -66,11 +68,27 @@ Deno.serve(async (req) => {
 
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
   const days = Math.min(365, Math.max(1, Number(body.days ?? 90)));
-  const consultantId = (body.consultantId as string | undefined) || null;
+  let consultantId = (body.consultantId as string | undefined) || null;
   const dryRun = body.dryRun === true;
   const includeWhatsappLeads = body.includeWhatsappLeads !== false; // default true
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE);
+
+  if (!isServiceRoleAuth(req)) {
+    const caller = await resolveCaller(req, supabase as any);
+    if (caller instanceof Response) return caller;
+    if (caller.mode === "jwt") {
+      // Consultor só backfilla a própria base; admin pode passar consultantId.
+      if (!caller.isAdmin) {
+        consultantId = caller.consultantId;
+      } else if (!consultantId) {
+        return new Response(JSON.stringify({ error: "consultantId_required" }), {
+          status: 400, headers: { ...cors, "Content-Type": "application/json" },
+        });
+      }
+    }
+  }
+
   const sinceIso = new Date(Date.now() - days * 86400_000).toISOString();
 
   // Paginação para cobrir consultor com >1000 customers.

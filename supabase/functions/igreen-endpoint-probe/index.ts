@@ -8,16 +8,18 @@
 //                                  credenciais iGreen configuradas.
 //
 // Segurança:
-//   - Requer JWT válido (usuário logado) + role admin (checagem via has_role).
+//   - service_role / x-service-secret / JWT admin (has_role|is_super_admin).
 //   - Só executa GETs no worker; nada é escrito na iGreen.
 // =============================================================================
 import { createClient } from "npm:@supabase/supabase-js@2.49.4";
 import { resolveIgreenSyncWorker } from "../_shared/igreen-sync-worker.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { resolveCaller } from "../_shared/caller-auth.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type",
+    "authorization, x-client-info, apikey, content-type, x-service-secret",
 };
 
 // deno-lint-ignore no-explicit-any
@@ -32,6 +34,16 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
     );
+
+    if (!isServiceRoleAuth(req)) {
+      const caller = await resolveCaller(req, supabase as any);
+      if (caller instanceof Response) return caller;
+      if (caller.mode === "jwt" && !caller.isAdmin) {
+        return new Response(JSON.stringify({ ok: false, error: "forbidden" }), {
+          status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+    }
 
     // Descobre credenciais iGreen do primeiro consultor com portal_email/portal_password.
     const body = await req.json().catch(() => ({}));
