@@ -59,13 +59,20 @@ export default function ClienteCanalNovidadesDialog({ consultantId }: { consulta
 
   async function save() {
     setSaving(true);
-    const { data: existing } = await supabase
+    const { data: existing, error: readErr } = await supabase
       .from("consultant_automation_prefs")
       .select(
         "group_a_enabled, group_b_enabled, group_c_enabled, pos_venda_auto_enabled, pos_venda_auto_validate, reminders_auto_enabled, acked_at",
       )
       .eq("consultant_id", consultantId)
       .maybeSingle();
+
+    if (readErr) {
+      setSaving(false);
+      toast.error("NÃO foi salvo: não consegui ler suas automações atuais", { description: readErr.message });
+      return;
+    }
+
 
     const payload = {
       consultant_id: consultantId,
