@@ -76,8 +76,10 @@ export async function resolveConsultantOutboundChannel(
   const isSuper = !!superId && String(superId) === String(consultantId);
   const hintWhapi = !!hintInstanceName?.startsWith("whapi");
 
-  // 1) Hint da agenda/UI já diz Whapi — respeita sem depender só do match superadmin
-  if (hintWhapi && env.whapiToken) {
+  const whapiAllowed = isWhapiAllowedForConsultant(env, consultantId);
+
+  // 1) Hint da agenda/UI já diz Whapi — só vale para o dono do Whapi.
+  if (hintWhapi && whapiAllowed) {
     const name = hintInstanceName!;
     const adapter = getAdapter({
       kind: "whapi",
@@ -96,8 +98,8 @@ export async function resolveConsultantOutboundChannel(
     return { kind: "whapi", instanceName: name, adapter };
   }
 
-  // 2b) Consultor com instância whapi* própria (ex.: Sirlene compartilhando o chip do Rafael)
-  if (env.whapiToken) {
+  // 2b) Instância whapi* própria — só o dono do token (superadmin).
+  if (whapiAllowed) {
     const { data: whapiInst } = await supabase
       .from("whatsapp_instances")
       .select("instance_name, status, manual_review_required, fatal_lock_until")
@@ -120,6 +122,7 @@ export async function resolveConsultantOutboundChannel(
       return { kind: "whapi", instanceName: whapiInst.instance_name, adapter };
     }
   }
+
 
   // 3) Evolution saudável do consultor
   if (env.evolutionUrl && env.evolutionKey) {
