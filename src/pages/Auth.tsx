@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, EyeOff, ArrowRight, Zap, RefreshCw } from "lucide-react";
+import { Eye, EyeOff, ArrowRight, Zap, RefreshCw, MailCheck } from "lucide-react";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import BrandLogo from "@/components/common/BrandLogo";
 import { hardReset } from "@/lib/hardReset";
@@ -257,6 +257,58 @@ const Auth = () => {
     }
   };
 
+  // Tela de confirmação após enviar o link de recuperação.
+  if (forgotMode && forgotSentTo) {
+    return (
+      <div className="min-h-screen flex items-center justify-center px-4 py-10 relative overflow-hidden bg-background public-page-safe-bottom">
+        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+          <div className="absolute top-1/4 -left-32 w-96 h-96 rounded-full bg-primary/5 blur-3xl" />
+          <div className="absolute bottom-1/4 -right-32 w-96 h-96 rounded-full bg-accent/5 blur-3xl" />
+        </div>
+        <div className="w-full max-w-md relative z-10 space-y-7 text-center">
+          <div className="flex justify-center">
+            <BrandLogo className="w-40 drop-shadow-lg" alt="iGreen Energy" />
+          </div>
+          <div className="relative">
+            <div className="absolute -inset-1 bg-gradient-to-r from-primary/20 via-transparent to-accent/20 rounded-3xl blur-xl opacity-50" />
+            <div className="relative bg-card/80 backdrop-blur-xl p-8 rounded-2xl border border-border shadow-xl space-y-4">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-primary/15">
+                <MailCheck className="h-7 w-7 text-primary" />
+              </div>
+              <h1 className="text-xl font-bold font-heading text-foreground">Verifique seu e-mail</h1>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Enviamos um link de recuperação para{" "}
+                <span className="font-semibold text-foreground">{forgotSentTo}</span>.
+                Abra o link <span className="font-semibold text-foreground">neste mesmo aparelho</span> para criar sua nova senha.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                Não chegou em alguns minutos? Confira a caixa de spam ou envie novamente.
+              </p>
+              <div className="grid gap-2 pt-2">
+                <Button
+                  type="button"
+                  onClick={() => setForgotSentTo(null)}
+                  variant="outline"
+                  className="h-12 rounded-xl font-semibold"
+                >
+                  Enviar novamente
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => { setForgotSentTo(null); setForgotMode(false); }}
+                  className="h-12 rounded-xl font-bold"
+                  style={{ background: "var(--gradient-green)" }}
+                >
+                  Voltar ao login
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10 relative overflow-x-hidden bg-background public-page-safe-bottom">
       {/* Animated background */}
@@ -340,7 +392,7 @@ const Auth = () => {
                   </div>
                   {isLogin && !recoveryMode && (
                     <div className="text-right">
-                      <button type="button" onClick={() => setForgotMode(true)}
+                      <button type="button" onClick={() => { setForgotSentTo(null); setForgotMode(true); }}
                         className="text-sm text-primary font-medium hover:underline underline-offset-4 min-h-11 px-2 -mr-2 inline-flex items-center">
                         Esqueci minha senha
                       </button>
@@ -374,7 +426,7 @@ const Auth = () => {
           {forgotMode ? (
             <p className="text-center text-sm text-muted-foreground">
               Lembrou a senha?{" "}
-              <button onClick={() => setForgotMode(false)} className="text-primary font-semibold hover:underline underline-offset-4 min-h-11 px-2 inline-flex items-center">
+              <button onClick={() => { setForgotSentTo(null); setForgotMode(false); }} className="text-primary font-semibold hover:underline underline-offset-4 min-h-11 px-2 inline-flex items-center">
                 Voltar ao login
               </button>
             </p>
