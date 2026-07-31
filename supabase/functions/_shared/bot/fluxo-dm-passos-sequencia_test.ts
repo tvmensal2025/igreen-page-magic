@@ -26,6 +26,7 @@ type RawStep = {
     goto_step_id?: string | null;
     goto_special?: string | null;
     trigger_phrases?: string[];
+    trigger_intent?: string | null;
   }>;
   fallback?: {
     mode?: string;

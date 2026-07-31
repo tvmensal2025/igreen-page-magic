@@ -66,7 +66,7 @@ function fazerEspiaoPortal() {
   // deno-lint-ignore no-explicit-any
   const fn = (_supabase: any, customerId: string) => {
     chamadas.push(customerId);
-    return Promise.resolve({ ok: true, mode: "dispatched" as const, status: 200, worker: "digital" as const });
+    return Promise.resolve({ ok: true, mode: "dispatched" as const, status: 200, worker: "autoconexao" as const });
   };
   return { fn, chamadas };
 }
