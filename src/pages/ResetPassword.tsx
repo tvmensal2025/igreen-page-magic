@@ -13,6 +13,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import BrandLogo from "@/components/common/BrandLogo";
+import { sendPasswordResetEmail } from "@/lib/passwordReset";
+
 import {
   ArrowLeft,
   ArrowRight,

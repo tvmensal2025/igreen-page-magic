@@ -9,6 +9,8 @@ import { Eye, EyeOff, ArrowRight, Zap, RefreshCw, MailCheck } from "lucide-react
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import BrandLogo from "@/components/common/BrandLogo";
 import { hardReset } from "@/lib/hardReset";
+import { sendPasswordResetEmail } from "@/lib/passwordReset";
+
 
 function slugify(s: string) {
   return s
