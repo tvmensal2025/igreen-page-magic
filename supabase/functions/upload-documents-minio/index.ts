@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveCaller, assertOwnership } from "../_shared/caller-auth.ts";
+import { parseSupabaseStorageUrl } from "../_shared/storage-download.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -134,7 +135,10 @@ function formatDate(dateString: string | null): string {
 }
 
 // ── Baixar arquivo de URL ──
-async function downloadFile(url: string): Promise<{ bytes: Uint8Array; contentType: string }> {
+async function downloadFile(
+  url: string,
+  supabase?: any,
+): Promise<{ bytes: Uint8Array; contentType: string }> {
   // Se for data URL
   if (url.startsWith("data:")) {
     const match = url.match(/^data:([^;]+);base64,(.+)$/);
@@ -148,6 +152,20 @@ async function downloadFile(url: string): Promise<{ bytes: Uint8Array; contentTy
       }
       return { bytes, contentType };
     }
+  }
+
+  // Supabase Storage: `whatsapp-media` é bucket PRIVADO — a URL /object/public/
+  // gravada em customers responde HTTP 400 no fetch cru. Baixa via service role.
+  const parsed = supabase ? parseSupabaseStorageUrl(url) : null;
+  if (parsed && supabase) {
+    const { data, error } = await supabase.storage.from(parsed.bucket).download(parsed.path);
+    if (error || !data) {
+      throw new Error(`Failed to download file (storage): ${error?.message || "sem dados"}`);
+    }
+    return {
+      bytes: new Uint8Array(await data.arrayBuffer()),
+      contentType: data.type || "application/octet-stream",
+    };
   }
 
   // Baixar de URL
@@ -291,7 +309,7 @@ Deno.serve(async (req) => {
     if (customer.electricity_bill_photo_url && customer.electricity_bill_photo_url !== "evolution-media:pending") {
       try {
         console.log("📄 Baixando conta de energia...");
-        const { bytes, contentType } = await downloadFile(customer.electricity_bill_photo_url);
+        const { bytes, contentType } = await downloadFile(customer.electricity_bill_photo_url, supabase);
         const ext = getFileExtension(contentType, customer.electricity_bill_photo_url);
         const objectKey = `${folderPath}/conta.${ext}`;
 
@@ -319,7 +337,7 @@ Deno.serve(async (req) => {
     if (customer.document_front_url && customer.document_front_url !== "evolution-media:pending" && customer.document_front_url !== "collected") {
       try {
         console.log("📄 Baixando documento frente...");
-        const { bytes, contentType } = await downloadFile(customer.document_front_url);
+        const { bytes, contentType } = await downloadFile(customer.document_front_url, supabase);
         const ext = getFileExtension(contentType, customer.document_front_url);
         const objectKey = `${folderPath}/doc_frente.${ext}`;
 
@@ -347,7 +365,7 @@ Deno.serve(async (req) => {
     if (customer.document_back_url && customer.document_back_url !== "evolution-media:pending" && customer.document_back_url !== "collected" && customer.document_back_url !== "nao_aplicavel") {
       try {
         console.log("📄 Baixando documento verso...");
-        const { bytes, contentType } = await downloadFile(customer.document_back_url);
+        const { bytes, contentType } = await downloadFile(customer.document_back_url, supabase);
         const ext = getFileExtension(contentType, customer.document_back_url);
         const objectKey = `${folderPath}/doc_verso.${ext}`;
 
