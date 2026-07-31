@@ -150,6 +150,10 @@ function instalarFetchStub() {
 }
 
 const URL_VALIDA = "https://exemplo/arquivo.jpg";
+// Preflight real exige BYTES baixáveis. Em teste (sem rede/sem storage) usamos
+// data-url >200 chars, que o `assertStorageReadable` aceita sem download.
+const DATA_VALIDA = `data:image/jpeg;base64,${"A".repeat(400)}`;
+
 
 // ─── 1) RG sem verso → gate bloqueia: NÃO despacha ao worker ─────────────────
 
