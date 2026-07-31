@@ -116,9 +116,13 @@ const AdminContent = () => {
       const nm = String((ev as CustomEvent).detail || "").trim();
       if (!nm) return;
       setSavedIdentity((prev) => ({ ...prev, assistant: nm }));
+      // Também sincroniza o form do onboarding/Dados: sem isso, um "Salvar"
+      // posterior reenviaria o nome antigo por cima do novo.
+      handleFormChange({ assistant_name: nm });
     };
     window.addEventListener("igreen:assistant-name-saved", onSaved);
     return () => window.removeEventListener("igreen:assistant-name-saved", onSaved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const handleSaveAndSyncIdentity = async (e: React.FormEvent): Promise<boolean> => {
     const ok = await handleSave(e);
