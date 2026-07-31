@@ -171,6 +171,13 @@ Deno.serve(async (req) => {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       } else {
+        // Bug pré-existente: `errorKind` não existia neste escopo e estourava
+        // ReferenceError, derrubando a marcação de OTP inválido. Agora lemos o
+        // `error_kind` do corpo do worker (quando for JSON).
+        let errorKind = "";
+        try {
+          errorKind = String(JSON.parse(data)?.error_kind || "");
+        } catch { /* corpo não-JSON: cai no regex abaixo */ }
         const isBadOtp = errorKind === "otp_invalid_or_expired"
           || /c[oó]digo inv[aá]lido ou expirado/i.test(data);
         if (isBadOtp) {
