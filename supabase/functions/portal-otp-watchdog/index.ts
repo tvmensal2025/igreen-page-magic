@@ -217,6 +217,7 @@ async function bucketB(supabase: any) {
     evolutionUrl: Deno.env.get("EVOLUTION_API_URL"),
     evolutionKey: Deno.env.get("EVOLUTION_API_KEY"),
     whapiToken: Deno.env.get("WHAPI_TOKEN") || "",
+    superadminConsultantId: await loadSuperadminConsultantId(supabase),
   };
 
   let sent = 0;
@@ -371,6 +372,7 @@ async function bucketC(supabase: any) {
     evolutionUrl: Deno.env.get("EVOLUTION_API_URL"),
     evolutionKey: Deno.env.get("EVOLUTION_API_KEY"),
     whapiToken: Deno.env.get("WHAPI_TOKEN") || "",
+    superadminConsultantId: await loadSuperadminConsultantId(supabase),
   };
 
   let recovered = 0;

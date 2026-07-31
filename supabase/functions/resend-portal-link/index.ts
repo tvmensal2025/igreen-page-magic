@@ -73,6 +73,7 @@ Deno.serve(async (req) => {
       evolutionUrl: Deno.env.get("EVOLUTION_API_URL"),
       evolutionKey: Deno.env.get("EVOLUTION_API_KEY"),
       whapiToken: Deno.env.get("WHAPI_TOKEN") || "",
+      superadminConsultantId: await loadSuperadminConsultantId(supabase),
     };
     const channel = await resolveChannelForCustomer(supabase, customerId, env);
     if (isUnavailable(channel)) {
