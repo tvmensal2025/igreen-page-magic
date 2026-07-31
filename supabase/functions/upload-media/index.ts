@@ -343,8 +343,15 @@ Deno.serve(async (req) => {
           cacheControl: "31536000",
         });
       if (upErr) throw new Error(`Both MinIO and Supabase failed: ${upErr.message}`);
-      const { data: pub } = supabase.storage.from("whatsapp-media").getPublicUrl(fallbackKey);
-      publicUrl = pub.publicUrl;
+      // Bucket privado: URL pública responderia 400 para quem for baixar a mídia.
+      const { data: signed, error: signErr } = await supabase.storage
+        .from("whatsapp-media")
+        .createSignedUrl(fallbackKey, 60 * 60 * 24 * 365);
+      if (signErr || !signed?.signedUrl) {
+        throw new Error(`Supabase signed URL failed: ${signErr?.message || "sem URL"}`);
+      }
+      publicUrl = signed.signedUrl;
+
       objectKey = fallbackKey;
     }
 
