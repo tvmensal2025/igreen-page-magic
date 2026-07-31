@@ -353,8 +353,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
               id="persona_name"
               value={personaName}
               onChange={(e) => setPersonaName(e.target.value.slice(0, 20))}
-              onBlur={savePersonaName}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); } }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void savePersonaName(); } }}
               placeholder="Como sua IA se chama?"
               className="bg-secondary border-border"
               disabled={personaLoading || personaSaving}
@@ -365,15 +364,16 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
               variant="outline"
               size="sm"
               onClick={savePersonaName}
-              disabled={personaLoading || personaSaving}
+              disabled={personaLoading || personaSaving || personaName.trim().length < 2}
               className="shrink-0"
             >
               {personaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
             </Button>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Salvo ao sair do campo. Esse nome aparece em todas as conversas com seus leads.
+            Digite à vontade — só é salvo quando você clicar em <strong>Salvar</strong>. Esse nome aparece em todas as conversas com seus leads.
           </p>
+
           <Button
             type="button"
             variant="ghost"
