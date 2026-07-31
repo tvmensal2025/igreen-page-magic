@@ -22,22 +22,29 @@ export function AIAgentTab({ userId, initialSubTab }: { userId: string; initialS
   useEffect(() => { if (initialSubTab) setSub(initialSubTab); }, [initialSubTab]);
   const [agenteSub, setAgenteSub] = useState<AgenteSub>("audios");
   const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [personaName, setPersonaName] = useState<string>("Camila");
+  // Fonte da verdade do nome da IA = consultants.assistant_name (é o que as
+  // edges usam). ai_agent_config.persona_name é só espelho legado.
+  const [personaName, setPersonaName] = useState<string>("");
+  const [savedPersonaName, setSavedPersonaName] = useState<string>("");
+  const [savingPersona, setSavingPersona] = useState(false);
   const [savingEnabled, setSavingEnabled] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from("ai_agent_config")
-        .select("enabled, persona_name")
-        .eq("consultant_id", userId)
-        .maybeSingle();
-      setEnabled(data ? !!(data as any).enabled : true);
-      if (data && (data as any).persona_name) {
-        setPersonaName((data as any).persona_name);
-      }
+      const [cfgRes, consRes] = await Promise.all([
+        supabase.from("ai_agent_config").select("enabled, persona_name").eq("consultant_id", userId).maybeSingle(),
+        supabase.from("consultants").select("assistant_name").eq("id", userId).maybeSingle(),
+      ]);
+      const data = cfgRes.data as any;
+      setEnabled(data ? !!data.enabled : true);
+      const nm =
+        String((consRes.data as any)?.assistant_name || "").trim() ||
+        String(data?.persona_name || "").trim();
+      setPersonaName(nm);
+      setSavedPersonaName(nm);
     })();
   }, [userId]);
+
 
   async function saveConfig(patch: { enabled?: boolean; persona_name?: string }) {
     const { data: existing } = await supabase
