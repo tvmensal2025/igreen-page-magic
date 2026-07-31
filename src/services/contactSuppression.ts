@@ -51,7 +51,11 @@ export async function suppressContact(input: SuppressContactInput): Promise<Supp
       }
 
       const now = new Date().toISOString();
-      const { error: custErr } = await supabase
+      // RLS de customers só permite UPDATE ao dono (consultant_id) ou ao
+      // consultor atribuído. Se quem clicou não for nenhum dos dois, o UPDATE
+      // NÃO dá erro: afeta 0 linhas. Sem exigir a linha de volta, a tela dizia
+      // "Bloqueado" e o lead continuava recebendo mensagem. Fail-closed.
+      const { data: custRow, error: custErr } = await supabase
         .from("customers")
         .update({
           do_not_contact: true,
@@ -62,10 +66,19 @@ export async function suppressContact(input: SuppressContactInput): Promise<Supp
           attendance_rating_requested_at: null,
           conversation_step: "atendimento_finalizado",
         } as never)
-        .eq("id", customerId);
+        .eq("id", customerId)
+        .select("id")
+        .maybeSingle();
 
       if (custErr) return { ok: false, error: custErr.message };
+      if (!custRow) {
+        return {
+          ok: false,
+          error: "Não foi possível bloquear: este lead pertence a outro consultor (sem permissão). Nada foi alterado.",
+        };
+      }
     }
+
 
     if (phone) {
       const { error: dncErr } = await supabase.from("voice_dnc_list").upsert(
