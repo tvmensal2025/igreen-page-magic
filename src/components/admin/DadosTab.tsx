@@ -112,11 +112,17 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
     return () => { cancelled = true; };
   }, [userId]);
 
+  // Salva SÓ quando o consultor clica em "Salvar" (nunca ao sair do campo).
+  // Antes o onBlur gravava um nome pela metade enquanto ele ainda digitava.
   const savePersonaName = async () => {
     if (!userId) return;
     const trimmed = personaName.trim();
-    if (!trimmed) {
-      toast({ title: "Digite um nome", description: "Sua IA precisa de um nome.", variant: "destructive" });
+    if (trimmed.length < 2) {
+      toast({
+        title: "Nome muito curto",
+        description: "O nome da sua IA precisa ter pelo menos 2 letras.",
+        variant: "destructive",
+      });
       return;
     }
     setPersonaSaving(true);
@@ -150,11 +156,16 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
         console.warn("[identity-bootstrap] após nome IA:", bootErr);
       }
     } catch (e: any) {
-      toast({ title: "Erro ao salvar nome da IA", description: e?.message || String(e), variant: "destructive" });
+      const raw = e?.message || String(e);
+      const friendly = /reservado/i.test(raw)
+        ? `O nome "${trimmed}" já é a IA de outro consultor. Escolha um nome só seu (ex.: Bia, Lara, Nina).`
+        : raw;
+      toast({ title: "Erro ao salvar nome da IA", description: friendly, variant: "destructive", duration: 8000 });
     } finally {
       setPersonaSaving(false);
     }
   };
+
 
 
 
@@ -342,8 +353,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
               id="persona_name"
               value={personaName}
               onChange={(e) => setPersonaName(e.target.value.slice(0, 20))}
-              onBlur={savePersonaName}
-              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); (e.currentTarget as HTMLInputElement).blur(); } }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void savePersonaName(); } }}
               placeholder="Como sua IA se chama?"
               className="bg-secondary border-border"
               disabled={personaLoading || personaSaving}
@@ -354,15 +364,16 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
               variant="outline"
               size="sm"
               onClick={savePersonaName}
-              disabled={personaLoading || personaSaving}
+              disabled={personaLoading || personaSaving || personaName.trim().length < 2}
               className="shrink-0"
             >
               {personaSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : "Salvar"}
             </Button>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Salvo ao sair do campo. Esse nome aparece em todas as conversas com seus leads.
+            Digite à vontade — só é salvo quando você clicar em <strong>Salvar</strong>. Esse nome aparece em todas as conversas com seus leads.
           </p>
+
           <Button
             type="button"
             variant="ghost"
