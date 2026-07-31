@@ -130,14 +130,37 @@ export function AIAgentTab({ userId, initialSubTab }: { userId: string; initialS
     }
   }
 
+  // Salva só no clique. Grava em consultants.assistant_name (fonte usada pelas
+  // ligações/mensagens) e espelha no ai_agent_config.
   async function savePersonaName() {
-    const error = await saveConfig({ enabled: enabled ?? true, persona_name: personaName });
-    if (error) {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "✅ Nome atualizado" });
+    const trimmed = personaName.trim();
+    if (trimmed.length < 2) {
+      toast({ title: "Nome muito curto", description: "Use pelo menos 2 letras.", variant: "destructive" });
+      return;
+    }
+    setSavingPersona(true);
+    try {
+      const { error: consErr } = await supabase
+        .from("consultants")
+        .update({ assistant_name: trimmed })
+        .eq("id", userId);
+      if (consErr) throw consErr;
+      const error = await saveConfig({ enabled: enabled ?? true, persona_name: trimmed });
+      if (error) throw error;
+      setPersonaName(trimmed);
+      setSavedPersonaName(trimmed);
+      toast({ title: "✅ Nome atualizado", description: `Sua IA agora se chama "${trimmed}".` });
+    } catch (e: any) {
+      const raw = e?.message || String(e);
+      const friendly = /reservado/i.test(raw)
+        ? `O nome "${trimmed}" já pertence à IA de outro consultor. Escolha outro (ex.: Bia, Lara, Nina).`
+        : raw;
+      toast({ title: "Erro ao salvar nome", description: friendly, variant: "destructive", duration: 8000 });
+    } finally {
+      setSavingPersona(false);
     }
   }
+
 
   const subs: { id: SubTab; label: string; icon: typeof Bot }[] = [
     { id: "atendimentos", label: "Atendimentos", icon: MessagesSquare },
