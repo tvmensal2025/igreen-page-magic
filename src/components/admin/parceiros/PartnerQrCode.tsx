@@ -472,7 +472,7 @@ export function PartnerQrCode({
         img.src = bgImage;
       });
     } else {
-      const digital = templateId === "story" || templateId === "post";
+      const digital = false;
       const sizeLabel = templateSizeHint(
         dims.pdfWmm,
         dims.pdfHmm,
@@ -675,7 +675,7 @@ export function PartnerQrCode({
     "700",
   );
 
-  const isDigitalTemplate = templateId === "story" || templateId === "post";
+  const isDigitalTemplate = false;
   const placeholderSizeHint = templateSizeHint(
     dims.pdfWmm,
     dims.pdfHmm,
