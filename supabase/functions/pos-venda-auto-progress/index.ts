@@ -706,6 +706,9 @@ Deno.serve(async (req) => {
       evolutionUrl: Deno.env.get("EVOLUTION_API_URL") || undefined,
       evolutionKey: Deno.env.get("EVOLUTION_API_KEY") || undefined,
       whapiToken: settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "",
+      // Whapi é só do superadmin; consultores saem por Evolution.
+      superadminConsultantId:
+        String(settings.superadmin_consultant_id ?? "").replace(/^"|"$/g, "") || null,
     };
 
     const now = Date.now();
