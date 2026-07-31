@@ -101,7 +101,9 @@ export function useConsultantForm(
         club_cadastro_url: form.club_cadastro_url || buildClubCadastroUrl(form.igreen_id) || null,
         facebook_pixel_id: form.facebook_pixel_id || null, google_analytics_id: form.google_analytics_id || null,
         igreen_portal_email: form.igreen_portal_email || null,
-        assistant_name: form.assistant_name?.trim() || null,
+        // assistant_name NÃO vai aqui: quem manda é o campo "Nome da IA"
+        // (DadosTab / Atendente IA), que grava direto em consultants.
+        // Enviar o valor do form (carregado no login) revertia o nome novo.
         gender: form.gender === "consultor" || form.gender === "consultora" ? form.gender : null,
         portal_kind: form.portal_kind === "autoconexao" ? "autoconexao" : "digital",
       };
