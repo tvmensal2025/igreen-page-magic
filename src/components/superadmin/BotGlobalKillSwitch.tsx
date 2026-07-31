@@ -63,8 +63,12 @@ export function BotGlobalKillSwitch() {
   const [loadingPending, setLoadingPending] = useState(false);
 
   const load = async () => {
-    const { data } = await supabase.from("app_settings").select("bot_global_enabled").eq("id", "global").maybeSingle();
+    const { data, error } = await supabase.from("app_settings").select("bot_global_enabled").eq("id", "global").maybeSingle();
+    // Sem leitura confiável (RLS/erro) NÃO assumimos "ATIVO": manter carregando evita
+    // que o super admin veja "ATIVO" quando o bot pode estar desligado.
+    if (error) return;
     setEnabled(data ? !!(data as any).bot_global_enabled : true);
+
   };
 
   useEffect(() => { void load(); }, []);
@@ -103,12 +107,18 @@ export function BotGlobalKillSwitch() {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase
+      const { data: row, error } = await supabase
         .from("app_settings")
         .update({ bot_global_enabled: next, updated_at: new Date().toISOString(), updated_by: user?.id ?? null })
-        .eq("id", "global");
+        .eq("id", "global")
+        .select("bot_global_enabled")
+        .maybeSingle();
       if (error) throw error;
-      setEnabled(next);
+      // RLS bloqueando o UPDATE não gera erro: retorna 0 linhas. Sem essa checagem
+      // o botão de emergência dizia "Bot pausado" com o bot ainda ligado.
+      if (!row) throw new Error("NÃO foi salvo: sem permissão de super admin para alterar o kill switch.");
+      setEnabled(!!(row as any).bot_global_enabled);
+
 
       let catchUpMsg = "";
       if (next && catchUp && pendingLeads.length > 0) {
