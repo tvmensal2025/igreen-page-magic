@@ -673,9 +673,13 @@ export async function applyCadenceInboundRoute(
   if (!route) return { routed: false, continueBotFlow: true };
 
   // Pergunta aberta / educativo: enriquecer com a base de conhecimento.
+  // `cadence_default_nudge` também consulta FAQ/atalhos, mas só no modo
+  // determinístico (bot_flow_qa + seções) — sem IA livre, para que um nome
+  // próprio ou "oi" nunca vire resposta inventada.
   const reason = String(route.reason || "");
   const wantsKb =
     reason === "cadence_faq_nudge" ||
+    reason === "cadence_default_nudge" ||
     reason.startsWith("cadence_educational_");
   if (
     wantsKb &&
@@ -691,12 +695,14 @@ export async function applyCadenceInboundRoute(
       consultantId: opts.customer.consultant_id,
       leadName: firstName(opts.customer),
       fallback: route.reply,
+      kbOnly: reason === "cadence_default_nudge",
     });
     route.reply = enriched.text;
     if (enriched.source !== "fallback") {
       console.log(`[cadence-router] faq via ${enriched.source} reason=${reason}`);
     }
   }
+
 
   const now = new Date().toISOString();
   const updates = { ...route.updates, updated_at: now };
