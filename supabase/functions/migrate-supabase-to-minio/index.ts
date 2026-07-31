@@ -259,6 +259,59 @@ async function runForBucket(opts: RunOpts) {
   return { bucket, total: items.length, pending: pending.length, processed: batch.length, ok, fail, errors };
 }
 
+/**
+ * Documento gravado como data-URL base64 direto na coluna do cliente.
+ * Isso pesa no Postgres (não é Storage) e a varredura por bucket não pega.
+ * Sobe pro MinIO na mesma pasta `documentos/{consultor}/{cliente}/` e troca a coluna.
+ */
+async function runBase64Docs(batchSize: number) {
+  let ok = 0, fail = 0, pending = 0;
+  const errors: string[] = [];
+  for (const col of CUSTOMER_DOC_COLUMNS) {
+    const { data } = await admin
+      .from("customers")
+      .select(`id,name,consultant_id,data_nascimento_iso,data_nascimento,${col},consultants:consultant_id(igreen_id,name)`)
+      .like(col, "data:%")
+      .limit(500);
+    const rows = (data || []) as any[];
+    pending += rows.length;
+    for (const row of rows.slice(0, Math.max(0, batchSize - ok - fail))) {
+      try {
+        const dataUrl = String(row[col] || "");
+        const m = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (!m) throw new Error("data-url inválida");
+        const contentType = m[1] || "application/octet-stream";
+        const bytes = base64ToBytes(m[2]);
+        const c = row.consultants;
+        const slug = c
+          ? buildConsultantSlug(c.igreen_id || row.consultant_id, c.name)
+          : normalizeName(row.consultant_id || "sem_consultor");
+        const birth: string | null = row.data_nascimento_iso || row.data_nascimento || null;
+        const mBr = birth?.match(/(\d{2})\/(\d{2})\/(\d{4})/);
+        const mIso = birth?.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        const dateStr = mBr
+          ? `${mBr[3]}${mBr[2]}${mBr[1]}`
+          : mIso
+            ? `${mIso[1]}${mIso[2]}${mIso[3]}`
+            : new Date().toISOString().slice(0, 10).replace(/-/g, "");
+        const parts = String(row.name || "cliente").trim().split(/\s+/);
+        const customerSlug = `${normalizeName(parts[0] || "cliente")}_${normalizeName(parts[parts.length - 1] || "x")}_${dateStr}`;
+        const kind = KIND_BY_SLOT[col] || "documento";
+        const objectKey = `documentos/${slug}/${customerSlug}/${kind}_${Date.now()}.${extFromMime(contentType)}`;
+        const up = await uploadToMinioPath(bytes, contentType, objectKey);
+        const { error } = await admin.from("customers").update({ [col]: up.url }).eq("id", row.id);
+        if (error) throw error;
+        ok++;
+      } catch (err) {
+        fail++;
+        if (errors.length < 10) errors.push(`${col}/${row.id}: ${String((err as any)?.message || err).slice(0, 200)}`);
+      }
+    }
+  }
+  return { bucket: "base64_no_banco", total: pending, pending, processed: ok + fail, ok, fail, errors };
+}
+
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
