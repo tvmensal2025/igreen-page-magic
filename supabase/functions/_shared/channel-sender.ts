@@ -172,6 +172,7 @@ export async function resolveConsultantOutboundChannel(
       .from("whatsapp_instances")
       .select("instance_name, status, manual_review_required, fatal_lock_until")
       .eq("consultant_id", consultantId)
+      .not("instance_name", "like", "whapi%")
       .order("updated_at", { ascending: false })
       .limit(1);
     if (hintInstanceName && !hintInstanceName.startsWith("whapi")) {
@@ -186,10 +187,12 @@ export async function resolveConsultantOutboundChannel(
     const status = String(inst?.status || "").toLowerCase();
     if (
       inst?.instance_name &&
+      !String(inst.instance_name).startsWith("whapi") &&
       !inst.manual_review_required &&
       !(inst.fatal_lock_until && new Date(inst.fatal_lock_until) > new Date()) &&
       (!status || HEALTHY_STATUSES.has(status))
     ) {
+
       const adapter = getAdapter({
         kind: "evolution",
         input: {
