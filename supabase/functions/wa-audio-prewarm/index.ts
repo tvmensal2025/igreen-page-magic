@@ -26,6 +26,7 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.0";
 import { buildCors } from "../_shared/cors.ts";
 import { resolveCaller } from "../_shared/caller-auth.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
 import {
   COMMON_FEMININE_FIRST_NAMES,
   COMMON_MASCULINE_FIRST_NAMES,
@@ -75,20 +76,10 @@ Deno.serve(async (req) => {
 
   const admin = createClient(SUPABASE_URL, SERVICE_ROLE);
 
-  // Aceita JWT service_role (batch) além de x-service-secret / JWT de usuário.
-  const authHeader = req.headers.get("Authorization") ?? "";
-  const bearer = authHeader.startsWith("Bearer ")
-    ? authHeader.slice("Bearer ".length).trim()
-    : "";
-  let isServiceJwt = false;
-  if (bearer) {
-    try {
-      const payload = JSON.parse(atob(bearer.split(".")[1] || ""));
-      isServiceJwt = payload?.role === "service_role";
-    } catch { /* ignore */ }
-  }
+  // service_role = Bearer exatamente igual à key (sem decodificar claim).
+  // Caso contrário: x-service-secret / JWT validado via resolveCaller.
   let caller: Awaited<ReturnType<typeof resolveCaller>> | { mode: "service" };
-  if (isServiceJwt || (bearer && bearer === SERVICE_ROLE)) {
+  if (isServiceRoleAuth(req)) {
     caller = { mode: "service" };
   } else {
     caller = await resolveCaller(req, admin);

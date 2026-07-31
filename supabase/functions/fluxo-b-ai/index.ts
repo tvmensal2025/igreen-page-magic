@@ -31,6 +31,19 @@ Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
 
+  const supabase = createClient(
+    Deno.env.get("SUPABASE_URL")!,
+    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+    { auth: { persistSession: false } },
+  );
+
+  // Auth antes de parse/validação do body (fail-closed).
+  let caller: Awaited<ReturnType<typeof resolveCaller>> | null = null;
+  if (!isServiceRoleAuth(req)) {
+    caller = await resolveCaller(req, supabase as any);
+    if (caller instanceof Response) return caller;
+  }
+
   let body: any;
   try { body = await req.json(); } catch { return json({ error: "invalid_json" }, 400); }
 
@@ -40,16 +53,7 @@ Deno.serve(async (req) => {
     return json({ error: "customerId and consultantId required" }, 400);
   }
 
-  const supabase = createClient(
-    Deno.env.get("SUPABASE_URL")!,
-    Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-    { auth: { persistSession: false } },
-  );
-
-  // Auth: service_role / x-service-secret / JWT dono (ou admin).
-  if (!isServiceRoleAuth(req)) {
-    const caller = await resolveCaller(req, supabase as any);
-    if (caller instanceof Response) return caller;
+  if (caller && !(caller instanceof Response)) {
     const deny = await assertOwnership(caller, { consultantId }, supabase as any);
     if (deny) return deny;
   }

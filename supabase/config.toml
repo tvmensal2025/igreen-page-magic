@@ -291,6 +291,10 @@ verify_jwt = true
 [functions.wa-audio-prewarm]
 verify_jwt = false
 
+# Interno: só Bearer = SERVICE_ROLE_KEY (isServiceRoleAuth fail-closed).
+[functions.admin-call-audio-bootstrap]
+verify_jwt = false
+
 [functions.speed-to-lead-check]
 verify_jwt = false
 

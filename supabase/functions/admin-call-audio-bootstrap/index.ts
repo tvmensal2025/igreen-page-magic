@@ -13,6 +13,7 @@ import {
 } from "../_shared/voice-dialer/call-stitch.ts";
 import { velipConfigured } from "../_shared/voice-dialer/velip.ts";
 import { buildOlaTudoBemTtsText } from "../_shared/tts-ptbr-anchor.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -28,19 +29,6 @@ function json(status: number, body: unknown) {
     status,
     headers: { ...cors, "Content-Type": "application/json" },
   });
-}
-
-function assertServiceRole(req: Request): boolean {
-  const auth = req.headers.get("Authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
-  if (!token) return false;
-  if (SERVICE_ROLE && token === SERVICE_ROLE) return true;
-  try {
-    const payload = JSON.parse(atob(token.split(".")[1] || ""));
-    return payload?.role === "service_role";
-  } catch {
-    return false;
-  }
 }
 
 async function probeMp3Url(url: string): Promise<{ ok: boolean; bytes: number; detail?: string }> {
@@ -62,7 +50,7 @@ async function probeMp3Url(url: string): Promise<{ ok: boolean; bytes: number; d
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (req.method !== "POST") return json(405, { error: "method_not_allowed" });
-  if (!assertServiceRole(req)) return json(401, { error: "unauthorized" });
+  if (!isServiceRoleAuth(req)) return json(401, { error: "unauthorized" });
 
   const body = await req.json().catch(() => ({})) as Record<string, unknown>;
   const consultantId = String(body.consultant_id || DEFAULT_CONSULTANT).trim();

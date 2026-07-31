@@ -19,6 +19,7 @@ import {
   resolveConsultantRoleGender,
 } from "../_shared/consultant-public-label.ts";
 import { consultantHasConnectedWhatsApp } from "../_shared/consultant-wa-phone.ts";
+import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
 
 const cors = {
   "Access-Control-Allow-Origin": "*",
@@ -150,18 +151,22 @@ Deno.serve(async (req) => {
   const payload = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const force = Boolean(payload.force);
 
-  const auth = req.headers.get("Authorization") || "";
-  const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+  // Auth fail-closed: service_role key exata OU JWT validado (getUser).
+  // Nunca confiar em claim decodificado sem assinatura.
   let callerId = "";
-  let isService = false;
-  if (token && SERVICE_ROLE && token === SERVICE_ROLE) {
-    isService = true;
-  } else if (token) {
-    try {
-      const payloadJwt = JSON.parse(atob(token.split(".")[1] || ""));
-      if (payloadJwt?.role === "service_role") isService = true;
-      callerId = String(payloadJwt?.sub || "").trim();
-    } catch { /* ignore */ }
+  const isService = isServiceRoleAuth(req);
+  if (!isService) {
+    const auth = req.headers.get("Authorization") || "";
+    const token = auth.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+    if (!token) return json(401, { error: "unauthorized" });
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY") || "";
+    if (!anonKey) return json(503, { error: "anon_key_missing" });
+    const anon = createClient(SUPABASE_URL, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false },
+    });
+    const { data, error } = await anon.auth.getUser(token);
+    if (error || !data?.user?.id) return json(401, { error: "unauthorized" });
+    callerId = data.user.id;
   }
 
   const consultantId = String(payload.consultant_id || callerId || "").trim();

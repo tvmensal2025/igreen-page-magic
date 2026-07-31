@@ -19,6 +19,11 @@ import { resolvePersonalizedCallAudio, firstNameFrom, normalizeCallName, ensureB
 import { assertCanContact } from "../_shared/contact-suppression.ts";
 import { onCallAnsweredPauseCadence } from "../_shared/cadence-hooks.ts";
 import { customerIdFromCadenceVoiceLog } from "../_shared/voice-dialer/cadence-log.ts";
+import {
+  assertCronAuthStrict,
+  cronAuthUnauthorized,
+} from "../_shared/cron-auth.ts";
+import { timingSafeEqualStr } from "../_shared/webhook-auth.ts";
 
 const MAX_CAMPAIGNS = 5;
 /** Por tick do cron (~5 min). Velip campanha aceita até 100/min; no modo 1-a-1
@@ -31,46 +36,39 @@ const RECONCILE_STALE_MIN = 10;
 const cors = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers":
-    "authorization, x-client-info, apikey, content-type, x-service-secret, x-voice-dialer-cron-secret",
+    "authorization, x-client-info, apikey, content-type, x-service-secret, x-internal-secret, x-voice-dialer-cron-secret",
 };
-
-function timingSafeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) return false;
-  let diff = 0;
-  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return diff === 0;
-}
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: cors });
 
-  const cronSecret = Deno.env.get("VOICE_DIALER_CRON_SECRET") ?? "";
-  const cronHeader = req.headers.get("x-voice-dialer-cron-secret") ?? "";
-  const serviceSecret = Deno.env.get("SERVICE_SHARED_SECRET") ?? "";
-  const headerSecret = req.headers.get("x-service-secret") ?? "";
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-  const authHeader = req.headers.get("authorization") ?? "";
-  const bearer = authHeader.toLowerCase().startsWith("bearer ")
-    ? authHeader.slice(7).trim()
-    : "";
-
-  const okCron = !!(cronSecret && timingSafeEqual(cronHeader, cronSecret));
-  const okServiceSecret = !!(serviceSecret && timingSafeEqual(headerSecret, serviceSecret));
-  const okServiceRole = !!(serviceRoleKey && bearer && timingSafeEqual(bearer, serviceRoleKey));
-  if (!okCron && !okServiceSecret && !okServiceRole) {
-    return new Response(JSON.stringify({ error: "unauthorized" }), {
-      status: 401, headers: { ...cors, "Content-Type": "application/json" },
-    });
-  }
-
   const started = Date.now();
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
   if (!serviceRoleKey) {
     return new Response(JSON.stringify({ error: "missing_service_role" }), {
       status: 500, headers: { ...cors, "Content-Type": "application/json" },
     });
   }
   const admin = createClient(supabaseUrl, serviceRoleKey);
+
+  // Auth fail-closed: padrão canônico dos crons (x-service-secret /
+  // x-internal-secret / Bearer service_role) + secret dedicado do dialer.
+  const dedicatedSecret = (Deno.env.get("VOICE_DIALER_CRON_SECRET") || "").trim();
+  const dedicatedHeader = (req.headers.get("x-voice-dialer-cron-secret") || "").trim();
+  const okDedicated = !!(
+    dedicatedSecret && dedicatedHeader &&
+    timingSafeEqualStr(dedicatedHeader, dedicatedSecret)
+  );
+  // deno-lint-ignore no-explicit-any
+  const cronAuth = await assertCronAuthStrict(req, admin as any);
+  if (!okDedicated && !cronAuth.ok) {
+    console.warn("[voice-dialer-cron] unauthorized", {
+      reason: cronAuth.reason,
+      has_dedicated_header: !!dedicatedHeader,
+    });
+    return cronAuthUnauthorized(cronAuth.reason, cors);
+  }
 
   if (!velipConfigured()) {
     return new Response(

@@ -49,17 +49,22 @@ const FACTS_SCHEMA = {
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   try {
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+    // Auth antes de qualquer validação/efeito (fail-closed).
+    let caller: Awaited<ReturnType<typeof resolveCaller>> | null = null;
+    if (!isServiceRoleAuth(req)) {
+      caller = await resolveCaller(req, supabase as any);
+      if (caller instanceof Response) return caller;
+    }
+
     const { customer_id } = await req.json();
     if (!customer_id) {
       return new Response(JSON.stringify({ error: "customer_id required" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
-    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-
-    if (!isServiceRoleAuth(req)) {
-      const caller = await resolveCaller(req, supabase as any);
-      if (caller instanceof Response) return caller;
+    if (caller && !(caller instanceof Response)) {
       const deny = await assertOwnership(caller, { customerId: String(customer_id) }, supabase as any);
       if (deny) return deny;
     }
