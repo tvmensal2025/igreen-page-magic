@@ -148,12 +148,31 @@ export async function revokeContactSuppression(input: {
   customerId: string;
 }): Promise<SuppressContactResult> {
   try {
+    // O bloqueio setou do_not_contact + bot_paused. Revogar só o do_not_contact
+    // deixava bot_paused=true e o motor continuava pulando o lead para sempre.
+    // Só despausamos quando a pausa veio do próprio opt-out (nunca em handoff humano).
+    const { data: current } = await supabase
+      .from("customers")
+      .select("bot_paused, bot_paused_reason")
+      .eq("id", input.customerId)
+      .maybeSingle();
+    const pauseReason = (current as { bot_paused_reason?: string | null } | null)?.bot_paused_reason || null;
+    const pausedByOptOut = !!(current as { bot_paused?: boolean } | null)?.bot_paused &&
+      (pauseReason === "complaint" || pauseReason === "opt_out");
+
+    const patch: Record<string, unknown> = {
+      do_not_contact: false,
+      bot_paused_reason: null,
+    };
+    if (pausedByOptOut) {
+      patch.bot_paused = false;
+      patch.bot_paused_at = null;
+      patch.bot_paused_until = null;
+    }
+
     const { error } = await supabase
       .from("customers")
-      .update({
-        do_not_contact: false,
-        bot_paused_reason: null,
-      } as never)
+      .update(patch as never)
       .eq("id", input.customerId)
       .eq("consultant_id", input.consultantId);
 
