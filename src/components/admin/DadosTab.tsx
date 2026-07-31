@@ -144,11 +144,12 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
         .select("id")
         .eq("consultant_id", userId)
         .maybeSingle();
-      if (existing?.id) {
-        await supabase.from("ai_agent_config").update({ persona_name: trimmed }).eq("id", existing.id);
-      } else {
-        await supabase.from("ai_agent_config").insert({ consultant_id: userId, persona_name: trimmed, enabled: true });
-      }
+      // Erro do espelho legado não pode passar em silêncio: antes, uma falha
+      // aqui ainda mostrava "salvo" e deixava persona_name dessincronizado.
+      const mirrorErr = existing?.id
+        ? (await supabase.from("ai_agent_config").update({ persona_name: trimmed }).eq("id", existing.id)).error
+        : (await supabase.from("ai_agent_config").insert({ consultant_id: userId, persona_name: trimmed, enabled: true })).error;
+      if (mirrorErr) throw mirrorErr;
       setPersonaName(trimmed);
       onFormChange({ assistant_name: trimmed });
       window.dispatchEvent(new CustomEvent("igreen:assistant-name-saved", { detail: trimmed }));
