@@ -263,7 +263,7 @@ export function TemplateItemsEditor({
     <div className="space-y-3">
       {items.map((it, i) => (
         <ItemCard
-          key={i}
+          key={it.id ?? it._uiKey ?? `pos-${i}`}
           item={it}
           index={i}
           total={items.length}
