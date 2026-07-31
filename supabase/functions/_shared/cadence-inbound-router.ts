@@ -470,11 +470,9 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     return pushToCadastro(input.customer, "cadence_intent_cadastro", knownBill);
   }
 
-  // Já tem valor → qualquer ambiguidade ainda avança (sem loop)
-  if (knownBill != null && knownBill >= 100) {
-    return pushToCadastro(input.customer, "cadence_known_bill_forward", knownBill);
-  }
-
+  // Pergunta / dúvida vem ANTES de empurrar pro cadastro: lead com valor já
+  // conhecido que pergunta "é golpe?" precisa de resposta (FAQ/atalho), não de
+  // um pulo mudo pro a2. O CTA no fim mantém o foco em cadastrar.
   if (text && isCoverageCityIntent(text)) {
     return {
       handled: true,
@@ -486,17 +484,27 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     };
   }
 
-  if (text && /\?|como\s+funciona|é\s+seguro|é\s+golpe|tem\s+taxa|aceita\s+pix|quanto\s+custa|fidelidade|aluguel|titular|economiz|painel\s+solar|minha\s+cidade|tem\s+cobertura|atende\s+(?:na\s+)?minha/i.test(text)) {
+  if (text && looksLikeQuestion(text)) {
+    const known = knownBill != null && knownBill >= 100;
     return {
       handled: true,
       continueBotFlow: false,
       updates: { origin_recovery: "cadence", flow_variant: "A", conversation_step: "qualificacao" },
       reply:
-        "Sem taxa para iniciar a análise e sem pedir Pix ao consultor. Funciona com créditos de energia na sua fatura — sem obra.\n\nQual a faixa da sua conta hoje? 👇",
-      buttons: [...BILL_RANGE_BUTTONS],
+        "Sem taxa para iniciar a análise e sem pedir Pix ao consultor. Funciona com créditos de energia na sua fatura — sem obra.\n\n" +
+        (known
+          ? "Me envie a *foto ou PDF da sua conta de luz* que eu já sigo com o cadastro 📸"
+          : "Qual a faixa da sua conta hoje? 👇"),
+      buttons: known ? [...ANALYZE_OR_CALL_BUTTONS] : [...BILL_RANGE_BUTTONS],
       reason: "cadence_faq_nudge",
     };
   }
+
+  // Já tem valor → qualquer ambiguidade ainda avança (sem loop)
+  if (knownBill != null && knownBill >= 100) {
+    return pushToCadastro(input.customer, "cadence_known_bill_forward", knownBill);
+  }
+
 
   return {
     handled: true,
