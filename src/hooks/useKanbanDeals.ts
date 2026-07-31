@@ -95,7 +95,7 @@ export function useKanbanDeals(consultantId: string, options?: { includeTests?: 
     setHasMore(pageLen >= DEALS_PAGE);
     setDeals((prev) => (append ? [...prev, ...(enriched as CrmDealRow[])] : (enriched as CrmDealRow[])));
     if (append) setLoadingMore(false);
-  }, [consultantId, includeTests]);
+  }, [consultantId, includeTests, toast]);
 
   const loadMore = useCallback(() => fetchDeals({ append: true }), [fetchDeals]);
 
@@ -103,13 +103,25 @@ export function useKanbanDeals(consultantId: string, options?: { includeTests?: 
   const resolveNames = useCallback(async (rawDeals: CrmDealRow[]) => {
     const needsLookup = rawDeals.filter((d) => !(d as any).customer_name && d.remote_jid && !(d as any).__synthetic);
     if (needsLookup.length === 0) return;
-    const phones = needsLookup.map((d) => d.remote_jid!.split("@")[0]);
-    const { data: customers } = await supabase
-      .from("customers")
-      .select("name, phone_whatsapp, conversation_step, last_step_advanced_at")
-      .in("phone_whatsapp", phones);
-    if (!customers || customers.length === 0) return;
+    const phones = Array.from(
+      new Set(needsLookup.map((d) => d.remote_jid!.split("@")[0]).filter(Boolean)),
+    );
+    // Batches de 300 — `.in()` com lista grande estoura o tamanho da URL do PostgREST.
+    const customers: any[] = [];
+    for (let i = 0; i < phones.length; i += 300) {
+      const { data, error } = await supabase
+        .from("customers")
+        .select("name, phone_whatsapp, conversation_step, last_step_advanced_at")
+        .in("phone_whatsapp", phones.slice(i, i + 300));
+      if (error) {
+        console.error("[useKanbanDeals] resolveNames", error);
+        break;
+      }
+      if (data?.length) customers.push(...data);
+    }
+    if (customers.length === 0) return;
     const phoneMap = new Map(customers.map((c: any) => [c.phone_whatsapp, c]));
+
     setDeals((prev) =>
       prev.map((d) => {
         if ((d as any).customer_name) return d;
