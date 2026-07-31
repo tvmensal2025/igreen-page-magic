@@ -1430,6 +1430,13 @@ Deno.serve(async (req) => {
     {
       const grp = stageGroup(stage);
       if (grp !== "A") {
+        if (!capCountReliable) {
+          // Contagem do dia falhou: adiar 30min (não jogar para amanhã por erro transitório).
+          await finishRow(row.id, claimToken, {
+            next_action_at: new Date(now.getTime() + 30 * 60_000).toISOString(),
+          });
+          deferred++; continue;
+        }
         const usedGlobal = touchedB + touchedC;
         const overGlobal = usedGlobal >= caps.capGlobal;
         const overGroup = grp === "B" ? touchedB >= caps.capB : touchedC >= caps.capC;
