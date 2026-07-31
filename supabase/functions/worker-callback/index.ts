@@ -122,6 +122,12 @@ Deno.serve(async (req) => {
       // Fallback: Whapi via sender (resolve JID — nunca fetch cru)
       const whapiToken = settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "";
       if (!whapiToken) { console.error("❌ Nenhum canal de envio configurado"); return; }
+      // Whapi é o chip do superadmin: nunca usar como fallback de outro consultor.
+      const whapiOwnerId = String(settings.superadmin_consultant_id || "").replace(/^"|"$/g, "");
+      if (whapiOwnerId && String(customer.consultant_id || "") !== whapiOwnerId) {
+        console.error("❌ Evolution indisponível e Whapi é exclusivo do superadmin — envio abortado");
+        return;
+      }
       try {
         const sender = createWhapiSender(
           whapiToken,
