@@ -108,16 +108,25 @@ export async function resolveConsultantOutboundChannel(
   const isSuper = !!superId && String(superId) === String(consultantId);
   const hintWhapi = !!hintInstanceName?.startsWith("whapi");
 
-  const whapiAllowed = isWhapiAllowedForConsultant(env, consultantId);
+  // Autorização Whapi: superadmin OU consultor com instância `whapi*` própria.
+  const whapiAllowed = await isWhapiAllowedForConsultantDb(
+    supabase,
+    env,
+    consultantId,
+  );
 
-  // 1) Hint da agenda/UI já diz Whapi — só vale para o dono do Whapi.
+  // 1) Hint da agenda/UI já diz Whapi — só vale se a instância for do consultor.
   if (hintWhapi && whapiAllowed) {
     const name = hintInstanceName!;
-    const adapter = getAdapter({
-      kind: "whapi",
-      input: { apiToken: env.whapiToken, instanceName: name },
-    });
-    return { kind: "whapi", instanceName: name, adapter };
+    const ownsHint = isSuper ||
+      (await isWhapiAllowedForConsultantDb(supabase, env, consultantId, name));
+    if (ownsHint) {
+      const adapter = getAdapter({
+        kind: "whapi",
+        input: { apiToken: env.whapiToken, instanceName: name },
+      });
+      return { kind: "whapi", instanceName: name, adapter };
+    }
   }
 
   // 2) Super admin / Whapi como canal principal
@@ -130,8 +139,9 @@ export async function resolveConsultantOutboundChannel(
     return { kind: "whapi", instanceName: name, adapter };
   }
 
-  // 2b) Instância whapi* própria — só o dono do token (superadmin).
+  // 2b) Instância whapi* própria (compartilhamento intencional cadastrado).
   if (whapiAllowed) {
+
     const { data: whapiInst } = await supabase
       .from("whatsapp_instances")
       .select("instance_name, status, manual_review_required, fatal_lock_until")
