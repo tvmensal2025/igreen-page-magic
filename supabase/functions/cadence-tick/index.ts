@@ -999,10 +999,18 @@ Deno.serve(async (req) => {
     }
 
 
+  const { data: whapiOwnerRow } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "superadmin_consultant_id")
+    .maybeSingle();
+
   const env = {
     evolutionUrl: Deno.env.get("EVOLUTION_API_URL") ?? undefined,
     evolutionKey: Deno.env.get("EVOLUTION_API_KEY") ?? undefined,
     whapiToken: Deno.env.get("WHAPI_TOKEN") ?? "",
+    // Whapi é do superadmin; consultores só saem por Evolution.
+    superadminConsultantId: String((whapiOwnerRow as any)?.value ?? "").replace(/^"|"$/g, "") || null,
   };
 
   // Kill-switch global
