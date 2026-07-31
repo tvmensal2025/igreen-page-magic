@@ -11,6 +11,7 @@ import {
   preloadConsultantAutomationPrefs,
 } from "../consultant-automation-prefs.ts";
 import { logSkipped } from "../automation-gate.ts";
+import { isClienteProibidoCadenciaABC } from "../cliente-cadence-guard.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -195,7 +196,7 @@ export async function planDailyReheat(
   let qA = supabase
     .from("customers")
     .select(
-      "id, name, phone_whatsapp, consultant_id, created_at, welcome_sent_at, conversation_step, portal_submitted_at, bot_paused, assigned_human_id, do_not_contact, capture_mode, customer_origin, last_bot_interaction_at",
+      "id, name, phone_whatsapp, consultant_id, created_at, welcome_sent_at, conversation_step, portal_submitted_at, bot_paused, assigned_human_id, do_not_contact, capture_mode, customer_origin, last_bot_interaction_at, status, is_converted, pos_venda_stage, pos_venda_recadastro_at, andamento_igreen",
     )
     .lte("created_at", novoCutoff)
     .gte("created_at", novoLookback)
@@ -209,7 +210,7 @@ export async function planDailyReheat(
   let qB = supabase
     .from("customers")
     .select(
-      "id, name, phone_whatsapp, consultant_id, created_at, welcome_sent_at, conversation_step, portal_submitted_at, bot_paused, assigned_human_id, do_not_contact, capture_mode, customer_origin, last_bot_interaction_at",
+      "id, name, phone_whatsapp, consultant_id, created_at, welcome_sent_at, conversation_step, portal_submitted_at, bot_paused, assigned_human_id, do_not_contact, capture_mode, customer_origin, last_bot_interaction_at, status, is_converted, pos_venda_stage, pos_venda_recadastro_at, andamento_igreen",
     )
     .lte("created_at", coldBefore)
     .eq("bot_paused", false)
@@ -298,6 +299,12 @@ export async function planDailyReheat(
     // Fila B: quem já está na onda/cadência longa fica só com o motor unitário.
     if (queue === "B" && inCadence.has(c.id)) {
       skippedGuards++;
+      return;
+    }
+    // Trava: CLIENTE (carteira / aprovado / pós-venda) nunca entra em A/B do ciclo.
+    if (isClienteProibidoCadenciaABC(c)) {
+      skippedGuards++;
+      void logSkipped(supabase, "daily_reheat", { reason: "cliente_pos_venda", customer_id: c.id, queue });
       return;
     }
     const pack = queue === "A" ? "a" : "b";
