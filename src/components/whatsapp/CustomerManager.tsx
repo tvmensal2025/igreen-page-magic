@@ -108,16 +108,27 @@ export function CustomerManager({
     enabled: !!consultantId,
     staleTime: 60_000,
     queryFn: async () => {
-      const { data } = await supabase
-        .from("igreen_telecom_customers" as never)
-        .select("id, nome, numero, cidade, uf, licenciado, status_label, status, synced_at")
-        .eq("consultant_id", consultantId)
-        .limit(2000);
-      return (data || []) as Array<{
+      type Row = {
         id: string; nome: string | null; numero: string | null;
         cidade: string | null; uf: string | null; licenciado: string | null;
         status_label: string | null; status: string | null; synced_at: string | null;
-      }>;
+      };
+      // Paginação real: o antigo .limit(2000) truncava a carteira sem aviso.
+      const PAGE = 1000;
+      const out: Row[] = [];
+      for (let page = 0; page < 30; page++) {
+        const { data, error } = await supabase
+          .from("igreen_telecom_customers" as never)
+          .select("id, nome, numero, cidade, uf, licenciado, status_label, status, synced_at")
+          .eq("consultant_id", consultantId)
+          .order("id", { ascending: true })
+          .range(page * PAGE, page * PAGE + PAGE - 1);
+        if (error) { console.error("[CustomerManager] telecom", error); break; }
+        const rows = (data || []) as unknown as Row[];
+        out.push(...rows);
+        if (rows.length < PAGE) break;
+      }
+      return out;
     },
   });
 
@@ -127,18 +138,29 @@ export function CustomerManager({
     enabled: !!consultantId,
     staleTime: 60_000,
     queryFn: async () => {
-      const { data } = await supabase
-        .from("igreen_seguros_customers" as never)
-        .select("id, segurado, modelo, placa, cidade, uf, licenciado, status_label, status, mensal, synced_at")
-        .eq("consultant_id", consultantId)
-        .limit(2000);
-      return (data || []) as Array<{
+      type Row = {
         id: string; segurado: string | null; modelo: string | null; placa: string | null;
         cidade: string | null; uf: string | null; licenciado: string | null;
         status_label: string | null; status: string | null; mensal: number | null; synced_at: string | null;
-      }>;
+      };
+      const PAGE = 1000;
+      const out: Row[] = [];
+      for (let page = 0; page < 30; page++) {
+        const { data, error } = await supabase
+          .from("igreen_seguros_customers" as never)
+          .select("id, segurado, modelo, placa, cidade, uf, licenciado, status_label, status, mensal, synced_at")
+          .eq("consultant_id", consultantId)
+          .order("id", { ascending: true })
+          .range(page * PAGE, page * PAGE + PAGE - 1);
+        if (error) { console.error("[CustomerManager] seguros", error); break; }
+        const rows = (data || []) as unknown as Row[];
+        out.push(...rows);
+        if (rows.length < PAGE) break;
+      }
+      return out;
     },
   });
+
 
   const telecomAsCustomers = useMemo<Customer[]>(() => {
     return telecomRows.map((t) => ({
