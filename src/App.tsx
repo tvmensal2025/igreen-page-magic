@@ -16,6 +16,7 @@ const LicenciadaPage = lazy(() => import("./pages/LicenciadaPage"));
 const LicenciadaPreview = lazy(() => import("./pages/LicenciadaPreview"));
 const AssistentePage = lazy(() => import("./pages/AssistentePage"));
 const Auth = lazy(() => import("./pages/Auth"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
 const Admin = lazy(() => import("./pages/Admin"));
 
 const FluxoBuilder = lazy(() => import("./pages/FluxoBuilder"));
@@ -119,6 +120,8 @@ const App = () => (
           }>
             <Routes>
               <Route path="/auth" element={<Auth />} />
+              {/* Retorno do e-mail de recuperação de senha (rota pública). */}
+              <Route path="/reset-password" element={<ResetPassword />} />
               <Route path="/tutorial" element={<Tutorial />} />
               <Route path="/admin" element={<ProtectedRoute><Admin /></ProtectedRoute>} />
               <Route path="/admin/whatsapp-clients" element={<ProtectedRoute><WhatsAppClientsPage /></ProtectedRoute>} />
