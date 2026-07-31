@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { Camera, Loader2, RefreshCw, FileImage, Paperclip } from "lucide-react";
 import { fireRandomCelebration } from "@/lib/captureGame";
+import { uploadCaptureDoc } from "@/lib/captacao/uploadCaptureDoc";
 import { resolveStorageDisplayUrl } from "@/lib/captacao/storageDisplayUrl";
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
 
@@ -167,16 +168,18 @@ export function CaptureDocumentTiles({
     setBusy(key);
     try {
       const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
-      const path = `captacao/${customerId}/${key}-${Date.now()}.${ext}`;
-      const { error: upErr } = await supabase.storage
-        .from("whatsapp-media")
-        .upload(path, file, { upsert: true, contentType: file.type || "image/jpeg" });
-      if (upErr) throw upErr;
-      const { data: pub } = supabase.storage.from("whatsapp-media").getPublicUrl(path);
-      await onUploaded(key, pub.publicUrl);
-      // Preview imediato via signed URL (bucket privado).
-      const signed = await resolveStorageDisplayUrl(pub.publicUrl);
+      const { url: storedUrl } = await uploadCaptureDoc({
+        customerId,
+        slot: key,
+        file,
+        fileName: file.name,
+        ext,
+      });
+      await onUploaded(key, storedUrl);
+      // Preview imediato (signed URL quando for bucket privado do Supabase).
+      const signed = await resolveStorageDisplayUrl(storedUrl);
       if (signed) setDisplayUrls((prev) => ({ ...prev, [key]: signed }));
+
       fireRandomCelebration();
       toast({ title: "📎 Documento anexado", description: "Extraindo dados…", duration: 1800 });
       // OCR automático — preenche valor/CEP/endereço/nome/CPF na ficha.
