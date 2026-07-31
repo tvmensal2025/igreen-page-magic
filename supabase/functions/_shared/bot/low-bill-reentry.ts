@@ -18,23 +18,42 @@ export const LOW_BILL_MIN_VALUE = 100;
 const INTENT_RE =
   /(conta\s+(aument|subi|mud|nova)|aument(ou|ei)|subiu|mudei\s+de\s+casa|agora\s+(minha\s+)?conta|quero\s+(cadastr|ativar|tentar|participar)|posso\s+cadastr|d[áa]\s+para\s+(fazer|cadastr)|voltei|vamos\s+cadastr)/i;
 
-/** Extrai o maior valor monetário plausível do texto (R$ 1.234,56 / 600 / 600,00). */
+/**
+ * Extrai o maior valor monetário plausível do texto (R$ 1.234,56 / 600 / 600,00).
+ *
+ * Descarta o que claramente NÃO é conta de luz: CPF, CEP, telefone, datas e
+ * sequências coladas em `-` / `/` (ex.: "CEP 38400-100" virava R$ 38.400).
+ */
 export function parseBillValueFromText(text: string | null | undefined): number | null {
   const t = String(text || "");
   if (!t.trim()) return null;
   let best: number | null = null;
-  const re = /(?:r\$\s*)?(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)/gi;
+  const re = /(r\$\s*)?(\d{1,3}(?:\.\d{3})+(?:,\d{1,2})?|\d+(?:[.,]\d{1,2})?)/gi;
   let m: RegExpExecArray | null;
   while ((m = re.exec(t)) !== null) {
-    let raw = m[1];
-    if (/\.\d{3}/.test(raw)) raw = raw.replace(/\./g, "");
+    const hasCurrency = !!m[1];
+    let raw = m[2];
+    const hasThousandSep = /\.\d{3}/.test(raw);
+    const digitCount = raw.replace(/\D/g, "").length;
+    const start = m.index + (m[1]?.length || 0);
+    const end = start + raw.length;
+    const before = t.slice(Math.max(0, start - 1), start);
+    const after = t.slice(end, end + 1);
+    // Colado em separador de CEP/data/CPF/telefone → não é valor de conta.
+    if (!hasCurrency && (/[-/\d]/.test(before) || /[-/\d]/.test(after))) continue;
+    // CPF/CEP/telefone digitados corridos (6+ dígitos sem R$ nem milhar).
+    if (!hasCurrency && !hasThousandSep && digitCount >= 6) continue;
+    if (hasThousandSep) raw = raw.replace(/\./g, "");
     raw = raw.replace(",", ".");
     const n = Number(raw);
-    if (!Number.isFinite(n) || n <= 0 || n > 500_000) continue;
+    if (!Number.isFinite(n) || n <= 0) continue;
+    // Teto de plausibilidade: conta de luz acima disso é erro de digitação.
+    if (n > (hasCurrency || hasThousandSep ? 500_000 : 50_000)) continue;
     if (best === null || n > best) best = n;
   }
   return best;
 }
+
 
 export type LowBillReentrySignals = {
   bot_paused_reason?: string | null;
