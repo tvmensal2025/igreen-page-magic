@@ -584,14 +584,14 @@ const AdminContent = () => {
           }
         />
 
-      <OnboardingGate form={form} saving={saving} onFormChange={handleFormChange} onSave={handleSave}>
+      <OnboardingGate form={form} saving={saving} onFormChange={handleFormChange} onSave={handleSaveAndSyncIdentity}>
 
       {userId && (
         <ConsultantAutomationPrefsModal
           consultantId={userId}
           autoPrompt={canAutoPromptAutomationPrefs({
-            consultantName: form.name,
-            assistantName: form.assistant_name,
+            consultantName: savedIdentity.name,
+            assistantName: savedIdentity.assistant,
           })}
         />
       )}
