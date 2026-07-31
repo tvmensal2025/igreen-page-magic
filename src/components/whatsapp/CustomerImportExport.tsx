@@ -75,7 +75,7 @@ export function CustomerImportExport({ customers, filtered, consultantId, onCust
         const statusRaw = safeString(findColumnValue(row, "Andamento", "Status", "status")) || undefined;
         const isNew = !existingPhones.has(phone);
 
-        parsed.push({ phone, name, status: mapStatus(statusRaw), data: buildCustomerData(row), isNew });
+        parsed.push({ phone, name, status: mapStatus(statusRaw), hasStatus: !!statusRaw, data: buildCustomerData(row), isNew });
       }
 
       setParsedCustomers(parsed);
