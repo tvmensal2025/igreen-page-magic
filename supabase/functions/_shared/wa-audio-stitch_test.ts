@@ -62,5 +62,6 @@ Deno.test("buildIntroSlotCandidates: ola ptbr4 (tudo bem) + nome ptbr3", () => {
   ]);
   assertEquals(buildIntroSlotCandidates("ola", "felipe"), [
     "intro:ola:ptbr4:felipe",
+    "intro:ola:felipe",
   ]);
 });
