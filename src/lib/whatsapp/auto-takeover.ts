@@ -39,9 +39,17 @@ async function applyPause(customerId: string, reason: Reason) {
     bot_processing_until: null,
     updated_at: new Date().toISOString(),
   };
-  const { error } = await supabase.from("customers").update(patch as never).eq("id", customerId);
-  if (error) {
-    console.warn("[auto-takeover] update RLS falhou — tentando edge:", error.message);
+  // RLS negando UPDATE em customers NÃO gera erro: retorna 0 linhas. Sem
+  // exigir a linha de volta, o fallback da edge nunca era acionado e o bot
+  // continuava respondendo em cima do humano.
+  const { data: updated, error } = await supabase
+    .from("customers")
+    .update(patch as never)
+    .eq("id", customerId)
+    .select("id")
+    .maybeSingle();
+  if (error || !updated) {
+    console.warn("[auto-takeover] update RLS falhou — tentando edge:", error?.message || "0 linhas");
     const { error: invErr } = await supabase.functions.invoke("customer-takeover", {
       body: { customerId, paused: true, reason },
     });
@@ -152,8 +160,13 @@ export async function undoTakeoverByPhone(rawPhone: string): Promise<boolean> {
       assigned_human_id: null,
       updated_at: new Date().toISOString(),
     };
-    const { error } = await supabase.from("customers").update(patch).eq("id", cust.id);
-    if (error) {
+    const { data: resumed, error } = await supabase
+      .from("customers")
+      .update(patch)
+      .eq("id", cust.id)
+      .select("id")
+      .maybeSingle();
+    if (error || !resumed) {
       const { error: invErr } = await supabase.functions.invoke("customer-takeover", {
         body: { customerId: cust.id, paused: false },
       });
