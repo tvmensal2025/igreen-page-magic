@@ -38,6 +38,38 @@ export function isWhapiAllowedForConsultant(
   return !!consultantId && String(consultantId) === String(superId);
 }
 
+/**
+ * Versão com banco: além do superadmin, autoriza consultor que TEM uma
+ * instância `whapi*` própria cadastrada (compartilhamento intencional —
+ * ex.: `whapi-sirlene`). Sem linha própria, continua proibido usar o chip
+ * do superadmin.
+ */
+export async function isWhapiAllowedForConsultantDb(
+  supabase: any,
+  env: Pick<ChannelEnv, "whapiToken" | "superadminConsultantId">,
+  consultantId: string | null | undefined,
+  instanceName?: string | null,
+): Promise<boolean> {
+  if (!env.whapiToken) return false;
+  if (isWhapiAllowedForConsultant(env, consultantId)) return true;
+  if (!consultantId) return false;
+  try {
+    let q = supabase
+      .from("whatsapp_instances")
+      .select("instance_name")
+      .eq("consultant_id", consultantId)
+      .like("instance_name", "whapi%")
+      .limit(1);
+    if (instanceName) q = q.eq("instance_name", instanceName);
+    const { data, error } = await q.maybeSingle();
+    if (error) return false; // fail-closed
+    return !!data?.instance_name;
+  } catch {
+    return false; // fail-closed
+  }
+}
+
+
 
 export interface ResolvedChannel {
   kind: "evolution" | "whapi";
@@ -76,16 +108,25 @@ export async function resolveConsultantOutboundChannel(
   const isSuper = !!superId && String(superId) === String(consultantId);
   const hintWhapi = !!hintInstanceName?.startsWith("whapi");
 
-  const whapiAllowed = isWhapiAllowedForConsultant(env, consultantId);
+  // Autorização Whapi: superadmin OU consultor com instância `whapi*` própria.
+  const whapiAllowed = await isWhapiAllowedForConsultantDb(
+    supabase,
+    env,
+    consultantId,
+  );
 
-  // 1) Hint da agenda/UI já diz Whapi — só vale para o dono do Whapi.
+  // 1) Hint da agenda/UI já diz Whapi — só vale se a instância for do consultor.
   if (hintWhapi && whapiAllowed) {
     const name = hintInstanceName!;
-    const adapter = getAdapter({
-      kind: "whapi",
-      input: { apiToken: env.whapiToken, instanceName: name },
-    });
-    return { kind: "whapi", instanceName: name, adapter };
+    const ownsHint = isSuper ||
+      (await isWhapiAllowedForConsultantDb(supabase, env, consultantId, name));
+    if (ownsHint) {
+      const adapter = getAdapter({
+        kind: "whapi",
+        input: { apiToken: env.whapiToken, instanceName: name },
+      });
+      return { kind: "whapi", instanceName: name, adapter };
+    }
   }
 
   // 2) Super admin / Whapi como canal principal
@@ -98,8 +139,9 @@ export async function resolveConsultantOutboundChannel(
     return { kind: "whapi", instanceName: name, adapter };
   }
 
-  // 2b) Instância whapi* própria — só o dono do token (superadmin).
+  // 2b) Instância whapi* própria (compartilhamento intencional cadastrado).
   if (whapiAllowed) {
+
     const { data: whapiInst } = await supabase
       .from("whatsapp_instances")
       .select("instance_name, status, manual_review_required, fatal_lock_until")
@@ -130,6 +172,7 @@ export async function resolveConsultantOutboundChannel(
       .from("whatsapp_instances")
       .select("instance_name, status, manual_review_required, fatal_lock_until")
       .eq("consultant_id", consultantId)
+      .not("instance_name", "like", "whapi%")
       .order("updated_at", { ascending: false })
       .limit(1);
     if (hintInstanceName && !hintInstanceName.startsWith("whapi")) {
@@ -144,10 +187,12 @@ export async function resolveConsultantOutboundChannel(
     const status = String(inst?.status || "").toLowerCase();
     if (
       inst?.instance_name &&
+      !String(inst.instance_name).startsWith("whapi") &&
       !inst.manual_review_required &&
       !(inst.fatal_lock_until && new Date(inst.fatal_lock_until) > new Date()) &&
       (!status || HEALTHY_STATUSES.has(status))
     ) {
+
       const adapter = getAdapter({
         kind: "evolution",
         input: {
@@ -285,8 +330,16 @@ export async function resolveChannelForCustomer(
       detail: "WHAPI_TOKEN ausente", instanceName, kind,
     };
   }
-  // Whapi é do superadmin: lead de outro consultor nunca sai pelo chip do dono.
-  if (!isWhapiAllowedForConsultant(env, c?.consultant_id)) {
+  // Whapi é do superadmin: lead de outro consultor só sai pelo chip quando a
+  // instância `whapi*` de origem está cadastrada NO consultor (compartilhamento
+  // intencional, ex.: whapi-sirlene).
+  const whapiOk = await isWhapiAllowedForConsultantDb(
+    supabase,
+    env,
+    c?.consultant_id,
+    instanceName,
+  );
+  if (!whapiOk) {
     return {
       unavailable: true, reason: "missing_credentials",
       detail:
@@ -294,6 +347,7 @@ export async function resolveChannelForCustomer(
       instanceName, kind,
     };
   }
+
 
   const adapter = getAdapter({
     kind: "whapi",
@@ -366,7 +420,11 @@ export async function resolveChannelForCustomerWithFailover(
 
   // Failover → Whapi SOMENTE para o dono do token (superadmin).
   // Consultor comum nunca cai no número do Rafael.
-  if (originKind !== "whapi" && isWhapiAllowedForConsultant(env, consultantId)) {
+  if (
+    originKind !== "whapi" &&
+    (await isWhapiAllowedForConsultantDb(supabase, env, consultantId))
+  ) {
+
     const { data: whapiInst } = await supabase
       .from("whatsapp_instances")
       .select("instance_name, status, manual_review_required, fatal_lock_until")

@@ -34,3 +34,19 @@ export function isSuperAdminConsultant(
 ): boolean {
   return !!superadminConsultantId && String(superadminConsultantId) === String(consultantId);
 }
+
+/**
+ * Lê apenas `settings.superadmin_consultant_id` (dono do Whapi).
+ * Usado por edges que montam ChannelEnv manualmente — sem isso a trava
+ * "Whapi é só do superadmin" ficava fail-open.
+ */
+export async function loadSuperadminConsultantId(supabase: SB): Promise<string | null> {
+  const { data } = await supabase
+    .from("settings")
+    .select("value")
+    .eq("key", "superadmin_consultant_id")
+    .maybeSingle();
+  const raw = (data as { value?: unknown } | null)?.value;
+  const val = typeof raw === "string" ? raw : raw == null ? "" : String(raw);
+  return val.replace(/^"|"$/g, "") || null;
+}
