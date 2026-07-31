@@ -38,6 +38,38 @@ export function isWhapiAllowedForConsultant(
   return !!consultantId && String(consultantId) === String(superId);
 }
 
+/**
+ * Versão com banco: além do superadmin, autoriza consultor que TEM uma
+ * instância `whapi*` própria cadastrada (compartilhamento intencional —
+ * ex.: `whapi-sirlene`). Sem linha própria, continua proibido usar o chip
+ * do superadmin.
+ */
+export async function isWhapiAllowedForConsultantDb(
+  supabase: any,
+  env: Pick<ChannelEnv, "whapiToken" | "superadminConsultantId">,
+  consultantId: string | null | undefined,
+  instanceName?: string | null,
+): Promise<boolean> {
+  if (!env.whapiToken) return false;
+  if (isWhapiAllowedForConsultant(env, consultantId)) return true;
+  if (!consultantId) return false;
+  try {
+    let q = supabase
+      .from("whatsapp_instances")
+      .select("instance_name")
+      .eq("consultant_id", consultantId)
+      .like("instance_name", "whapi%")
+      .limit(1);
+    if (instanceName) q = q.eq("instance_name", instanceName);
+    const { data, error } = await q.maybeSingle();
+    if (error) return false; // fail-closed
+    return !!data?.instance_name;
+  } catch {
+    return false; // fail-closed
+  }
+}
+
+
 
 export interface ResolvedChannel {
   kind: "evolution" | "whapi";
