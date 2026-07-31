@@ -586,10 +586,13 @@ export async function enrichCadenceFaqWithKnowledge(
     consultantId?: string | null;
     leadName?: string;
     fallback: string;
+    /** true → só FAQ/atalhos + seções (sem IA livre). */
+    kbOnly?: boolean;
   },
 ): Promise<{ text: string; source: "kb" | "ai" | "fallback" }> {
   const q = String(opts.question || "").trim();
   if (q.length < 4) return { text: opts.fallback, source: "fallback" };
+
 
   try {
     const { lookupKnowledge } = await import("./knowledge-lookup.ts");
