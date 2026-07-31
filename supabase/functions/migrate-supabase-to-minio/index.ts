@@ -33,7 +33,9 @@ function extFromPath(path: string, mime: string): string {
 async function listAll(bucket: string, prefix = "", limit = 1000): Promise<any[]> {
   const all: any[] = [];
   // Recursively list folders (Supabase storage list is non-recursive)
-  const stack: string[] = [prefix];
+  // Prefixo precisa vir sem "/" nas pontas, senão o fullPath sai com "//".
+  const stack: string[] = [prefix.replace(/^\/+|\/+$/g, "")];
+
   while (stack.length) {
     const cur = stack.pop()!;
     let offset = 0;
