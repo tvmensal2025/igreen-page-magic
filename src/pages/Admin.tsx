@@ -801,7 +801,7 @@ const AdminContent = () => {
             <SheetTitle>Configurações</SheetTitle>
           </SheetHeader>
           <div className="mt-6 space-y-6">
-            <DadosTab form={form} photoPreview={effectivePhotoPreview} saving={saving} onFormChange={handleFormChange} onPhotoChange={handlePhotoChange} onSave={handleSave} userId={userId || ""} />
+            <DadosTab form={form} photoPreview={effectivePhotoPreview} saving={saving} onFormChange={handleFormChange} onPhotoChange={handlePhotoChange} onSave={handleSaveAndSyncIdentity} userId={userId || ""} />
             <Suspense fallback={null}>
               {userId && <ConsultantAutomationPrefsCard consultantId={userId} variant="full" />}
               {userId && <IGreenConnectionCard userId={userId} />}
