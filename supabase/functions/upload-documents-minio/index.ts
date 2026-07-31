@@ -1,5 +1,6 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { resolveCaller, assertOwnership } from "../_shared/caller-auth.ts";
+import { parseSupabaseStorageUrl } from "../_shared/storage-download.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -308,7 +309,7 @@ Deno.serve(async (req) => {
     if (customer.electricity_bill_photo_url && customer.electricity_bill_photo_url !== "evolution-media:pending") {
       try {
         console.log("📄 Baixando conta de energia...");
-        const { bytes, contentType } = await downloadFile(customer.electricity_bill_photo_url);
+        const { bytes, contentType } = await downloadFile(customer.electricity_bill_photo_url, supabase);
         const ext = getFileExtension(contentType, customer.electricity_bill_photo_url);
         const objectKey = `${folderPath}/conta.${ext}`;
 
@@ -336,7 +337,7 @@ Deno.serve(async (req) => {
     if (customer.document_front_url && customer.document_front_url !== "evolution-media:pending" && customer.document_front_url !== "collected") {
       try {
         console.log("📄 Baixando documento frente...");
-        const { bytes, contentType } = await downloadFile(customer.document_front_url);
+        const { bytes, contentType } = await downloadFile(customer.document_front_url, supabase);
         const ext = getFileExtension(contentType, customer.document_front_url);
         const objectKey = `${folderPath}/doc_frente.${ext}`;
 
@@ -364,7 +365,7 @@ Deno.serve(async (req) => {
     if (customer.document_back_url && customer.document_back_url !== "evolution-media:pending" && customer.document_back_url !== "collected" && customer.document_back_url !== "nao_aplicavel") {
       try {
         console.log("📄 Baixando documento verso...");
-        const { bytes, contentType } = await downloadFile(customer.document_back_url);
+        const { bytes, contentType } = await downloadFile(customer.document_back_url, supabase);
         const ext = getFileExtension(contentType, customer.document_back_url);
         const objectKey = `${folderPath}/doc_verso.${ext}`;
 
