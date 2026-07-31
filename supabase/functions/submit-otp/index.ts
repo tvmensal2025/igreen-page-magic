@@ -54,7 +54,7 @@ Deno.serve(async (req) => {
         const deny = await assertOwnership(
           caller,
           { customerId: String(customer_id || "") },
-          supabase,
+          supabase as any,
         );
         if (deny) return deny;
       }
