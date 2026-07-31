@@ -1727,21 +1727,31 @@ export function ReheatCyclePizza({
   const saveToggle = async (key: "cadence_engine" | "daily_reheat", value: boolean) => {
     setSavingKey(key);
     try {
-      const { error: tErr } = await (supabase as any)
+      // RLS: `automation_toggles`/`daily_reheat_settings` só aceitam admin.
+      // Negado = 0 linhas SEM erro → precisamos exigir a linha de volta,
+      // senão a tela diz "Desligado" com o motor ainda ligado no banco.
+      const { data: tRow, error: tErr } = await (supabase as any)
         .from("automation_toggles")
         .update({ enabled: value, updated_at: new Date().toISOString() })
-        .eq("key", key);
+        .eq("key", key)
+        .select("key")
+        .maybeSingle();
       if (tErr) throw tErr;
+      if (!tRow) throw new Error("O banco recusou a gravação (sem permissão de administrador). Nada mudou.");
       if (key === "cadence_engine") setToggleCadence(value);
       if (key === "daily_reheat") {
-        const { error: sErr } = await (supabase as any)
+        const { data: sRow, error: sErr } = await (supabase as any)
           .from("daily_reheat_settings")
           .update({ enabled: value, updated_at: new Date().toISOString() })
-          .eq("id", "global");
+          .eq("id", "global")
+          .select("id")
+          .maybeSingle();
         if (sErr) throw sErr;
+        if (!sRow) throw new Error("Toggle mudou, mas daily_reheat_settings NÃO foi gravado (sem permissão). Estado inconsistente.");
         setToggleReheat(value);
         setSettings((prev) => (prev ? { ...prev, enabled: value } : prev));
       }
+
       toast({ title: value ? "Ligado" : "Desligado", description: key });
     } catch (e: any) {
       toast({
