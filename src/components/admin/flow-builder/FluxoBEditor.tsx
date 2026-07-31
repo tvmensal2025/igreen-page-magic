@@ -32,6 +32,9 @@ export default function FluxoBEditor({ consultantId }: Props) {
 
   useEffect(() => {
     if (!consultantId) return;
+    // Guarda de corrida: se o consultor mudar (ou o componente desmontar) antes
+    // da resposta, a resposta antiga NÃO pode sobrescrever o estado do novo.
+    let cancelled = false;
     (async () => {
       setLoading(true);
       const { data, error } = await supabase
@@ -39,6 +42,7 @@ export default function FluxoBEditor({ consultantId }: Props) {
         .select("ai_persona_fluxo_b, ai_persona_fluxo_b_temperature, ai_persona_fluxo_b_cascade_enabled")
         .eq("id", consultantId)
         .maybeSingle();
+      if (cancelled) return;
       if (error) {
         toast({ title: "Erro carregando prompt", description: error.message, variant: "destructive" });
       } else if (data) {
@@ -49,6 +53,7 @@ export default function FluxoBEditor({ consultantId }: Props) {
       }
       setLoading(false);
     })();
+    return () => { cancelled = true; };
   }, [consultantId, toast]);
 
   async function save() {
