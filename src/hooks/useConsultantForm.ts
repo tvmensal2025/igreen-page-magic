@@ -196,7 +196,12 @@ export function useConsultantForm(
       return true;
     } catch (error: unknown) {
       console.error("[onboarding-save] failed:", error);
-      toast({ title: "Erro ao salvar", description: describeSupabaseError(error), variant: "destructive", duration: 8000 });
+      const raw = describeSupabaseError(error);
+      // Trigger enforce_reserved_assistant_names → mensagem clara e com o campo.
+      const friendly = /reservad/i.test(raw)
+        ? `O nome de IA "${form.assistant_name?.trim() || ""}" já pertence a outro consultor. Escolha um nome só seu no campo "Nome da IA" (ex.: Bia, Lara, Nina).`
+        : raw;
+      toast({ title: "Erro ao salvar", description: friendly, variant: "destructive", duration: 8000 });
       return false;
     } finally { setSaving(false); }
   };
