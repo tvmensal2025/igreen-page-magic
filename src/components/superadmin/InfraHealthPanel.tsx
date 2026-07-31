@@ -94,7 +94,7 @@ export function InfraHealthPanel() {
     setSaving(true);
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      const { error } = await supabase
+      const { data: row, error } = await supabase
         .from("app_settings")
         .update({
           super_admin_phone: adminPhone.replace(/\D/g, "") || null,
@@ -103,8 +103,13 @@ export function InfraHealthPanel() {
           updated_at: new Date().toISOString(),
           updated_by: user?.id ?? null,
         })
-        .eq("id", "global");
+        .eq("id", "global")
+        .select("id")
+        .maybeSingle();
       if (error) throw error;
+      // RLS nega sem erro (0 linhas) — não pode dizer "salvo" com o telefone
+      // de alerta antigo ainda valendo.
+      if (!row) throw new Error("Sem permissão para salvar (precisa super_admin).");
       toast({ title: "Configuração salva" });
     } catch (e: any) {
       toast({ title: "Erro ao salvar", description: e?.message || String(e), variant: "destructive" });
