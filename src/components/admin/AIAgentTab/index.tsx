@@ -22,22 +22,29 @@ export function AIAgentTab({ userId, initialSubTab }: { userId: string; initialS
   useEffect(() => { if (initialSubTab) setSub(initialSubTab); }, [initialSubTab]);
   const [agenteSub, setAgenteSub] = useState<AgenteSub>("audios");
   const [enabled, setEnabled] = useState<boolean | null>(null);
-  const [personaName, setPersonaName] = useState<string>("Camila");
+  // Fonte da verdade do nome da IA = consultants.assistant_name (é o que as
+  // edges usam). ai_agent_config.persona_name é só espelho legado.
+  const [personaName, setPersonaName] = useState<string>("");
+  const [savedPersonaName, setSavedPersonaName] = useState<string>("");
+  const [savingPersona, setSavingPersona] = useState(false);
   const [savingEnabled, setSavingEnabled] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from("ai_agent_config")
-        .select("enabled, persona_name")
-        .eq("consultant_id", userId)
-        .maybeSingle();
-      setEnabled(data ? !!(data as any).enabled : true);
-      if (data && (data as any).persona_name) {
-        setPersonaName((data as any).persona_name);
-      }
+      const [cfgRes, consRes] = await Promise.all([
+        supabase.from("ai_agent_config").select("enabled, persona_name").eq("consultant_id", userId).maybeSingle(),
+        supabase.from("consultants").select("assistant_name").eq("id", userId).maybeSingle(),
+      ]);
+      const data = cfgRes.data as any;
+      setEnabled(data ? !!data.enabled : true);
+      const nm =
+        String((consRes.data as any)?.assistant_name || "").trim() ||
+        String(data?.persona_name || "").trim();
+      setPersonaName(nm);
+      setSavedPersonaName(nm);
     })();
   }, [userId]);
+
 
   async function saveConfig(patch: { enabled?: boolean; persona_name?: string }) {
     const { data: existing } = await supabase
@@ -123,14 +130,37 @@ export function AIAgentTab({ userId, initialSubTab }: { userId: string; initialS
     }
   }
 
+  // Salva só no clique. Grava em consultants.assistant_name (fonte usada pelas
+  // ligações/mensagens) e espelha no ai_agent_config.
   async function savePersonaName() {
-    const error = await saveConfig({ enabled: enabled ?? true, persona_name: personaName });
-    if (error) {
-      toast({ title: "Erro", description: error.message, variant: "destructive" });
-    } else {
-      toast({ title: "✅ Nome atualizado" });
+    const trimmed = personaName.trim();
+    if (trimmed.length < 2) {
+      toast({ title: "Nome muito curto", description: "Use pelo menos 2 letras.", variant: "destructive" });
+      return;
+    }
+    setSavingPersona(true);
+    try {
+      const { error: consErr } = await supabase
+        .from("consultants")
+        .update({ assistant_name: trimmed })
+        .eq("id", userId);
+      if (consErr) throw consErr;
+      const error = await saveConfig({ enabled: enabled ?? true, persona_name: trimmed });
+      if (error) throw error;
+      setPersonaName(trimmed);
+      setSavedPersonaName(trimmed);
+      toast({ title: "✅ Nome atualizado", description: `Sua IA agora se chama "${trimmed}".` });
+    } catch (e: any) {
+      const raw = e?.message || String(e);
+      const friendly = /reservado/i.test(raw)
+        ? `O nome "${trimmed}" já pertence à IA de outro consultor. Escolha outro (ex.: Bia, Lara, Nina).`
+        : raw;
+      toast({ title: "Erro ao salvar nome", description: friendly, variant: "destructive", duration: 8000 });
+    } finally {
+      setSavingPersona(false);
     }
   }
+
 
   const subs: { id: SubTab; label: string; icon: typeof Bot }[] = [
     { id: "atendimentos", label: "Atendimentos", icon: MessagesSquare },
@@ -153,12 +183,24 @@ export function AIAgentTab({ userId, initialSubTab }: { userId: string; initialS
               type="text"
               value={personaName}
               onChange={(e) => setPersonaName(e.target.value)}
-              onBlur={savePersonaName}
-              onKeyDown={(e) => e.key === "Enter" && (e.currentTarget as HTMLInputElement).blur()}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); void savePersonaName(); } }}
+              placeholder="nome da IA"
               className="text-lg font-bold font-heading text-foreground bg-transparent border-b border-transparent hover:border-border focus:border-primary focus:outline-none px-1 -mx-1 w-32"
               maxLength={20}
-              title="Clique para renomear (só você vê esse nome)"
+              disabled={savingPersona}
+              title="Digite e clique em Salvar"
             />
+            {personaName.trim() !== savedPersonaName ? (
+              <button
+                type="button"
+                onClick={() => void savePersonaName()}
+                disabled={savingPersona || personaName.trim().length < 2}
+                className="text-xs font-semibold px-2 py-1 rounded-md border border-primary/40 text-primary hover:bg-primary/10 disabled:opacity-50"
+              >
+                {savingPersona ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : "Salvar"}
+              </button>
+            ) : null}
+
           </div>
           <p className="text-xs text-muted-foreground">
             Atendimento humanizado 24/7. Desligar bloqueia a IA para clientes interessados atuais e futuros.
