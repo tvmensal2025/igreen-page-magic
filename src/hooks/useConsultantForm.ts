@@ -151,26 +151,33 @@ export function useConsultantForm(
       if (savedConsultant?.photo_url) { setPhotoPreview(savedConsultant.photo_url); setPhotoFile(null); setLocalPhotoPreview(null); }
 
       // Auto-ativa telefone principal como destino dos anúncios — só se válido.
+      // supabase-js NÃO lança erro: devolve { error }. O try/catch antigo nunca
+      // disparava, então a falha sumia por completo (nem no console).
       const phoneValidation = validateBrazilPhone(form.phone);
       if (phoneValidation.valid) {
-        try {
-          await supabase.from("consultant_ad_settings").upsert(
-            { consultant_id: userId, whatsapp_destination_number: phoneValidation.normalized },
-            { onConflict: "consultant_id" },
-          );
-        } catch (adsErr) {
+        const { error: adsErr } = await supabase.from("consultant_ad_settings").upsert(
+          { consultant_id: userId, whatsapp_destination_number: phoneValidation.normalized },
+          { onConflict: "consultant_id" },
+        );
+        if (adsErr) {
           console.warn("[useConsultantForm] falha ao sincronizar whatsapp_destination_number", adsErr);
+          toast({
+            title: "Dados salvos, mas atenção",
+            description:
+              "Não consegui atualizar o número de destino dos anúncios. Confira em Anúncios se o WhatsApp de destino está certo.",
+            variant: "destructive",
+            duration: 8000,
+          });
         }
       } else if (form.phone) {
         console.warn("[useConsultantForm] telefone inválido, não gravado em ad_settings:", phoneValidation.reason);
       }
 
-      // Tenta marcar como verificado se bate com o connected_phone da instância
-      try {
-        await supabase.rpc("check_consultant_phone_match", { _consultant_id: userId });
-      } catch (verifyErr) {
-        console.warn("[useConsultantForm] check_consultant_phone_match falhou", verifyErr);
-      }
+      // Tenta marcar como verificado se bate com o connected_phone da instância.
+      // Idem: erro de RPC vem em { error }, não como exceção.
+      const { error: verifyErr } = await supabase.rpc("check_consultant_phone_match", { _consultant_id: userId });
+      if (verifyErr) console.warn("[useConsultantForm] check_consultant_phone_match falhou", verifyErr);
+
 
       // Áudios só se Zap já estiver conectado (não gera no cadastro seco).
       try {
