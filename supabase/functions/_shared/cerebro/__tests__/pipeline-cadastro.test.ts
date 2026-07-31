@@ -75,7 +75,7 @@ function fazerEspiaoPortal(resultado?: DispatchResult) {
   const fn = (...args: any[]): Promise<DispatchResult> => {
     chamadas.push({ supabase: args[0], customerId: args[1], nargs: args.length });
     return Promise.resolve(
-      resultado ?? { ok: true, mode: "dispatched", status: 200, worker: "digital" },
+      resultado ?? { ok: true, mode: "dispatched", status: 200, worker: "autoconexao" },
     );
   };
   return { fn, chamadas };
