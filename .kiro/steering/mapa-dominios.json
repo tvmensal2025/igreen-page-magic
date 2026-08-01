@@ -772,7 +772,7 @@
     },
     {
       "path": "supabase/functions/whapi-webhook/index.ts",
-      "lines": 3505
+      "lines": 3801
     },
     {
       "path": "src/lib/multichannelCadenceTexts.ts",
