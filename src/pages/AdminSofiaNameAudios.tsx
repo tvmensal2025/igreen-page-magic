@@ -438,7 +438,7 @@ export default function AdminSofiaNameAudios() {
           </div>
         ) : (
           <>
-            <div className="rounded-lg border border-border/50 overflow-hidden">
+            <div className="rounded-lg border border-border/50 overflow-hidden overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/30">
                   <tr>
