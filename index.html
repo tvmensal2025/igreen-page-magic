@@ -74,13 +74,34 @@
     <meta name="format-detection" content="telephone=no" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- A primeira coisa que qualquer rota faz é chamar o Supabase
+         (getSession no ProtectedRoute / auth). Abrir DNS+TLS agora tira um
+         round-trip do caminho crítico, principalmente no 4G. -->
+    <link rel="preconnect" href="https://zlzasfhcxcznaprrragl.supabase.co" crossorigin />
     <!-- Fontes no <head> (não @import no CSS): quebra a cadeia serial CSS→fonts.
          Mantém todas as famílias referenciadas em tokens/tailwind/ilhas (não cortar
-         Space Grotesk/DM Sans/Inter/Bricolage — ainda usadas). -->
+         Space Grotesk/DM Sans/Inter/Bricolage — ainda usadas).
+         `media="print"` + `onload` faz o navegador baixar sem BLOQUEAR o primeiro
+         paint (o CSS do Google é third-party e custa um RTT extra). Como as
+         famílias já usam `display=swap`, o texto aparece imediatamente na fonte
+         de sistema e troca ao carregar — mesmo comportamento visual de antes,
+         só que sem segurar a renderização.
+         "Noto Color Emoji" saiu da URL de propósito: no código ele só aparece
+         como fallback de fonte de SISTEMA (junto de Apple Color Emoji / Segoe UI
+         Emoji), então baixar o webfont (megabytes) nunca foi necessário. -->
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&family=Noto+Color+Emoji&display=swap"
+      media="print"
+      onload="this.media='all';this.onload=null;"
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap"
     />
+    <noscript>
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800;900&family=Open+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=Figtree:wght@400;500;600;700&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&family=Sora:wght@500;600;700&family=Manrope:wght@400;500;600;700&display=swap"
+      />
+    </noscript>
+
     <title>iGreen Cloud — Painel do Consultor de Energia</title>
     <meta name="description" content="Plataforma iGreen Cloud: gestão de leads, WhatsApp, cadência multicanal e carteira de clientes de energia por assinatura para consultores." />
     <meta name="author" content="iGreen Energy" />
