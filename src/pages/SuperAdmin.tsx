@@ -11,9 +11,10 @@ import {
   Shield, Users, CheckCircle, XCircle, LogOut, Loader2, UserCheck, UserX,
   KeyRound, Brain, MessageSquare, Wifi, WifiOff, AlertTriangle, Send,
   Search, Eye, TrendingUp, Phone, Calendar, RefreshCw, Sparkles, Activity,
-  ChevronRight, BarChart3, Megaphone, Target, Sun, Link2,
+  ChevronRight, BarChart3, Megaphone, Target, Sun, Link2, ArrowLeft, Trash2,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { toUserFacingError } from "@/lib/userFacingError";
 // Heavy panels — lazy load on demand to shrink initial bundle
 const AIKnowledgePanel = lazy(() => import("@/components/superadmin/AIKnowledgePanel").then(m => ({ default: m.AIKnowledgePanel })));
 const AIControlPanel = lazy(() => import("@/components/superadmin/AIControlPanel").then(m => ({ default: m.AIControlPanel })));
@@ -79,6 +80,7 @@ const SuperAdmin = () => {
   const [loadingData, setLoadingData] = useState(true);
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"consultores" | "captacao" | "gestores_ads" | "ia" | "ia_aprendendo" | "crm" | "auditoria" | "funil" | "worker" | "plataforma_fb" | "financeiro" | "templates_ads" | "templates_fluxo" | "saude_rede" | "rollout" | "solar">("consultores");
   const [searchTerm, setSearchTerm] = useState("");
   const accessDeniedToastShownRef = useRef(false);
@@ -257,6 +259,58 @@ const SuperAdmin = () => {
     setResettingId(null);
   };
 
+  const handleDeleteConsultant = async (
+    consultantId: string,
+    consultantName: string,
+    totalCustomers = 0,
+  ) => {
+    if (userId && consultantId === userId) {
+      toast({
+        title: "Não permitido",
+        description: "Você não pode excluir a própria conta por aqui.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const ok = await confirm({
+      title: `Excluir permanentemente ${consultantName}?`,
+      description:
+        `Isso apaga o login e o perfil do consultor.\n` +
+        (totalCustomers > 0
+          ? `Há ${totalCustomers} cliente(s) ligados — o vínculo com este consultor será removido, mas os registros de clientes não somem automaticamente.\n`
+          : "") +
+        `Esta ação não tem volta.`,
+      confirmText: "Excluir usuário",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
+
+    setDeletingId(consultantId);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-delete-consultant", {
+        body: { consultant_id: consultantId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      setConsultants((prev) => prev.filter((c) => c.id !== consultantId));
+      toast({ title: "Usuário excluído", description: `${consultantName} foi removido.` });
+      logAdminAction("delete_consultant", "consultant", consultantId, {
+        name: consultantName,
+        email: data?.deleted?.email ?? null,
+      });
+    } catch (err: unknown) {
+      toast({
+        title: "Erro ao excluir usuário",
+        description: toUserFacingError(err),
+        variant: "destructive",
+      });
+    }
+    setDeletingId(null);
+  };
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     navigate("/auth");
@@ -349,6 +403,9 @@ const SuperAdmin = () => {
             </div>
           </div>
           <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+            <Button variant="outline" size="sm" onClick={() => navigate("/admin")} className="gap-2">
+              <ArrowLeft className="w-4 h-4" /> <span className="hidden sm:inline">Voltar ao Admin</span>
+            </Button>
             <Button variant="outline" size="sm" onClick={() => navigate("/super-admin/portais")} className="gap-2">
               <Link2 className="w-4 h-4" /> <span className="hidden sm:inline">Portais</span>
             </Button>
@@ -536,6 +593,27 @@ const SuperAdmin = () => {
                                 {c.approved ? "Revogar" : "Aprovar"}
                               </Button>
                               <SuperAdminCashCreditDialog consultantId={c.id} consultantName={c.name} />
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 rounded-lg text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    onClick={() => handleDeleteConsultant(c.id, c.name, c.total_customers || 0)}
+                                    disabled={deletingId === c.id || Boolean(userId && c.id === userId)}
+                                    aria-label={`Excluir ${c.name}`}
+                                  >
+                                    {deletingId === c.id ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    )}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {userId && c.id === userId ? "Não dá para excluir a própria conta" : "Excluir usuário"}
+                                </TooltipContent>
+                              </Tooltip>
                             </div>
 
                           </div>

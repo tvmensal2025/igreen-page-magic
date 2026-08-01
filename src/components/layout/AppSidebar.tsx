@@ -81,13 +81,6 @@ const NAV_GROUPS: NavGroup[] = [
         icon: Rocket,
         superAdminOnly: true,
       },
-      {
-        id: "super-admin",
-        label: "Super Admin",
-        icon: Shield,
-        href: "/super-admin",
-        superAdminOnly: true,
-      },
     ],
   },
   {
@@ -293,6 +286,25 @@ export function AppSidebar({
                 >
                   <Settings className="w-[18px] h-[18px] shrink-0" />
                   {!collapsed && <span className="truncate">Configurações</span>}
+                </button>
+              )}
+              {isSuperAdmin && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onNavigate?.("/super-admin");
+                    onOpenChange?.(false);
+                    if (typeof window !== "undefined" && window.matchMedia("(min-width: 1024px)").matches) {
+                      onCollapse?.();
+                    }
+                  }}
+                  data-tour="menu-super-admin"
+                  className="pe-nav-item w-full text-left"
+                  title={collapsed ? "Super Admin" : undefined}
+                  aria-label="Super Admin"
+                >
+                  <Shield className="w-[18px] h-[18px] shrink-0" />
+                  {!collapsed && <span className="truncate">Super Admin</span>}
                 </button>
               )}
               {onLogout && (
