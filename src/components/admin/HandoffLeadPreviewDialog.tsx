@@ -1,8 +1,8 @@
 /**
- * Popup: nome + foto (se houver) + histórico de mensagens do lead.
+ * Popup: nome + histórico com áudio / imagem / vídeo (mesmo resolver do chat).
  */
 import { useEffect, useState } from "react";
-import { Loader2, MessageCircle } from "lucide-react";
+import { FileText, Loader2, MessageCircle, Mic, Play } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -15,14 +15,14 @@ import { Button } from "@/components/ui/button";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
 import type { HandoffLead } from "@/lib/handoffReturnToPizza";
+import {
+  CONVERSATION_MESSAGE_SELECT,
+  resolveConversationMediaDataUrl,
+  type ConversationMessageRow,
+} from "@/lib/conversationMediaResolver";
+import { parseConversationEmbeddedMediaUrl } from "@/lib/captacao/conversationMediaUrl";
 
-type Msg = {
-  id: string;
-  message_direction: string;
-  message_text: string | null;
-  message_type: string | null;
-  created_at: string;
-};
+type Msg = ConversationMessageRow;
 
 type Props = {
   lead: HandoffLead | null;
@@ -55,18 +55,127 @@ function formatWhen(iso: string): string {
   }
 }
 
-function previewText(text: string | null, type: string | null): string {
+function mediaKind(type: string | null, text: string | null): "image" | "audio" | "video" | "document" | "text" {
+  const embedded = parseConversationEmbeddedMediaUrl(text);
+  if (embedded?.kind === "image" || embedded?.kind === "sticker") return "image";
+  if (embedded?.kind === "audio") return "audio";
+  if (embedded?.kind === "video") return "video";
+  if (embedded?.kind === "document") return "document";
+  const kind = String(type || "").toLowerCase();
+  if (kind.includes("image") || kind.includes("photo") || kind.includes("sticker")) return "image";
+  if (kind.includes("audio") || kind.includes("ptt") || kind.includes("voice")) return "audio";
+  if (kind.includes("video")) return "video";
+  if (kind.includes("document") || kind.includes("file")) return "document";
+  return "text";
+}
+
+function captionText(text: string | null): string {
   const t = String(text || "").trim();
+  if (!t) return "";
   if (t.startsWith("[__safety_ping__]") || t.startsWith("[inline-sent]") || t.startsWith("[failed:")) {
     return "";
   }
-  if (t) return t;
-  const kind = String(type || "").toLowerCase();
-  if (kind.includes("image") || kind.includes("photo")) return "[foto]";
-  if (kind.includes("audio")) return "[áudio]";
-  if (kind.includes("video")) return "[vídeo]";
-  if (kind.includes("document")) return "[documento]";
-  return "[sem texto]";
+  if (t.startsWith("data:")) return "";
+  const embedded = parseConversationEmbeddedMediaUrl(t);
+  if (embedded) return "";
+  if (/^\[(image|document|video|audio|sticker)\]/i.test(t)) return "";
+  return t;
+}
+
+function PreviewMedia({
+  msg,
+  customerId,
+}: {
+  msg: Msg;
+  customerId: string;
+}) {
+  const kind = mediaKind(msg.message_type, msg.message_text);
+  const [src, setSrc] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (kind === "text") return;
+    let cancelled = false;
+    setSrc(null);
+    setFailed(false);
+    setLoading(true);
+    void (async () => {
+      try {
+        const url = await resolveConversationMediaDataUrl({ row: msg, customerId });
+        if (cancelled) return;
+        if (url) setSrc(url);
+        else setFailed(true);
+      } catch {
+        if (!cancelled) setFailed(true);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [msg.id, customerId, kind]);
+
+  if (kind === "text") return null;
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-xs opacity-80 py-1">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        Carregando {kind === "audio" ? "áudio" : kind === "video" ? "vídeo" : kind === "image" ? "imagem" : "arquivo"}…
+      </div>
+    );
+  }
+
+  if (failed || !src) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs opacity-80 py-1">
+        {kind === "audio" ? <Mic className="h-3.5 w-3.5" /> : kind === "video" ? <Play className="h-3.5 w-3.5" /> : <FileText className="h-3.5 w-3.5" />}
+        Não foi possível carregar a mídia
+      </div>
+    );
+  }
+
+  if (kind === "audio") {
+    return (
+      <audio controls preload="metadata" className="w-full max-w-[260px] h-10 my-1">
+        <source src={src} />
+      </audio>
+    );
+  }
+
+  if (kind === "image") {
+    return (
+      <a href={src} target="_blank" rel="noreferrer" className="block my-1">
+        <img
+          src={src}
+          alt="Imagem da conversa"
+          className="max-h-52 max-w-full rounded-lg object-contain bg-black/5"
+        />
+      </a>
+    );
+  }
+
+  if (kind === "video") {
+    return (
+      <video controls preload="metadata" className="max-h-52 max-w-full rounded-lg my-1 bg-black/90">
+        <source src={src} />
+      </video>
+    );
+  }
+
+  return (
+    <a
+      href={src}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1.5 text-xs underline underline-offset-2 my-1"
+    >
+      <FileText className="h-3.5 w-3.5" />
+      Abrir documento
+    </a>
+  );
 }
 
 export function HandoffLeadPreviewDialog({ lead, open, onOpenChange, onOpenChat }: Props) {
@@ -83,7 +192,7 @@ export function HandoffLeadPreviewDialog({ lead, open, onOpenChange, onOpenChat 
       setLoading(true);
       const { data } = await supabase
         .from("conversations")
-        .select("id, message_direction, message_text, message_type, created_at")
+        .select(CONVERSATION_MESSAGE_SELECT)
         .eq("customer_id", lead.customerId)
         .order("created_at", { ascending: false })
         .limit(80);
@@ -152,8 +261,9 @@ export function HandoffLeadPreviewDialog({ lead, open, onOpenChange, onOpenChat 
               <div className="space-y-2 py-1">
                 {msgs.map((m) => {
                   const inbound = m.message_direction === "inbound";
-                  const body = previewText(m.message_text, m.message_type);
-                  if (!body) return null;
+                  const kind = mediaKind(m.message_type, m.message_text);
+                  const caption = captionText(m.message_text);
+                  if (kind === "text" && !caption) return null;
                   return (
                     <div
                       key={m.id}
@@ -161,13 +271,18 @@ export function HandoffLeadPreviewDialog({ lead, open, onOpenChange, onOpenChat 
                     >
                       <div
                         className={cn(
-                          "max-w-[85%] rounded-2xl px-3 py-2 text-sm whitespace-pre-wrap break-words",
+                          "max-w-[85%] rounded-2xl px-3 py-2 text-sm break-words",
                           inbound
                             ? "bg-muted text-foreground rounded-bl-md"
                             : "bg-primary text-primary-foreground rounded-br-md",
                         )}
                       >
-                        <div>{body}</div>
+                        {kind !== "text" ? (
+                          <PreviewMedia msg={m} customerId={lead.customerId} />
+                        ) : null}
+                        {caption ? (
+                          <div className="whitespace-pre-wrap">{caption}</div>
+                        ) : null}
                         <div
                           className={cn(
                             "text-[10px] mt-1 opacity-70",

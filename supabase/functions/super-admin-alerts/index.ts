@@ -4,8 +4,8 @@
  *
  * Regras de produto:
  *  - Portal 1 morto: NÃO checar / NÃO mencionar.
- *  - OK do dia: no máximo 1 mensagem/dia, português claro (não spam a cada cron).
- *  - Fora do ar: só avisa após confirmação (retry), texto humano.
+ *  - OK do dia: no máximo 1 mensagem/dia, português claro + emoji (sem meta “não vou spam”).
+ *  - Fora do ar: 3 checagens com backoff; texto curto com emoji; recovery quando voltar.
  *
  * Checks:
  *  1) Kill switch (bot_global) desligado
@@ -39,7 +39,25 @@ type HealthPing = {
   body?: Record<string, unknown> | null;
 };
 
-async function pingHealthOnce(url: string, timeoutMs = 12_000): Promise<HealthPing> {
+function humanizeHealthDetail(raw: string): string {
+  const msg = String(raw || "").trim();
+  if (!msg) return "sem resposta";
+  if (/abort|timeout|tempo esgotado|timed?\s*out/i.test(msg)) {
+    return "⏱️ rede lenta / tempo esgotado";
+  }
+  if (/dns|resolve|servfail|nxdomain|getaddrinfo|name.?not.?resolved/i.test(msg)) {
+    return "🌐 DNS do Easy Panel falhou";
+  }
+  if (/client error \(conn|connection|econn|enotfound|network/i.test(msg)) {
+    return "🔌 conexão recusada / instável";
+  }
+  if (/HTTP\s*5\d\d/i.test(msg)) return `💥 ${msg}`;
+  // Evita dump técnico longo no Zap
+  const short = msg.replace(/\s+/g, " ").slice(0, 120);
+  return short;
+}
+
+async function pingHealthOnce(url: string, timeoutMs = 18_000): Promise<HealthPing> {
   const base = url.replace(/\/+$/, "");
   try {
     const ctrl = new AbortController();
@@ -65,12 +83,19 @@ async function pingHealthOnce(url: string, timeoutMs = 12_000): Promise<HealthPi
   }
 }
 
-/** Confirma queda real: 1 falha + retry após 2s (evita 502/blip do Easy Panel). */
-async function pingHealth(url: string, timeoutMs = 12_000): Promise<HealthPing> {
-  const first = await pingHealthOnce(url, timeoutMs);
-  if (first.ok) return first;
-  await new Promise((r) => setTimeout(r, 2_000));
-  return pingHealthOnce(url, timeoutMs);
+/**
+ * Confirma queda real: até 3 tentativas com backoff (DNS/blip Easy Panel).
+ * Só marca fora se TODAS falharem.
+ */
+async function pingHealth(url: string, timeoutMs = 18_000): Promise<HealthPing> {
+  const delaysMs = [0, 3_000, 6_000];
+  let last: HealthPing = { ok: false, detail: "sem tentativa", body: null };
+  for (const delay of delaysMs) {
+    if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+    last = await pingHealthOnce(url, timeoutMs);
+    if (last.ok) return last;
+  }
+  return { ...last, detail: humanizeHealthDetail(last.detail) };
 }
 
 function brNowLabel(): string {
@@ -128,12 +153,44 @@ Deno.serve(async (req) => {
       dedupMinutes: 24 * 60,
       text:
         "✅ *Alertas operacionais ligados*\n\n" +
-        "Quando algo crítico falhar (Velip, worker, bot global, Whapi, MinIO, SMS undeliv…), " +
-        "eu te aviso neste WhatsApp automaticamente.\n\n" +
-        "_Não precisa lembrar de perguntar._",
+        "📡 Canal pronto.\n" +
+        "🔔 Aviso automático se cair: Club, Portal 2, Sync, Velip, Whapi…",
     });
     results.push({ key: "smoke_test", fired: status === "sent", detail: status });
     if (status === "sent") notified++;
+  }
+
+  /** Se caiu nas últimas 6h e agora voltou → avisa recuperação (bonito). */
+  async function maybeNotifyRecovery(workerKey: string, label: string) {
+    const since6h = new Date(Date.now() - 6 * 60 * 60_000).toISOString();
+    const { data: recentDown } = await supabase
+      .from("infra_metrics")
+      .select("id, created_at")
+      .eq("metric_key", "ops_alert")
+      .gte("created_at", since6h)
+      .contains("meta", { key: workerKey, severity: "critical" })
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (!recentDown || recentDown.length === 0) return;
+
+    const downAt = String((recentDown[0] as { created_at?: string }).created_at || "");
+    const { data: alreadyRecovered } = await supabase
+      .from("infra_metrics")
+      .select("id")
+      .eq("metric_key", "ops_alert")
+      .gte("created_at", downAt || since6h)
+      .contains("meta", { key: `${workerKey}:recovered` })
+      .limit(1);
+    if (alreadyRecovered && alreadyRecovered.length > 0) return;
+
+    await fire(
+      `${workerKey}:recovered`,
+      "warn",
+      `🟢 *${label} voltou*\n\n` +
+        `✨ Serviço respondendo de novo.\n` +
+        `🕐 ${brNowLabel()}`,
+      6 * 60,
+    );
   }
 
   const fire = async (
@@ -164,9 +221,9 @@ Deno.serve(async (req) => {
     await fire(
       "bot_global_off",
       "critical",
-      "🚨 *Bot global DESLIGADO*\n\n" +
-        "Nenhum envio automático (cadência/reheat) vai sair.\n" +
-        "Se não foi você: SuperAdmin → Bot Global → religar.",
+      "🛑 *Bot global DESLIGADO*\n\n" +
+        "🚫 Nenhum envio automático (cadência / reheat).\n" +
+        "👉 SuperAdmin → Bot Global → religar",
       120,
     );
   } else {
@@ -177,9 +234,9 @@ Deno.serve(async (req) => {
     await fire(
       "cadence_engine_off",
       "warn",
-      "⚠️ *Motor de cadência desligado*\n\n" +
-        "`cadence_engine_enabled=false` — pizza A/B/C parada.\n" +
-        "Confira Configurações / toggles se não foi intencional.",
+      "⏸️ *Motor de cadência desligado*\n\n" +
+        "🍕 Pizza A/B/C parada.\n" +
+        "👉 Confira Configurações / toggles",
       180,
     );
   } else {
@@ -223,19 +280,22 @@ Deno.serve(async (req) => {
   for (const { w, h } of workerHealth) {
     if (!h.ok) {
       anyWorkerDown = true;
+      const emoji =
+        w.key === "worker:club" ? "🏷️" : w.key === "worker:sync" ? "🔄" : "📝";
       await fire(
         w.key,
         "critical",
-        `🚨 *${w.label} fora do ar*\n\n` +
-          `O sistema confirmou (2 tentativas) que o serviço não responde.\n` +
-          `Detalhe: ${h.detail}\n\n` +
-          `Abra o Easy Panel → esse worker → Start/Rebuild e veja os logs.\n` +
-          `_Só aviso de novo se continuar fora._`,
+        `${emoji} *${w.label} fora do ar*\n\n` +
+          `❌ Sem resposta após 3 checagens.\n` +
+          `🔎 ${humanizeHealthDetail(h.detail)}\n\n` +
+          `🛠️ Easy Panel → *${w.label}* → Start / Rebuild`,
         90,
       );
       digestLines.push(`• ${w.label} — ❌ fora`);
       continue;
     }
+
+    await maybeNotifyRecovery(w.key, w.label);
 
     if (w.key === "worker:sync" && h.body) {
       const audit = h.body.ai_audit as { healthy?: boolean; last_error?: string; enabled?: boolean } | undefined;
@@ -243,9 +303,9 @@ Deno.serve(async (req) => {
         await fire(
           "worker:sync:ai_audit",
           "warn",
-          `⚠️ *Sync: auditoria IA indisponível*\n\n` +
-            `${audit.last_error || "A checagem de IA falhou."}\n` +
-            `A sync em si pode continuar — confira token/URL no Easy Panel do Sync.`,
+          `🤖 *Sync — auditoria IA indisponível*\n\n` +
+            `⚠️ ${audit.last_error || "Checagem de IA falhou."}\n` +
+            `✅ A sync em si pode continuar.`,
           180,
         );
       } else {
@@ -261,11 +321,10 @@ Deno.serve(async (req) => {
         await fire(
           "worker:portal2:redis",
           "critical",
-          `🚨 *Cadastro (Portal 2): fila Redis fora*\n\n` +
-            `O worker respondeu, mas a fila está em modo \`${queueMode}\` ` +
-            `(o normal é Redis).\n` +
-            `Cadastros podem travar ou ir mais lento.\n\n` +
-            `Easy Panel → Redis do Portal 2 → Start/Rebuild.`,
+          `📝 *Cadastro (Portal 2) — fila Redis fora*\n\n` +
+            `⚠️ Worker no ar, mas fila em \`${queueMode}\` (esperado: Redis).\n` +
+            `🐢 Cadastros podem travar.\n\n` +
+            `🛠️ Easy Panel → Redis do Portal 2 → Start / Rebuild`,
           90,
         );
         digestLines.push(`• Cadastro (Portal 2) — ⚠️ Redis/fila`);
@@ -279,9 +338,9 @@ Deno.serve(async (req) => {
         await fire(
           "worker:portal2:ai_audit",
           "warn",
-          `⚠️ *Cadastro: auditoria IA indisponível*\n\n` +
-            `${audit.last_error || "healthy=false"}\n` +
-            `O cadastro pode seguir; só a análise Gemini está falhando.`,
+          `🤖 *Cadastro — auditoria IA indisponível*\n\n` +
+            `⚠️ ${audit.last_error || "healthy=false"}\n` +
+            `✅ Cadastro segue; só a análise Gemini falhou.`,
           180,
         );
       } else {
@@ -299,9 +358,9 @@ Deno.serve(async (req) => {
         await fire(
           "worker:club:redis",
           "warn",
-          `⚠️ *Club: fila sem Redis e sem envio ao vivo*\n\n` +
-            `Modo atual: \`${queueMode}\`.\n` +
-            `Easy Panel → Redis do Club → Start/Rebuild.`,
+          `🏷️ *Club — fila sem Redis e sem envio ao vivo*\n\n` +
+            `⚙️ Modo: \`${queueMode}\`\n` +
+            `🛠️ Easy Panel → Redis do Club → Start / Rebuild`,
           180,
         );
         digestLines.push(`• Club — ⚠️ fila`);
@@ -363,9 +422,9 @@ Deno.serve(async (req) => {
     await fire(
       "velip_credit",
       "critical",
-      `🚨 *Velip: possível crédito/saldo zerado*\n\n` +
-        `${creditHits} falha(s) suspeita(s) nas últimas 6h (voz/SMS).\n\n` +
-        `A API Velip *não* mostra saldo aqui — abra o *painel Velip*, recarregue crédito e teste 1 SMS.`,
+      `💳 *Velip — possível crédito zerado*\n\n` +
+        `🚨 ${creditHits} falha(s) de saldo/crédito nas últimas 6h (voz/SMS).\n\n` +
+        `👉 Abra o painel Velip → recarregue → teste 1 SMS`,
       90,
     );
   } else {
@@ -382,10 +441,10 @@ Deno.serve(async (req) => {
     await fire(
       "velip_procon_spike",
       "warn",
-      `⚠️ *Velip: pico Procon (#250)*\n\n` +
-        `${proconCount} ligações com BK_PROCON nas últimas 24h.\n` +
-        `Isso *não* é falta de crédito — números em lista Não Perturbe.\n` +
-        `O sistema já marca DNC; só confira se a base está suja.`,
+      `📵 *Velip — pico Procon (#250)*\n\n` +
+        `📞 ${proconCount} ligações BK_PROCON nas últimas 24h.\n` +
+        `ℹ️ Não é falta de crédito — números em Não Perturbe.\n` +
+        `✅ Sistema já marca bloqueio; confira se a base está suja.`,
       360,
     );
   } else {
@@ -413,10 +472,9 @@ Deno.serve(async (req) => {
     await fire(
       "sms_undeliv_spike",
       "warn",
-      `⚠️ *SMS com muita falha de entrega*\n\n` +
-        `Últimas 6h: ${undeliv} UNDELIV/REJECTD/EXPIRED vs ${delivrd} DELIVRD (total ${totalSms}).\n\n` +
-        `Pode ser anti-spam da operadora, base suja ou crédito Velip.\n` +
-        `Confira painel Velip + \`voice_sms_log\`.`,
+      `📨 *SMS — muita falha de entrega*\n\n` +
+        `📉 Últimas 6h: ${undeliv} falhas vs ${delivrd} entregues (total ${totalSms}).\n\n` +
+        `🔎 Pode ser anti-spam, base suja ou crédito Velip.`,
       120,
     );
   } else {
@@ -438,10 +496,10 @@ Deno.serve(async (req) => {
     await fire(
       "portal_worker_offline_leads",
       "critical",
-      `🚨 *Cadastros parados no Portal 2*\n\n` +
-        `${offlineLeads} lead(s) com status “worker offline” nas últimas 24h.\n` +
-        `O cliente já finalizou, mas o envio ao iGreen não saiu.\n\n` +
-        `Confira o Easy Panel do *Cadastro (Portal 2)*.`,
+      `📝 *Cadastros parados no Portal 2*\n\n` +
+        `🚨 ${offlineLeads} lead(s) “worker offline” nas últimas 24h.\n` +
+        `👤 Cliente finalizou, mas o envio ao iGreen não saiu.\n\n` +
+        `🛠️ Easy Panel → *Cadastro (Portal 2)*`,
       90,
     );
   } else {
@@ -467,9 +525,10 @@ Deno.serve(async (req) => {
     await fire(
       "outreach_cap_hot",
       "warn",
-      `⚠️ *Cap de outreach batendo*\n\n` +
-        `${capN} skips de cap nas últimas 6h (B/C/global).\n` +
-        `Envios foram *adiados* (não descartados). Se precisar: subir \`cap_b\`/\`cap_c\`/\`cap_global_outreach\`.`,
+      `📊 *Cap de outreach batendo*\n\n` +
+        `⏳ ${capN} skips de cap nas últimas 6h (B/C/global).\n` +
+        `✅ Envios *adiados* (não descartados).\n` +
+        `👉 Se precisar: subir \`cap_b\` / \`cap_c\` / \`cap_global_outreach\``,
       180,
     );
   } else {
@@ -575,13 +634,11 @@ Deno.serve(async (req) => {
       await fire(
         "cadence_identity_missing_spike",
         "critical",
-        `🚨 *Leads travados por consultor sem identidade*\n\n` +
-          `${identityTotal} envio(s) falharam nas últimas 24h por dados faltando ` +
-          `(limite: ${identityLimit}).\n` +
-          `Faltando: ${reasons || "?"}\n\n` +
+        `🪪 *Leads travados — consultor sem identidade*\n\n` +
+          `🚨 ${identityTotal} envio(s) falharam em 24h (limite ${identityLimit}).\n` +
+          `🔎 Faltando: ${reasons || "?"}\n\n` +
           `${topLines(identityByConsultant)}\n\n` +
-          `Corrija: telefone do consultor + chip WhatsApp conectado. ` +
-          `Enquanto isso a pizza desses leads não anda.`,
+          `👉 Corrija telefone + chip WhatsApp do consultor`,
         180,
       );
     } else {
@@ -596,11 +653,10 @@ Deno.serve(async (req) => {
       await fire(
         "cadence_send_failed_spike",
         "critical",
-        `🚨 *Muitas falhas de envio na cadência*\n\n` +
-          `${sendFailTotal} falha(s) nas últimas 24h (limite: ${sendFailLimit}).\n\n` +
+        `📤 *Muitas falhas de envio na cadência*\n\n` +
+          `🚨 ${sendFailTotal} falha(s) em 24h (limite ${sendFailLimit}).\n\n` +
           `${topLines(sendFailByConsultant)}\n\n` +
-          `Normalmente é chip WhatsApp caído/deslogado ou token do canal. ` +
-          `Confira o painel do WhatsApp desses consultores.`,
+          `🔎 Costuma ser chip caído ou token do canal.`,
         180,
       );
     } else {
@@ -661,11 +717,10 @@ Deno.serve(async (req) => {
       await fire(
         "igreen_fone_wallets_zero",
         "warn",
-        `iGreen Fone — consultores sem crédito\n\n` +
-          `${rows.length} carteira(s) zerada(s) ou com dívida:\n` +
+        `📱 *iGreen Fone — consultores sem crédito*\n\n` +
+          `💸 ${rows.length} carteira(s) zerada(s) ou com dívida:\n` +
           `${lines.join("\n")}${extra}\n\n` +
-          `O consultor também recebe aviso no Zap quando usa SMS/ligação.\n` +
-          `Adicione crédito em Super Admin → consultor.`,
+          `👉 Super Admin → consultor → adicionar crédito`,
         24 * 60,
       );
     } else {
@@ -701,9 +756,9 @@ Deno.serve(async (req) => {
         await fire(
           "whapi_down",
           "critical",
-          `WhatsApp (Whapi) desconectado\n\n` +
-            `Não consegui ler o perfil do canal (HTTP ${profile.status}).\n` +
-            `Envios e alertas podem falhar — reconecte no painel Whapi.`,
+          `💬 *WhatsApp (Whapi) desconectado*\n\n` +
+            `❌ Não li o perfil do canal (HTTP ${profile.status}).\n` +
+            `🛠️ Reconecte no painel Whapi`,
           90,
         );
         digestLines.push(`• WhatsApp (Whapi) — ❌ fora`);
@@ -720,7 +775,8 @@ Deno.serve(async (req) => {
       await fire(
         "whapi_down",
         "critical",
-        `WhatsApp (Whapi) inacessível\n\n${(e as Error).message}`,
+        `💬 *WhatsApp (Whapi) inacessível*\n\n` +
+          `❌ ${(e as Error).message}`,
         90,
       );
       digestLines.push(`• WhatsApp (Whapi) — ❌ fora`);
@@ -733,11 +789,9 @@ Deno.serve(async (req) => {
   if (!anyWorkerDown && digestLines.length > 0) {
     const text =
       `☀️ *Resumo do dia — iGreen*\n` +
-      `_${brNowLabel()}_\n\n` +
-      `Tudo certo por aqui:\n` +
-      `${digestLines.join("\n")}\n\n` +
-      `Não vou ficar repetindo “ok” o dia todo.\n` +
-      `Se algo cair de verdade, eu te aviso na hora.`;
+      `🕐 _${brNowLabel()}_\n\n` +
+      `✨ Tudo certo:\n` +
+      `${digestLines.join("\n")}`;
     await fire("ops_daily_ok", "warn", text, 24 * 60);
   } else if (anyWorkerDown) {
     results.push({ key: "ops_daily_ok", fired: false, detail: "skipped_while_down" });

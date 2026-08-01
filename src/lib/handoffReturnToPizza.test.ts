@@ -71,6 +71,30 @@ describe("isHandoffClienteNotLead", () => {
   });
 });
 
+describe("handoff painel — quem NÃO entra", () => {
+  it("cliente carteira (Osmar) é cliente, não lead", () => {
+    expect(
+      isHandoffClienteNotLead({
+        id: "osmar",
+        name: "OSMAR PEREIRA GOMES",
+        phone_whatsapp: "553496646917",
+        conversation_step: null,
+        bot_paused: false,
+        bot_paused_reason: null,
+        customer_origin: "igreen_sync",
+        status: "approved",
+        pos_venda_stage: "aprovado",
+        andamento_igreen: "validado",
+      }),
+    ).toBe(true);
+  });
+
+  it("opt_out / complaint não são motivo de handoff", () => {
+    expect(isHandoffBotPauseReason("opt_out")).toBe(false);
+    expect(isHandoffBotPauseReason("complaint")).toBe(false);
+  });
+});
+
 describe("classifyPauseReason", () => {
   it("humano → handoff", () => {
     expect(classifyPauseReason("humano_assumiu")).toBe("handoff");

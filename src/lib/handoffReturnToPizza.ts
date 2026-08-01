@@ -4,9 +4,10 @@
  *
  * Fonte: cadence `handoff_humano` OU customers.bot_paused humano / assigned_human_id.
  *
- * Cliente (carteira): entra no handoff; pós-venda aprovado/30/60 normal;
- * "Voltar" só libera pausa (não mete em leads A/B/C).
- * Bloqueado: para de receber automação; handoff continua na lista.
+ * Lista só LEADS que ainda precisam de ação.
+ * Bloqueado (do_not_contact): NÃO entra — já decidido; não recebe automação.
+ * Cliente (carteira / convertido): NÃO entra — não é lead; "Voltar" nele
+ * só libera pausa (não mete em A/B/C) se ainda estiver listado por bug antigo.
  */
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -53,7 +54,7 @@ export type HandoffLead = {
   photoUrl: string | null;
   /** Já é cliente (carteira / convertido) — handoff ok; sem ciclo leads A/B/C. */
   isCliente: boolean;
-  /** Bloqueado — não recebe automação; ainda aparece no handoff. */
+  /** Bloqueado — não recebe automação; fora da lista de handoff. */
   doNotContact: boolean;
 };
 
@@ -214,7 +215,10 @@ function buildHandoffLead(
 ): HandoffLead | null {
   const phone = c?.phone_whatsapp || "";
   if (!hasUsableHandoffPhone(phone)) return null;
-  // Bloqueado ainda entra no handoff (só para de receber automação).
+  // Bloqueado / cliente carteira: fora deste painel (não é lead aguardando ciclo).
+  if (c?.do_not_contact) return null;
+  const isCliente = isHandoffClienteNotLead(c);
+  if (isCliente) return null;
 
   const name = String(c?.name || "").trim();
   const display = resolveLeadPanelDisplayName({
@@ -232,7 +236,6 @@ function buildHandoffLead(
   const mediaUrl = String(c?.last_inbound_media_url || "").trim();
   const photoUrl =
     mediaUrl && /image|photo|picture|sticker/i.test(mediaKind) ? mediaUrl : null;
-  const isCliente = isHandoffClienteNotLead(c);
 
   return {
     cadenceId: cadence?.id || `customer:${customerId}`,
@@ -256,22 +259,21 @@ function buildHandoffLead(
     alertMessage: alert?.user_message ?? null,
     alertAt: alert?.created_at ?? null,
     photoUrl,
-    isCliente,
-    doNotContact: !!c?.do_not_contact,
+    isCliente: false,
+    doNotContact: false,
   };
 }
 
 /**
- * Lista contatos em handoff que ainda precisam de ação:
+ * Lista LEADS em handoff que ainda precisam de ação:
  * voltar ao acompanhamento · já é cliente · bloquear.
  *
- * Entram (leads E clientes):
+ * Entram:
  * - cadence `paused_reason = handoff_humano`
  * - customers com bot_paused humano / assigned_human_id (takeover)
  *
- * Cliente de carteira permanece aqui (handoff + pós-venda aprovado/30/60).
- * Bloqueado também permanece no handoff — só para de receber automação.
- * Não lista: sem telefone útil / WON esquecido sem pausa humana ativa.
+ * Não lista: bloqueados (do_not_contact), clientes de carteira/convertidos,
+ * sem telefone útil, WON esquecido sem pausa humana ativa.
  */
 export async function loadHandoffLeads(consultantId: string): Promise<HandoffLead[]> {
   const [{ data: cadenceHandoff, error: cadErr }, { data: pausedCustomers, error: custErr }] =
@@ -296,6 +298,8 @@ export async function loadHandoffLeads(consultantId: string): Promise<HandoffLea
   if (custErr) throw new Error(custErr.message);
 
   const humanPausedCustomers = (pausedCustomers || []).filter((c) => {
+    if (c.do_not_contact) return false;
+    if (isHandoffClienteNotLead(c as CustomerRow)) return false;
     if (c.assigned_human_id) return true;
     return isHandoffBotPauseReason(c.bot_paused_reason);
   }) as CustomerRow[];

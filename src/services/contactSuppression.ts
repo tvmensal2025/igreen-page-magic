@@ -65,6 +65,9 @@ export async function suppressContact(input: SuppressContactInput): Promise<Supp
           bot_force_enabled: false,
           attendance_rating_requested_at: null,
           conversation_step: "atendimento_finalizado",
+          // Sem isso o painel de handoff continuava listando o bloqueado
+          // (loadHandoffLeads entra por assigned_human_id).
+          assigned_human_id: null,
         } as never)
         .eq("id", customerId)
         .select("id")
@@ -77,6 +80,23 @@ export async function suppressContact(input: SuppressContactInput): Promise<Supp
           error: "Não foi possível bloquear: este lead pertence a outro consultor (sem permissão). Nada foi alterado.",
         };
       }
+
+      // Sai do painel "Atendimentos pausados": handoff_humano → dnc; alertas resolvidos.
+      await supabase
+        .from("lead_cadence_state")
+        .update({
+          paused_reason: "dnc",
+          paused_until: null,
+          next_action_at: null,
+        } as never)
+        .eq("customer_id", customerId)
+        .eq("paused_reason", "handoff_humano");
+
+      await supabase
+        .from("bot_handoff_alerts")
+        .update({ resolved_at: now, resolved_by: actorId })
+        .eq("customer_id", customerId)
+        .is("resolved_at", null);
     }
 
 
