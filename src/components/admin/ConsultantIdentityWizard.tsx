@@ -127,6 +127,7 @@ export function ConsultantIdentityWizard({ consultantId, className, hideWhenRead
               : res.reason || res.error || "Tente novamente em alguns minutos.",
           variant: "destructive",
         });
+        await reload();
         return;
       }
       if (res.skipped) {
@@ -141,8 +142,9 @@ export function ConsultantIdentityWizard({ consultantId, className, hideWhenRead
         }
       } else {
         toast({
-          title: auto ? "Gerando sua identidade automaticamente" : "Identidade gerada",
-          description: "Seus áudios já falam o seu nome e o nome da sua IA.",
+          title: auto ? "Identidade gerada automaticamente" : "Identidade gerada",
+          description:
+            "Áudios de boas-vindas (2) + ligações do ano (11) com o seu nome e a sua IA.",
         });
       }
       await reload();
@@ -222,7 +224,11 @@ export function ConsultantIdentityWizard({ consultantId, className, hideWhenRead
               ) : (
                 <Wand2 className="mr-1 h-3.5 w-3.5" />
               )}
-              {generating ? "Gerando automaticamente..." : "Gerar novamente"}
+              {generating
+                ? "Gerando..."
+                : status.ready
+                  ? "Gerar novamente"
+                  : "Gerar minha identidade"}
             </Button>
           </div>
         </div>

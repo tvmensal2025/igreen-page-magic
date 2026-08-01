@@ -389,22 +389,39 @@ Deno.serve(async (req) => {
   }
 
   const okCount = report.filter((r) => (r as { ok?: boolean }).ok).length;
-  await admin
-    .from("consultants")
-    .update({
-      identity_media_bootstrapped_at: new Date().toISOString(),
-      identity_media_fingerprint: fp,
-    })
-    .eq("id", consultantId);
+  const a2Ok = report.filter((r) =>
+    (r as { kind?: string; ok?: boolean }).kind === "a2_body" &&
+    (r as { ok?: boolean }).ok
+  ).length;
+  const callOk = report.filter((r) =>
+    (r as { kind?: string; ok?: boolean }).kind === "call" &&
+    (r as { ok?: boolean }).ok
+  ).length;
+  // Só marca fingerprint quando o pacote completo fechou (2 A2 + 11 ligações).
+  // Senão o auto-bootstrap (force=false) fica em fingerprint_unchanged e nunca repara.
+  const complete = a2Ok >= 2 && callOk >= CALL_STAGES.length;
+
+  if (complete) {
+    await admin
+      .from("consultants")
+      .update({
+        identity_media_bootstrapped_at: new Date().toISOString(),
+        identity_media_fingerprint: fp,
+      })
+      .eq("id", consultantId);
+  }
 
   return json(200, {
-    ok: okCount > 0,
+    ok: complete,
+    incomplete: !complete,
     consultant_id: consultantId,
     assistente,
     consultor,
     gender: roleGender,
-    fingerprint: fp,
+    fingerprint: complete ? fp : null,
     generated: okCount,
+    a2_ok: a2Ok,
+    call_ok: callOk,
     total: report.length,
     report,
     velip,

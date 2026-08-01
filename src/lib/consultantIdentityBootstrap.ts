@@ -15,7 +15,13 @@ export async function consultantHasWhatsAppConnected(
 export async function invokeConsultantIdentityBootstrap(opts: {
   consultantId: string;
   force?: boolean;
-}): Promise<{ ok: boolean; skipped?: boolean; error?: string; reason?: string }> {
+}): Promise<{
+  ok: boolean;
+  skipped?: boolean;
+  incomplete?: boolean;
+  error?: string;
+  reason?: string;
+}> {
   const id = String(opts.consultantId || "").trim();
   if (!id) return { ok: false, error: "consultant_id_required" };
   try {
@@ -26,10 +32,19 @@ export async function invokeConsultantIdentityBootstrap(opts: {
     const body = (data || {}) as {
       ok?: boolean;
       skipped?: boolean;
+      incomplete?: boolean;
       error?: string;
       reason?: string;
     };
     if (body.error) return { ok: false, error: body.error, reason: body.reason };
+    if (body.incomplete) {
+      return {
+        ok: false,
+        incomplete: true,
+        error: "media_incomplete",
+        reason: "Alguns áudios falharam — tente Gerar minha identidade de novo.",
+      };
+    }
     return {
       ok: body.ok !== false,
       skipped: Boolean(body.skipped),
@@ -55,11 +70,12 @@ export function canBootstrapConsultantIdentity(opts: {
 /**
  * Só gera mídia se o consultor já tem WhatsApp conectado.
  * Usar ao conectar Zap / ao entrar no painel — nunca em massa.
+ * Se o fingerprint já existir mas faltar clip (falha antiga), força regenerar.
  */
 export async function maybeBootstrapConsultantIdentity(opts: {
   consultantId: string;
   force?: boolean;
-}): Promise<{ ok: boolean; skipped?: boolean; error?: string; reason?: string }> {
+}): Promise<{ ok: boolean; skipped?: boolean; incomplete?: boolean; error?: string; reason?: string }> {
   const id = String(opts.consultantId || "").trim();
   if (!id) return { ok: false, error: "consultant_id_required" };
 
@@ -81,11 +97,20 @@ export async function maybeBootstrapConsultantIdentity(opts: {
       phone: cons?.phone,
     })
   ) {
-    return { ok: true, skipped: true, reason: "identity_incomplete" };
+    return { ok: true, skipped: true, reason: "prerequisites_incomplete" };
+  }
+
+  let force = Boolean(opts.force);
+  if (!force) {
+    const { loadConsultantIdentityStatus } = await import("@/lib/consultantIdentityReadiness");
+    const status = await loadConsultantIdentityStatus(id);
+    if (status && status.canGenerate && !status.ready) {
+      force = true;
+    }
   }
 
   return invokeConsultantIdentityBootstrap({
     consultantId: id,
-    force: Boolean(opts.force),
+    force,
   });
 }

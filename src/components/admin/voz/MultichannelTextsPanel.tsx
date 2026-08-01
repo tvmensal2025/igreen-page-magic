@@ -1447,7 +1447,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
 
   return (
     <div className="space-y-3">
-      <ConsultantIdentityWizard />
+      <ConsultantIdentityWizard consultantId={consultantId} />
       <CadenceMissingAlert />
       <div className="flex flex-wrap items-end justify-between gap-3 border-b border-border/50 pb-3">
         <div className="min-w-0">
