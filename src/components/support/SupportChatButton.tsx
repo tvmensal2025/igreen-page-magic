@@ -227,18 +227,23 @@ export function SupportChatButton({ className }: SupportChatButtonProps = {}) {
               >
                 {m.role === "assistant" ? (
                   <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-strong:text-foreground">
-                    <ReactMarkdown
-                      components={{
-                        a: ({ href, children }) => (
-                          <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
-                            {children}
-                          </a>
-                        ),
-                      }}
-                    >
-                      {m.content}
-                    </ReactMarkdown>
+                    {/* Enquanto o renderizador carrega (ms), mostra o texto cru:
+                        o conteúdo nunca some da tela. */}
+                    <Suspense fallback={<div className="whitespace-pre-line">{m.content}</div>}>
+                      <ReactMarkdown
+                        components={{
+                          a: ({ href, children }) => (
+                            <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
+                              {children}
+                            </a>
+                          ),
+                        }}
+                      >
+                        {m.content}
+                      </ReactMarkdown>
+                    </Suspense>
                   </div>
+
                 ) : (
                   m.content
                 )}
