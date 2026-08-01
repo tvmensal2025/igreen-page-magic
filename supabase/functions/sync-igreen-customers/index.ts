@@ -361,10 +361,31 @@ async function logSyncFinish(
   const errText = success ? null : String(result?.error || "");
   const status = success ? "ok" : classifyError(errText || undefined);
   const counts: Record<string, unknown> = {};
-  for (const k of ["customers","boletos","telecom","seguros","devolutivas","network","metrics","cashback","details","alerts","portfolio","background","portal_identity","diagnostics","full_extras","full_extras_error","results","accounts_synced"]) {
+  for (const k of ["customers","boletos","telecom","seguros","devolutivas","network","metrics","cashback","details","alerts","portfolio","background","portal_identity","diagnostics","full_extras","full_extras_error","customers_full","customers_full_error","results","accounts_synced","accounts_failed"]) {
     if (result[k] != null) counts[k] = result[k];
   }
   if (runId) {
+    // Preserva extras da Fase B que possam ter terminado ANTES deste finish
+    // (corrida multi-conta). Sem isso, logSyncFinish apagava customers_full.
+    const { data: cur } = await supabase
+      .from("igreen_sync_runs")
+      .select("counts")
+      .eq("id", runId)
+      .maybeSingle();
+    const prev = (cur?.counts && typeof cur.counts === "object")
+      ? cur.counts as Record<string, unknown>
+      : {};
+    if (prev.extras_by_account && !counts.extras_by_account) {
+      counts.extras_by_account = prev.extras_by_account;
+    }
+    if (prev.extras && !counts.extras) {
+      counts.extras = prev.extras;
+    } else if (prev.extras && counts.extras) {
+      counts.extras = {
+        ...(prev.extras as Record<string, unknown>),
+        ...(counts.extras as Record<string, unknown>),
+      };
+    }
     await supabase.from("igreen_sync_runs").update({
       status, counts, error: errText, finished_at: new Date().toISOString(),
     }).eq("id", runId);
@@ -488,6 +509,118 @@ function augmentProductGaps(out: Record<string, unknown>, rawData: any): void {
   out.diagnostics = diagnostics;
 }
 
+// Grava extras da Fase B no run CORRETO (anti-corrida multi-conta).
+// Carteira apenas: telemetria. Nunca apaga/altera leads.
+// deno-lint-ignore no-explicit-any
+async function persistSyncRunBackgroundExtras(
+  supabase: any,
+  runId: string | null,
+  consultantId: string | null,
+  accountId: string | null,
+  out: Record<string, unknown>,
+  expectedAccountIds: string[] | null = null,
+): Promise<void> {
+  const extras: Record<string, unknown> = {};
+  for (const k of [
+    "network", "metrics", "boletos", "telecom", "seguros", "devolutivas", "cashback",
+    "details", "alerts", "portal_identity", "diagnostics", "full_extras", "full_extras_error",
+    "portal_extras", "portal_extras_error", "portfolio_full",
+    "customers_full", "customers_full_error",
+  ]) {
+    if (out[k] != null) extras[k] = out[k];
+  }
+  const finishedAt = new Date().toISOString();
+  extras._background_finished_at = finishedAt;
+  extras._background_success = out.success !== false;
+  if (out.error) extras._background_error = out.error;
+  if (accountId) extras.igreen_account_id = accountId;
+
+  let targetId = runId;
+  let counts: Record<string, unknown> = {};
+  if (targetId) {
+    const { data } = await supabase
+      .from("igreen_sync_runs")
+      .select("id, counts")
+      .eq("id", targetId)
+      .maybeSingle();
+    if (data?.id) {
+      counts = (data.counts && typeof data.counts === "object")
+        ? data.counts as Record<string, unknown>
+        : {};
+    } else {
+      targetId = null;
+    }
+  }
+  if (!targetId && consultantId) {
+    // Fallback legado (só se runId sumiu) — ainda filtra pelo consultor.
+    const { data: lastRun } = await supabase
+      .from("igreen_sync_runs")
+      .select("id, counts")
+      .eq("consultant_id", consultantId)
+      .order("started_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!lastRun?.id) return;
+    targetId = lastRun.id;
+    counts = (lastRun.counts && typeof lastRun.counts === "object")
+      ? lastRun.counts as Record<string, unknown>
+      : {};
+  }
+  if (!targetId) return;
+
+  const accountKey = accountId || "_default";
+  const byAccount: Record<string, Record<string, unknown>> = {
+    ...((counts.extras_by_account && typeof counts.extras_by_account === "object")
+      ? counts.extras_by_account as Record<string, Record<string, unknown>>
+      : {}),
+  };
+  byAccount[accountKey] = extras;
+
+  // Contas esperadas: argumento explícito > results do run > só esta conta.
+  let expected = expectedAccountIds && expectedAccountIds.length > 0
+    ? expectedAccountIds
+    : null;
+  if (!expected && Array.isArray(counts.results) && (counts.results as unknown[]).length > 0) {
+    expected = (counts.results as Array<{ account_id?: string }>)
+      .map((r) => r.account_id || "_default")
+      .filter(Boolean);
+  }
+  if (!expected) expected = [accountKey];
+
+  const doneIds = expected.filter((id) => Boolean(byAccount[id]?._background_finished_at));
+  const allDone = doneIds.length >= expected.length;
+  let topExtras: Record<string, unknown>;
+  if (allDone) {
+    const anyFail = expected.some((id) => byAccount[id]?._background_success === false);
+    topExtras = {
+      ...extras,
+      _background_finished_at: finishedAt,
+      _background_success: !anyFail,
+      _accounts_background_done: doneIds.length,
+      _accounts_background_expected: expected.length,
+    };
+  } else {
+    const prevTop = (counts.extras && typeof counts.extras === "object")
+      ? counts.extras as Record<string, unknown>
+      : {};
+    topExtras = {
+      ...prevTop,
+      _background_partial: true,
+      _accounts_background_done: doneIds.length,
+      _accounts_background_expected: expected.length,
+    };
+    delete topExtras._background_finished_at;
+  }
+
+  await supabase.from("igreen_sync_runs").update({
+    counts: {
+      ...counts,
+      extras_by_account: byAccount,
+      extras: topExtras,
+    },
+  }).eq("id", targetId);
+}
+
 // Fase B do sync_all: extras + enriquecimento. Nunca é pré-requisito para o
 // cliente aparecer na carteira; a Fase A já persistiu todos do Kanban.
 // deno-lint-ignore no-explicit-any
@@ -500,6 +633,8 @@ async function runSyncAllBackgroundPhase(
   toggles: Record<string, boolean>,
   baseCustomers: any[],
   igreenAccountId: string | null = null,
+  syncRunId: string | null = null,
+  expectedAccountIds: string[] | null = null,
 ): Promise<void> {
   const emailNorm = String(portalEmail || "").trim().toLowerCase();
   const passwordNorm = String(portalPassword || "");
@@ -534,14 +669,58 @@ async function runSyncAllBackgroundPhase(
     out.portal_identity = { igreen_consultor_id: consultorId };
     out.diagnostics = buildProductDiagnostics(r.data, buildExtrasOnly(toggles));
 
-    // Persiste a lista COMPLETA de clientes (varredura por dia = 571). A Fase A
+    // Persiste a lista COMPLETA de clientes (varredura por dia). A Fase A
     // já gravou o Kanban rápido; aqui completamos com os que faltavam.
-    const fullCustomers: any[] = r.data?.customers || [];
+    // Só carteira igreen_sync via persistCustomers — não cria lead.
+    let fullCustomers: any[] = Array.isArray(r.data?.customers) ? r.data.customers : [];
+    if (fullCustomers.length === 0) {
+      console.warn(`[sync-all background] /sync-all sem customers (${emailNorm}) — fallback /sync-customers full`);
+      const fr = await callWorker(worker, "/sync-customers", {
+        portal_email: emailNorm,
+        portal_password: passwordNorm,
+      });
+      if (fr.ok && Array.isArray(fr.data?.customers)) {
+        fullCustomers = fr.data.customers;
+        out.customers_full_fallback = "sync-customers";
+      }
+    }
+    // Nunca perder quem a Fase A (Kanban) já trouxe: merge por código.
+    if (Array.isArray(baseCustomers) && baseCustomers.length > 0) {
+      const byCode = new Map<string, any>();
+      for (const c of fullCustomers) {
+        const code = safeStr(c?.codigo || c?.codigoIgreen || c?.codigoCliente || c?.idcliente || c?.id);
+        if (code) byCode.set(code, c);
+      }
+      for (const c of baseCustomers) {
+        const code = safeStr(c?.codigo || c?.codigoIgreen || c?.codigoCliente || c?.idcliente || c?.id);
+        if (code && !byCode.has(code)) {
+          byCode.set(code, c);
+          fullCustomers.push(c);
+        }
+      }
+      if (fullCustomers.length < baseCustomers.length) {
+        console.warn(
+          `[sync-all background] full(${fullCustomers.length}) < kanban(${baseCustomers.length}) — merge aplicou códigos faltantes`,
+        );
+      }
+    }
     if (fullCustomers.length > 0) {
       try {
         out.customers_full = await persistCustomers(supabase, consultantId, fullCustomers, igreenAccountId);
+        // fora_da_carteira SÓ com lista full + account_id (nunca no Kanban parcial).
         out.portfolio_full = await markOutOfPortfolio(supabase, consultantId, fullCustomers, igreenAccountId);
-      } catch (e) { out.customers_full_error = e instanceof Error ? e.message : String(e); }
+        if (igreenAccountId) {
+          await supabase.from("igreen_portal_accounts")
+            .update({ last_sync_at: new Date().toISOString() })
+            .eq("id", igreenAccountId);
+        }
+      } catch (e) {
+        out.customers_full_error = e instanceof Error ? e.message : String(e);
+        console.error("[sync-all background] customers_full:", out.customers_full_error);
+      }
+    } else {
+      out.customers_full_error = "Lista completa vazia após /sync-all e fallback";
+      out.success = false;
     }
 
     try { out.network = await persistNetwork(supabase, consultantId, r.data?.members || [], igreenAccountId); }
@@ -589,7 +768,7 @@ async function runSyncAllBackgroundPhase(
     const started = Date.now();
     let detailsApplied = 0;
     let detailsReceived = 0;
-    // Enriquece a lista COMPLETA (571) quando disponível; senão a base (Kanban).
+    // Enriquece a lista COMPLETA quando disponível; senão a base (Kanban).
     const allCodes = extractCustomerCodes(fullCustomers.length > 0 ? fullCustomers : baseCustomers);
     // PRIORIDADE: quem nunca foi enriquecido vem primeiro. Sem isso, o loop
     // (limitado a ~100s) reprocessava sempre os mesmos primeiros códigos e
@@ -609,26 +788,31 @@ async function runSyncAllBackgroundPhase(
         codigos: chunk,
       });
       if (!er.ok) {
-        out.details_error = `Worker falhou no enrich ${i}-${i + chunk.length}: ${er.error}`;
+        if (i === 0) {
+          out.details_error = er.error;
+          break;
+        }
+        out.details_stopped_reason = "enrich_batch_error";
         break;
       }
       const details = er.data?.details || [];
       detailsReceived += details.length;
-      const applied = await applyCustomerDetails(supabase, consultantId, details, igreenAccountId);
-      detailsApplied += Number(applied.details_applied || 0);
+      const res = await applyCustomerDetails(supabase, consultantId, details, igreenAccountId);
+      detailsApplied += Number(res.details_applied || 0);
     }
-    out.details = { details_received: detailsReceived, details_applied: detailsApplied, total_codes: codes.length };
+    out.details = {
+      total_codes: allCodes.length,
+      prioritized: codes.length,
+      details_received: detailsReceived,
+      details_applied: detailsApplied,
+      stopped_reason: out.details_stopped_reason || null,
+    };
 
-    // Recalcula o estágio de pós-venda dos clientes sincronizados (espera →
-    // aprovado → d30/d60/d90/d120). Assim os clientes aparecem no Kanban de
-    // pós-venda logo após o sync, sem esperar o cron. A função é segura:
-    // respeita pos_venda_manual e não rebaixa quem está em "espera".
+    // Pós-venda: só carteira (igreen_sync). Respeita pos_venda_manual; não rebaixa.
     try {
       const { error: rpcErr } = await supabase.rpc("recompute_pos_venda_stages");
       out.pos_venda_recompute = rpcErr ? { error: rpcErr.message } : { ok: true };
       if (!rpcErr) {
-        // Consultores com "Validar sozinho" ON: confirma aprovado/reprovado
-        // com data iGreen sem esperar clique no popup.
         const auto = await supabase.rpc("auto_confirm_pending_pos_venda", {
           _consultant_id: consultantId || null,
         });
@@ -636,8 +820,6 @@ async function runSyncAllBackgroundPhase(
           ? { error: auto.error.message }
           : auto.data;
 
-        // Com toggles ON: dispara o motor de envio (idempotente por stage_key).
-        // Sem isso, o sync só valida e o WhatsApp espera o cron horário.
         if (consultantId && !auto.error) {
           try {
             const { getConsultantAutomationPrefs, isConsultantAutoAllowed } =
@@ -645,11 +827,10 @@ async function runSyncAllBackgroundPhase(
             const { isAutomationEnabled } = await import("../_shared/automation-gate.ts");
             const prefs = await getConsultantAutomationPrefs(supabase, consultantId);
             const globalOn = await isAutomationEnabled(supabase, "pos_venda_auto_messages");
-            if (globalOn && isConsultantAutoAllowed(prefs, "pos_venda") && prefs.pos_venda_auto_validate) {
+            if (globalOn && prefs && isConsultantAutoAllowed(prefs, "pos_venda") && prefs?.pos_venda_auto_validate) {
               const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
               const srk = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
               if (base && srk) {
-                // Fire-and-forget: não bloqueia o sync; claim UNIQUE evita duplicata.
                 void fetch(`${base}/functions/v1/pos-venda-auto-progress`, {
                   method: "POST",
                   headers: {
@@ -694,32 +875,18 @@ async function runSyncAllBackgroundPhase(
     console.error("[sync-all background]", err);
   } finally {
     if (out.success) await updateAutomationTimestamps(supabase, consultantId, out);
-    // Persiste os counts da Fase B no último run do consultor. Sem isso a UI
-    // (IGreenSyncStatusBar) nunca sabe se network/telecom/seguros/boletos
-    // rodaram — a Fase A já tinha finalizado o `igreen_sync_runs` antes.
-    if (consultantId) {
-      try {
-        const { data: lastRun } = await supabase
-          .from("igreen_sync_runs")
-          .select("id, counts")
-          .eq("consultant_id", consultantId)
-          .order("started_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        if (lastRun?.id) {
-          const extras: Record<string, unknown> = {};
-          for (const k of ["network","metrics","boletos","telecom","seguros","devolutivas","cashback","details","alerts","portal_identity","diagnostics","full_extras","full_extras_error","portal_extras","portal_extras_error","portfolio_full"]) {
-            if (out[k] != null) extras[k] = out[k];
-          }
-          extras._background_finished_at = new Date().toISOString();
-          extras._background_success = out.success;
-          if (out.error) extras._background_error = out.error;
-          const mergedCounts = { ...(lastRun.counts as Record<string, unknown> || {}), extras };
-          await supabase.from("igreen_sync_runs").update({ counts: mergedCounts }).eq("id", lastRun.id);
-        }
-      } catch (persistErr) {
-        console.warn("[sync-all background] failed to persist extras:", persistErr instanceof Error ? persistErr.message : String(persistErr));
-      }
+    // Persiste no run_id da conta (não no "último run" do consultor).
+    try {
+      await persistSyncRunBackgroundExtras(
+        supabase,
+        syncRunId,
+        consultantId,
+        igreenAccountId,
+        out,
+        expectedAccountIds,
+      );
+    } catch (persistErr) {
+      console.warn("[sync-all background] failed to persist extras:", persistErr instanceof Error ? persistErr.message : String(persistErr));
     }
     console.log("[sync-all background] finished", JSON.stringify(out).slice(0, 500));
   }
@@ -741,6 +908,8 @@ async function syncAllAccountsForConsultant(
   fallbackPassword?: string | null,
   /** Se informado, sincroniza só esta linha de `igreen_portal_accounts` (botão por conta na UI). */
   onlyAccountId?: string | null,
+  /** Run de telemetria — a Fase B grava extras neste id (anti-corrida). */
+  syncRunId?: string | null,
 ): Promise<Record<string, unknown>> {
   let q = supabase
     .from("igreen_portal_accounts")
@@ -763,7 +932,9 @@ async function syncAllAccountsForConsultant(
     if (!fallbackEmail || !fallbackPassword) {
       return { success: false, error: "Nenhuma conta iGreen configurada para este consultor." };
     }
-    return await syncOneConsultant(supabase, worker, fallbackEmail, fallbackPassword, consultantId, mode, null);
+    return await syncOneConsultant(
+      supabase, worker, fallbackEmail, fallbackPassword, consultantId, mode, null, syncRunId || null, null,
+    );
   }
 
   const results: Record<string, unknown>[] = [];
@@ -779,6 +950,16 @@ async function syncAllAccountsForConsultant(
     };
     return score(a) - score(b) || a.position - b.position;
   });
+  // Só contas que vão disparar Fase B (sync_all) entram no expected —
+  // enrich_only não agenda background e não pode travar o wait.
+  const expectedAccountIds = ordered
+    .filter((acc) => {
+      const lastSync = acc.last_sync_at ? new Date(acc.last_sync_at).getTime() : 0;
+      const isStale = !lastSync || Date.now() - lastSync > STALE_MS;
+      const accMode = isStale && mode === "enrich_only" ? "sync_all" : mode;
+      return accMode === "sync_all";
+    })
+    .map((a) => a.id);
   for (const acc of ordered) {
     // FORÇA sync_all na PRIMEIRA vez que uma subconta é encontrada (last_sync_at NULL)
     // ou quando a última sync completa é > 6 h. Assim, contas recém-adicionadas
@@ -789,7 +970,10 @@ async function syncAllAccountsForConsultant(
     const accMode = isStale && mode === "enrich_only" ? "sync_all" : mode;
     console.log(`[multi-account] sync conta position=${acc.position} (${acc.label || acc.portal_email}) consultant=${consultantId} mode=${accMode}${accMode !== mode ? " (forced full)" : ""}`);
     try {
-      const r = await syncOneConsultant(supabase, worker, acc.portal_email, acc.portal_password, consultantId, accMode, acc.id);
+      const r = await syncOneConsultant(
+        supabase, worker, acc.portal_email, acc.portal_password, consultantId, accMode,
+        acc.id, syncRunId || null, expectedAccountIds,
+      );
       results.push({ account_id: acc.id, position: acc.position, label: acc.label, mode: accMode, ...r });
       await updateAccountCredentialStatus(
         supabase,
@@ -797,18 +981,49 @@ async function syncAllAccountsForConsultant(
         Boolean(r?.success),
         r?.success ? null : String(r?.error || ""),
       );
-      // Marca last_sync_at após qualquer sync completa (não só quando o worker
-      // atualiza igreen_consultor_id). Sem isso, a subconta ficaria eternamente
-      // sendo forçada a sync_all a cada 6 h mesmo com sync bem-sucedida.
+      // Marca last_sync_at após Fase A OK. A Fase B atualiza de novo quando
+      // customers_full grava (lista completa da carteira).
       if (r?.success && (accMode === "sync_all" || accMode === "sync")) {
         await supabase.from("igreen_portal_accounts")
           .update({ last_sync_at: new Date().toISOString() })
           .eq("id", acc.id);
       }
+      // Fase A falhou: não há Fase B. Marca a conta como "background done"
+      // (falha) para o waitIgreenSyncFinished não ficar eterno no multi-conta.
+      if (!r?.success && syncRunId && (accMode === "sync_all" || accMode === "sync")) {
+        try {
+          await persistSyncRunBackgroundExtras(
+            supabase,
+            syncRunId,
+            consultantId,
+            acc.id,
+            {
+              success: false,
+              error: String(r?.error || "Fase A falhou — lista completa não iniciada"),
+              customers_full_error: "fase_a_failed",
+            },
+            expectedAccountIds,
+          );
+        } catch (e) {
+          console.warn("[multi-account] stub extras falhou:", e instanceof Error ? e.message : String(e));
+        }
+      }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
       results.push({ account_id: acc.id, position: acc.position, label: acc.label, mode: accMode, success: false, error: errMsg });
       await updateAccountCredentialStatus(supabase, acc.id, false, errMsg);
+      if (syncRunId && (accMode === "sync_all" || accMode === "sync")) {
+        try {
+          await persistSyncRunBackgroundExtras(
+            supabase,
+            syncRunId,
+            consultantId,
+            acc.id,
+            { success: false, error: errMsg, customers_full_error: "fase_a_exception" },
+            expectedAccountIds,
+          );
+        } catch { /* ignore */ }
+      }
     }
     // Pausa entre contas para não sobrecarregar o proxy/portal com logins em sequência.
     await new Promise((res) => setTimeout(res, 2000));
@@ -833,7 +1048,11 @@ async function syncAllAccountsForConsultant(
 
 // deno-lint-ignore no-explicit-any
 function scheduleSyncAllBackgroundPhase(...args: any[]): void {
-  const task = runSyncAllBackgroundPhase(args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7]);
+  const task = runSyncAllBackgroundPhase(
+    args[0], args[1], args[2], args[3], args[4], args[5], args[6], args[7],
+    args[8] ?? null, // syncRunId
+    args[9] ?? null, // expectedAccountIds
+  );
   // @ts-ignore EdgeRuntime existe no Supabase edge runtime
   try { EdgeRuntime.waitUntil(task); } catch { /* se não houver EdgeRuntime, task já iniciou */ }
 }
@@ -1851,6 +2070,8 @@ async function syncOneConsultant(
   consultantId: string | null,
   mode: string,
   igreenAccountId: string | null = null,
+  syncRunId: string | null = null,
+  expectedAccountIds: string[] | null = null,
 ): Promise<Record<string, unknown>> {
   const emailNorm = String(portalEmail || "").trim().toLowerCase();
   const passwordNorm = String(portalPassword || "");
@@ -1927,8 +2148,8 @@ async function syncOneConsultant(
     out.synced_at = syncTimestamp;
     out.background = { extras_and_enrich: "started" };
 
-    // Fase B: extras + enriquecimento em background. Se ela falhar ou demorar,
-    // a carteira já está consistente e pesquisável.
+    // Fase B: extras + lista COMPLETA da carteira em background.
+    // Amarrada ao run_id para não misturar multi-conta.
     scheduleSyncAllBackgroundPhase(
       supabase,
       worker,
@@ -1938,6 +2159,8 @@ async function syncOneConsultant(
       toggles,
       base.data?.customers || [],
       igreenAccountId,
+      syncRunId,
+      expectedAccountIds ?? (igreenAccountId ? [igreenAccountId] : ["_default"]),
     );
     return out;
   }
@@ -2942,8 +3165,13 @@ Deno.serve(async (req) => {
         // iGreen do consultor em ordem (1, 2, 3...). Com account_id no body,
         // sincroniza só aquela conta.
         r = (consultantId && !credsFromBody)
-          ? await syncAllAccountsForConsultant(supabase, worker, consultantId, mode, portalEmail, portalPassword, accountFilter)
-          : await syncOneConsultant(supabase, worker, portalEmail!, portalPassword!, consultantId, mode, accountFilter);
+          ? await syncAllAccountsForConsultant(
+            supabase, worker, consultantId, mode, portalEmail, portalPassword, accountFilter, runId,
+          )
+          : await syncOneConsultant(
+            supabase, worker, portalEmail!, portalPassword!, consultantId, mode, accountFilter, runId,
+            accountFilter ? [accountFilter] : null,
+          );
         if (accountFilter) r.account_id = accountFilter;
         console.log(`[bg] sync single done:`, JSON.stringify(r).slice(0, 300));
       } catch (err) {

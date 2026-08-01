@@ -74,6 +74,9 @@ export async function runIgreenSync(
  * Poll no último run do consultor até detectar `success`/`partial`/`error`.
  * A edge/worker às vezes só grava as linhas alguns segundos depois de responder;
  * este helper deixa a UI aguardar antes de recarregar a lista.
+ *
+ * sync_all: espera `_background_finished_at` (lista COMPLETA da carteira + extras).
+ * Multi-conta: só libera quando todas as contas do run terminaram a Fase B.
  */
 export async function waitIgreenSyncFinished(
   consultantId: string,
@@ -84,7 +87,7 @@ export async function waitIgreenSyncFinished(
     signal?: AbortSignal;
   },
 ): Promise<{ status: string; counts: Record<string, unknown> | null } | null> {
-  const timeoutMs = opts?.timeoutMs ?? 150_000;
+  const timeoutMs = opts?.timeoutMs ?? 300_000;
   const intervalMs = opts?.intervalMs ?? 4_000;
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
