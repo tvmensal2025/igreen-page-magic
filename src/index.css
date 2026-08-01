@@ -192,9 +192,34 @@ html {
     max-width: 100%;
   }
 
+  /* Mídia fluida: nunca estoura a largura do container em nenhum device. */
+  img,
+  svg,
+  video,
+  canvas,
+  audio,
+  iframe,
+  embed,
+  object {
+    max-width: 100%;
+  }
+
+  img,
+  video,
+  canvas {
+    height: auto;
+  }
+
+  /* Tabelas nunca empurram a página; o wrapper rola horizontalmente. */
+  table {
+    max-width: 100%;
+  }
+
   h1, h2, h3, h4, h5, h6 {
     font-family: var(--font-heading);
+    overflow-wrap: break-word;
   }
+
 }
 
 @layer utilities {

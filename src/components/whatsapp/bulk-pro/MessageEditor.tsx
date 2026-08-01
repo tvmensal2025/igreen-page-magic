@@ -153,7 +153,7 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
               <FilePlus2 className="w-3.5 h-3.5" /> Usar template
             </Button>
           </PopoverTrigger>
-          <PopoverContent align="end" className="w-[360px] p-0" sideOffset={6}>
+          <PopoverContent align="end" className="w-[min(360px,calc(100vw-2rem))] p-0" sideOffset={6}>
             <div className="p-2 border-b">
               <div className="relative">
                 <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground" />

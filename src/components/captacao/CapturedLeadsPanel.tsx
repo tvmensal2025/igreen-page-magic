@@ -400,7 +400,7 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
             </div>
           </div>
 
-          <div className="flex-1 min-h-0 overflow-y-auto rounded-lg border border-border bg-card/30">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-auto rounded-lg border border-border bg-card/30">
             {loading ? (
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="w-6 h-6 animate-spin text-primary" />

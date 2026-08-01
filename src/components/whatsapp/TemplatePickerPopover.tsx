@@ -84,7 +84,7 @@ export function TemplatePickerPopover({ consultantId, onPick, trigger }: Props) 
           </Button>
         )}
       </PopoverTrigger>
-      <PopoverContent className="w-[420px] p-0" align="start">
+      <PopoverContent className="w-[min(420px,calc(100vw-2rem))] p-0" align="start">
         <Tabs defaultValue="public">
           <div className="p-3 border-b border-border">
             <TabsList className="w-full grid grid-cols-2">
