@@ -56,11 +56,11 @@ Voltar ao caminho Actions assim que a cota liberar.
 
 ### Gates do workflow (2026-07 — endurecido)
 
-`workflow_dispatch` **exige todos**:
+`workflow_dispatch` **exige**:
 
 | Input | Regra |
 |---|---|
-| `expected_sha` | SHA completo **40 hex** = `GITHUB_SHA` do dispatch |
+| `expected_sha` | **Opcional.** Vazio / `auto` / `HEAD` / `main` = usa o commit da branch selecionada no Run workflow. Ou SHA completo 40 hex (= `GITHUB_SHA`). |
 | `function_names` | Slugs separados por vírgula **ou** `all` |
 | `confirm_production` | deve ser `true` |
 | `confirm_all` | se `function_names=all`, digite exatamente `DEPLOY_ALL` |
@@ -68,8 +68,10 @@ Voltar ao caminho Actions assim que a cota liberar.
 Também: só `refs/heads/main`, CI verde no mesmo SHA, `environment: production`,
 allowlist de slugs no workflow.
 
+**Caminho fácil (UI):** branch `main` → `expected_sha=auto` → `function_names=sync-igreen-customers` → `confirm_production=true`.
+
 **Docs antigos com `inputs.function_name` (singular) ou curl sem
-`expected_sha` / `confirm_production` estão OBSOLETOS — vão falhar.**
+`confirm_production` estão OBSOLETOS — vão falhar.**
 
 > Validação `all`: só o token exato `all` (ou `,all,` na lista). Slugs como
 > `manual-step-send` são válidos — não usar match `*all*`.
@@ -77,8 +79,8 @@ allowlist de slugs no workflow.
 ### Passo a passo
 
 1. Commit + push em `origin main` (rebase se o remoto avançou).
-2. Pegue o SHA: `git rev-parse HEAD` (40 chars).
-3. Dispare o workflow com os inputs acima.
+2. Dispare o workflow (UI): `expected_sha=auto` (ou deixe o default) + funções + confirmar produção.
+3. (Opcional / API) trave um SHA: `git rev-parse HEAD` e passe em `expected_sha`.
 
 ### Disparo via API (token git credential)
 
@@ -86,12 +88,12 @@ allowlist de slugs no workflow.
 SHA=$(git rev-parse HEAD)
 GHTOKEN=$(printf "protocol=https\nhost=github.com\n\n" | git credential fill 2>/dev/null | grep -i '^password=' | sed 's/password=//')
 
-# Ex.: só as edges do hardening satélite:
+# Ex.: só as edges do hardening satélite (auto SHA da main):
 curl -sS -o /tmp/dispatch.json -w "%{http_code}\n" -X POST \
   -H "Authorization: token $GHTOKEN" \
   -H "Accept: application/vnd.github+json" \
   https://api.github.com/repos/tvmensal2025/igreen-page-magic/actions/workflows/deploy-edge-functions.yml/dispatches \
-  -d "{\"ref\":\"main\",\"inputs\":{\"expected_sha\":\"$SHA\",\"function_names\":\"lead-research-sweep-cron,inbound-media-retry-cron,production-health-snapshot,speed-to-lead-check,portal-offline-retry,flow-d-stuck-watchdog,flow-engine-v3-rollout-cron,recover-stuck-otp\",\"confirm_production\":\"true\",\"confirm_all\":\"\"}}"
+  -d "{\"ref\":\"main\",\"inputs\":{\"expected_sha\":\"auto\",\"function_names\":\"lead-research-sweep-cron,inbound-media-retry-cron,production-health-snapshot,speed-to-lead-check,portal-offline-retry,flow-d-stuck-watchdog,flow-engine-v3-rollout-cron,recover-stuck-otp\",\"confirm_production\":\"true\",\"confirm_all\":\"\"}}"
 # 204 = aceito
 
 # Deploy de TODAS (cuidado):
@@ -100,7 +102,7 @@ curl -sS -o /tmp/dispatch.json -w "%{http_code}\n" -X POST \
   -H "Authorization: token $GHTOKEN" \
   -H "Accept: application/vnd.github+json" \
   https://api.github.com/repos/tvmensal2025/igreen-page-magic/actions/workflows/deploy-edge-functions.yml/dispatches \
-  -d "{\"ref\":\"main\",\"inputs\":{\"expected_sha\":\"$SHA\",\"function_names\":\"all\",\"confirm_production\":\"true\",\"confirm_all\":\"DEPLOY_ALL\"}}"
+  -d "{\"ref\":\"main\",\"inputs\":{\"expected_sha\":\"auto\",\"function_names\":\"all\",\"confirm_production\":\"true\",\"confirm_all\":\"DEPLOY_ALL\"}}"
 ```
 
 O `gh workflow run` pode falhar (token fine-grained sem escopo no repo). Preferir

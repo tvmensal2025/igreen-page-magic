@@ -7,11 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       expected_sha:
-        description: "SHA completo (40 caracteres) que será implantado"
-        required: true
+        description: "Opcional. Deixe vazio ou 'auto' = usa o commit da main selecionada. Só preencha SHA (40 chars) se quiser travar uma versão específica."
+        required: false
+        default: "auto"
         type: string
       function_names:
-        description: "Slugs separados por vírgula; use all somente com confirmação adicional"
+        description: "Slugs separados por vírgula (ex.: sync-igreen-customers); use all somente com confirmação adicional"
         required: true
         type: string
       confirm_production:
@@ -67,12 +68,20 @@ jobs:
             echo "Deploy permitido somente a partir de refs/heads/main." >&2
             exit 1
           fi
-          if [[ ! "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "expected_sha deve ser um SHA completo em hexadecimal minúsculo." >&2
+
+          # SHA opcional: vazio / auto / HEAD / main → commit da branch selecionada no Run workflow.
+          RAW_SHA="$(printf '%s' "${EXPECTED_SHA:-}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+          if [[ -z "$RAW_SHA" || "$RAW_SHA" == "auto" || "$RAW_SHA" == "head" || "$RAW_SHA" == "main" ]]; then
+            RAW_SHA="$GITHUB_SHA"
+            echo "expected_sha automático → $RAW_SHA"
+          fi
+          if [[ ! "$RAW_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "expected_sha inválido. Use vazio/auto ou um SHA completo (40 hex)." >&2
             exit 1
           fi
-          if [[ "$EXPECTED_SHA" != "$GITHUB_SHA" ]]; then
-            echo "SHA informado não corresponde ao SHA selecionado no dispatch." >&2
+          if [[ "$RAW_SHA" != "$GITHUB_SHA" ]]; then
+            echo "SHA informado ($RAW_SHA) não corresponde ao commit selecionado no dispatch ($GITHUB_SHA)." >&2
+            echo "Dica: deixe expected_sha = auto (ou vazio) e escolha a branch main no Run workflow." >&2
             exit 1
           fi
           if [[ "$CONFIRM_PRODUCTION" != "true" ]]; then
