@@ -1,9 +1,12 @@
 /**
- * Handoff humano fora da pizza → painel do dashboard.
- * Ações: voltar ao acompanhamento · esquecer acompanhamento · bloquear.
+ * Handoff humano → painel do dashboard.
+ * Ações: voltar ao acompanhamento · já é cliente · bloquear.
  *
- * Fonte: TODO lead com handoff humano entra — cadence `handoff_humano`
- * OU customers.bot_paused com motivo humano / assigned_human_id.
+ * Fonte: cadence `handoff_humano` OU customers.bot_paused humano / assigned_human_id.
+ *
+ * Cliente (carteira): entra no handoff; pós-venda aprovado/30/60 normal;
+ * "Voltar" só libera pausa (não mete em leads A/B/C).
+ * Bloqueado: para de receber automação; handoff continua na lista.
  */
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -11,8 +14,15 @@ import {
   cadenceStageGroup,
   labelCadenceStage,
 } from "@/lib/cadenceStageLabels";
+import {
+  isClienteProibidoCadenciaABC,
+  type ClienteCadenceSignals,
+} from "@/lib/clienteCadenceGuard";
 import { onlyDigits } from "@/lib/phone";
 import { resolveLeadPanelDisplayName } from "@/lib/customerDisplayName";
+
+const CUSTOMER_HANDOFF_SELECT =
+  "id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, assigned_human_id, name_source, last_inbound_media_url, last_inbound_media_kind, do_not_contact, customer_origin, status, is_converted, pos_venda_stage, andamento_igreen, pos_venda_recadastro_at";
 
 export const HANDOFF_PAUSE_REASON = "handoff_humano";
 
@@ -41,6 +51,10 @@ export type HandoffLead = {
   alertAt: string | null;
   /** Foto do lead se houver (mídia inbound recente). */
   photoUrl: string | null;
+  /** Já é cliente (carteira / convertido) — handoff ok; sem ciclo leads A/B/C. */
+  isCliente: boolean;
+  /** Bloqueado — não recebe automação; ainda aparece no handoff. */
+  doNotContact: boolean;
 };
 
 const REASON_LABEL: Record<string, string> = {
@@ -162,7 +176,30 @@ type CustomerRow = {
   last_inbound_media_kind?: string | null;
   do_not_contact?: boolean | null;
   consultant_id?: string;
+  customer_origin?: string | null;
+  status?: string | null;
+  is_converted?: boolean | null;
+  pos_venda_stage?: string | null;
+  andamento_igreen?: string | null;
+  pos_venda_recadastro_at?: string | null;
 };
+
+function customerAsClienteSignals(c: CustomerRow | undefined): ClienteCadenceSignals {
+  return {
+    customer_origin: c?.customer_origin,
+    status: c?.status,
+    is_converted: c?.is_converted,
+    pos_venda_stage: c?.pos_venda_stage,
+    andamento_igreen: c?.andamento_igreen,
+    pos_venda_recadastro_at: c?.pos_venda_recadastro_at,
+  };
+}
+
+/** Cliente de carteira / convertido — não é lead; fora do painel de handoff A/B/C. */
+export function isHandoffClienteNotLead(c: CustomerRow | undefined): boolean {
+  if (!c) return false;
+  return isClienteProibidoCadenciaABC(customerAsClienteSignals(c));
+}
 
 function buildHandoffLead(
   customerId: string,
@@ -177,7 +214,7 @@ function buildHandoffLead(
 ): HandoffLead | null {
   const phone = c?.phone_whatsapp || "";
   if (!hasUsableHandoffPhone(phone)) return null;
-  if (c?.do_not_contact) return null;
+  // Bloqueado ainda entra no handoff (só para de receber automação).
 
   const name = String(c?.name || "").trim();
   const display = resolveLeadPanelDisplayName({
@@ -195,6 +232,7 @@ function buildHandoffLead(
   const mediaUrl = String(c?.last_inbound_media_url || "").trim();
   const photoUrl =
     mediaUrl && /image|photo|picture|sticker/i.test(mediaKind) ? mediaUrl : null;
+  const isCliente = isHandoffClienteNotLead(c);
 
   return {
     cadenceId: cadence?.id || `customer:${customerId}`,
@@ -218,18 +256,22 @@ function buildHandoffLead(
     alertMessage: alert?.user_message ?? null,
     alertAt: alert?.created_at ?? null,
     photoUrl,
+    isCliente,
+    doNotContact: !!c?.do_not_contact,
   };
 }
 
 /**
- * Lista leads do consultor em handoff que ainda precisam de ação:
- * voltar ao acompanhamento · esquecer · bloquear.
+ * Lista contatos em handoff que ainda precisam de ação:
+ * voltar ao acompanhamento · já é cliente · bloquear.
  *
- * Entram:
+ * Entram (leads E clientes):
  * - cadence `paused_reason = handoff_humano`
  * - customers com bot_paused humano / assigned_human_id (takeover)
  *
- * Não lista: sem telefone útil / já bloqueado (DNC) / já esquecido (WON/manual_won).
+ * Cliente de carteira permanece aqui (handoff + pós-venda aprovado/30/60).
+ * Bloqueado também permanece no handoff — só para de receber automação.
+ * Não lista: sem telefone útil / WON esquecido sem pausa humana ativa.
  */
 export async function loadHandoffLeads(consultantId: string): Promise<HandoffLead[]> {
   const [{ data: cadenceHandoff, error: cadErr }, { data: pausedCustomers, error: custErr }] =
@@ -243,12 +285,9 @@ export async function loadHandoffLeads(consultantId: string): Promise<HandoffLea
         .limit(300),
       supabase
         .from("customers")
-        .select(
-          "id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, assigned_human_id, name_source, last_inbound_media_url, last_inbound_media_kind, do_not_contact",
-        )
+        .select(CUSTOMER_HANDOFF_SELECT)
         .eq("consultant_id", consultantId)
         .eq("bot_paused", true)
-        .or("do_not_contact.is.null,do_not_contact.eq.false")
         .order("bot_paused_at", { ascending: false })
         .limit(300),
     ]);
@@ -257,7 +296,6 @@ export async function loadHandoffLeads(consultantId: string): Promise<HandoffLea
   if (custErr) throw new Error(custErr.message);
 
   const humanPausedCustomers = (pausedCustomers || []).filter((c) => {
-    if (c.do_not_contact) return false;
     if (c.assigned_human_id) return true;
     return isHandoffBotPauseReason(c.bot_paused_reason);
   }) as CustomerRow[];
@@ -275,9 +313,7 @@ export async function loadHandoffLeads(consultantId: string): Promise<HandoffLea
   const [{ data: allCustomers }, { data: allCadence }, { data: alerts }] = await Promise.all([
     supabase
       .from("customers")
-      .select(
-        "id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, assigned_human_id, name_source, last_inbound_media_url, last_inbound_media_kind, do_not_contact",
-      )
+      .select(CUSTOMER_HANDOFF_SELECT)
       .in("id", ids),
     supabase
       .from("lead_cadence_state")
@@ -380,8 +416,11 @@ export type ReturnHandoffResult = {
 };
 
 /**
- * Devolve um lead ao acompanhamento: limpa pausa de cadência, despausa bot,
- * remove assigned_human, resolve alertas.
+ * Volta ao acompanhamento: limpa pausa humana, despausa bot, resolve alertas.
+ *
+ * - Lead: reativa cadência A/B/C (`next_action_at`).
+ * - Cliente (carteira / convertido): só libera o handoff — pós-venda
+ *   (aprovado / 30 / 60…) segue; NÃO entra em leads novos.
  */
 export async function returnHandoffToPizza(opts: {
   customerId: string;
@@ -390,6 +429,13 @@ export async function returnHandoffToPizza(opts: {
 }): Promise<ReturnHandoffResult> {
   const { customerId, resolvedBy } = opts;
   const now = new Date().toISOString();
+
+  const { data: cust } = await supabase
+    .from("customers")
+    .select(CUSTOMER_HANDOFF_SELECT)
+    .eq("id", customerId)
+    .maybeSingle();
+  const isCliente = !!(cust && isHandoffClienteNotLead(cust as CustomerRow));
 
   let cadenceId = opts.cadenceId;
   if (cadenceId?.startsWith("customer:")) cadenceId = null;
@@ -404,7 +450,29 @@ export async function returnHandoffToPizza(opts: {
     cadenceId = data?.id ?? null;
   }
 
-  if (cadenceId) {
+  if (isCliente) {
+    // Cliente: tira pausa de handoff sem agendar A/B/C. Se havia stage de lead, WON.
+    const clienteCadencePatch = {
+      paused_reason: null,
+      paused_until: null,
+      next_action_at: null,
+      stage: "WON",
+      won_at: now,
+    } as never;
+    if (cadenceId) {
+      const { error: cadErr } = await supabase
+        .from("lead_cadence_state")
+        .update(clienteCadencePatch)
+        .eq("id", cadenceId);
+      if (cadErr) return { ok: false, error: cadErr.message };
+    } else {
+      await supabase
+        .from("lead_cadence_state")
+        .update(clienteCadencePatch)
+        .eq("customer_id", customerId)
+        .eq("paused_reason", HANDOFF_PAUSE_REASON);
+    }
+  } else if (cadenceId) {
     const { error: cadErr } = await supabase
       .from("lead_cadence_state")
       .update({
@@ -475,8 +543,9 @@ export async function returnHandoffsToPizza(opts: {
 }
 
 /**
- * Esquecer acompanhamento: marca WON / já cliente — sai do ciclo automático,
- * WhatsApp manual continua ok (não é bloqueio). Use quando já é cliente na conversa.
+ * Já é cliente (manual): marca is_converted + WON — sai dos leads A/B/C.
+ * Pós-venda (aprovado/30/60) e handoff futuro continuam.
+ * WhatsApp manual ok. Não é bloqueio.
  */
 export async function forgetHandoffLeads(opts: {
   items: Array<{ customerId: string; cadenceId: string }>;
@@ -521,14 +590,17 @@ export async function forgetHandoffLeads(opts: {
         .eq("customer_id", item.customerId);
 
       if (cadErr) {
-        // Sem linha de cadência — ainda limpa o customer (cliente na conversa).
         console.warn("[forgetHandoffLeads] cadence:", cadErr.message);
       }
     }
 
-    await supabase
+    // is_converted → fora de A/B/C; handoff futuro ainda lista se humano assumir.
+    // Não zera bot_paused se ainda precisa atender — só marca cliente.
+    // Aqui limpamos a pausa atual (atendimento resolvido como “já cliente”).
+    const { error: custErr } = await supabase
       .from("customers")
       .update({
+        is_converted: true,
         bot_paused: false,
         bot_paused_reason: null,
         bot_paused_at: null,
@@ -536,6 +608,12 @@ export async function forgetHandoffLeads(opts: {
         assigned_human_id: null,
       } as never)
       .eq("id", item.customerId);
+
+    if (custErr) {
+      failed++;
+      lastError = custErr.message;
+      continue;
+    }
 
     await supabase
       .from("bot_handoff_alerts")

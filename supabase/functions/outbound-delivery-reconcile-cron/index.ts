@@ -54,15 +54,18 @@ Deno.serve(async (req) => {
   }
 
   const now = Date.now();
-  const minIso = new Date(now - RECONCILE_MAX_AGE_MS).toISOString();
+  const backfillDaysRaw = new URL(req.url).searchParams.get("backfill_days");
+  const backfillDays = backfillDaysRaw ? Math.min(Math.max(Number(backfillDaysRaw) || 0, 1), 90) : 0;
+  const maxAgeMs = backfillDays > 0 ? backfillDays * 24 * 60 * 60_000 : RECONCILE_MAX_AGE_MS;
+  const minIso = new Date(now - maxAgeMs).toISOString();
   const maxIso = new Date(now - RECONCILE_MIN_AGE_MS).toISOString();
 
   const { data: rows, error } = await supabase
     .from("conversations")
-    .select("id, customer_id, external_message_id, delivery_status, created_at, origin")
+    .select("id, customer_id, external_message_id, delivery_status, media_duration_sec, created_at, origin")
     .eq("message_direction", "outbound")
     .not("external_message_id", "is", null)
-    .in("delivery_status", ["queued", "pending", "sent"])
+    .or("delivery_status.is.null,delivery_status.in.(queued,pending,sent)")
     .gte("created_at", minIso)
     .lte("created_at", maxIso)
     .order("created_at", { ascending: true })
@@ -158,11 +161,23 @@ Deno.serve(async (req) => {
     }
 
     const cur = String((row as any).delivery_status || "");
-    if (!shouldUpgradeDelivery(cur, next) && next !== "failed") continue;
+    const shouldUpdateStatus = shouldUpgradeDelivery(cur, next) || next === "failed";
+    const dur = ack.mediaDurationSec;
+    const hasDur = dur != null && Number.isFinite(dur) && dur > 0;
+    const curDur = (row as any).media_duration_sec as number | null;
+    const needsDur = hasDur && (!curDur || curDur <= 0);
+
+    if (!shouldUpdateStatus && !needsDur) continue;
+
+    const patch: Record<string, unknown> = {};
+    if (shouldUpdateStatus) patch.delivery_status = next;
+    if (needsDur) patch.media_duration_sec = Math.round(dur as number);
+
+    if (Object.keys(patch).length === 0) continue;
 
     const { error: upErr } = await supabase
       .from("conversations")
-      .update({ delivery_status: next })
+      .update(patch)
       .eq("id", (row as any).id);
     if (upErr) {
       errors++;
@@ -195,6 +210,7 @@ Deno.serve(async (req) => {
     updated,
     stale_failed: staleFailed,
     errors,
+    backfill_days: backfillDays || null,
     ms: Date.now() - t0,
   };
   return new Response(JSON.stringify(body), {

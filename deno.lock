@@ -7992,7 +7992,7 @@
         "npm:html-to-image@1.11.11",
         "npm:html2canvas@^1.4.1",
         "npm:input-otp@^1.4.2",
-        "npm:jsdom@26",
+        "npm:jsdom@^26.1.0",
         "npm:jspdf@^4.2.1",
         "npm:lovable-tagger@^1.1.13",
         "npm:lucide-react@0.462",

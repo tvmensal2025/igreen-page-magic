@@ -1,10 +1,21 @@
 import type { TourArticle, TourStep } from "@/features/onboarding/types";
+import { menuSelectorFromHref } from "@/features/onboarding/tourHighlight";
+
+export type GuideStepDef = {
+  text: string;
+  /** Rota a abrir neste passo (default: href do artigo). */
+  route?: string;
+  /** Seletor CSS do botão/área a destacar. Null = só texto + rota. */
+  selector?: string | null;
+};
 
 export type HelpArticle = TourArticle & {
   summary: string;
   href: string;
   keywords: string[];
   steps: string[];
+  /** Passos com rota/seletor para o GuideCoach destacar na tela. */
+  guidedSteps?: GuideStepDef[];
   featured?: boolean;
 };
 
@@ -20,6 +31,44 @@ export const HELP_CATEGORIES = [
   "Conta e suporte",
 ] as const;
 
+type StepInput = string | GuideStepDef;
+
+/** Liga cada guia ao passo correspondente do tour de 12 passos (UUIDs de produção). */
+const RELATED_TOUR_STEP_BY_GUIDE: Record<string, string> = {
+  inicio: "4a2bac26-09d3-448a-8f92-182410ba0d18",
+  painel: "4a2bac26-09d3-448a-8f92-182410ba0d18",
+  "whatsapp-conectar": "b0b465d0-0b15-44cb-afde-b14fb4a96086",
+  "whatsapp-atendimento": "b0b465d0-0b15-44cb-afde-b14fb4a96086",
+  "whatsapp-templates": "b0b465d0-0b15-44cb-afde-b14fb4a96086",
+  "ia-conhecimento": "b0b465d0-0b15-44cb-afde-b14fb4a96086",
+  fluxos: "b0b465d0-0b15-44cb-afde-b14fb4a96086",
+  "audio-studio": "b0b465d0-0b15-44cb-afde-b14fb4a96086",
+  agendamentos: "6133255e-0b68-4311-953a-eefae7fbaffb",
+  cadencia: "6133255e-0b68-4311-953a-eefae7fbaffb",
+  reaquecimento: "6133255e-0b68-4311-953a-eefae7fbaffb",
+  "clientes-interessados": "cac67b81-c44f-4539-bbfb-be9e6e590d2d",
+  captacao: "b548ab36-4dc7-4b72-8638-840202b3b030",
+  conversao: "76ec45e1-7521-404c-aa7b-694ef8024f78",
+  "clientes-ativos": "c04c05ba-f55f-4178-93bd-d8416ae271d5",
+  "base-clientes": "c04c05ba-f55f-4178-93bd-d8416ae271d5",
+  "central-anuncios": "bc626083-5c0b-4cc7-bc59-4b8368ac04c3",
+  "meta-ads": "bc626083-5c0b-4cc7-bc59-4b8368ac04c3",
+  "campanha-reprovada": "bc626083-5c0b-4cc7-bc59-4b8368ac04c3",
+  links: "b548ab36-4dc7-4b72-8638-840202b3b030",
+  materiais: "b548ab36-4dc7-4b72-8638-840202b3b030",
+  ligacao: "6133255e-0b68-4311-953a-eefae7fbaffb",
+  produtos: "7b141de5-a23e-46cb-9836-07cbb7bd1a64",
+  parceiros: "b548ab36-4dc7-4b72-8638-840202b3b030",
+  financeiro: "7b141de5-a23e-46cb-9836-07cbb7bd1a64",
+  academy: "c78a100f-b81c-47fd-939c-33a72d17faf7",
+  suporte: "aac7f92a-cac5-420b-8c4a-840a4c56e4cf",
+};
+
+function normalizeStepInputs(steps: StepInput[]): { texts: string[]; guided: GuideStepDef[] } {
+  const guided = steps.map((step) => (typeof step === "string" ? { text: step } : step));
+  return { texts: guided.map((s) => s.text), guided };
+}
+
 const article = (
   id: string,
   category: (typeof HELP_CATEGORIES)[number],
@@ -27,41 +76,101 @@ const article = (
   summary: string,
   href: string,
   keywords: string[],
-  steps: string[],
+  steps: StepInput[],
   order_index: number,
   featured = false,
-): HelpArticle => ({
-  id: `guia-${id}`,
-  category,
-  title,
-  summary,
-  body: steps.map((step, index) => `${index + 1}. ${step}`).join("\n"),
-  href,
-  keywords,
-  steps,
-  order_index,
-  featured,
-  video_url: null,
-  related_tour_step_id: null,
-  is_active: true,
-});
+): HelpArticle => {
+  const { texts, guided } = normalizeStepInputs(steps);
+  return {
+    id: `guia-${id}`,
+    category,
+    title,
+    summary,
+    body: texts.map((step, index) => `${index + 1}. ${step}`).join("\n"),
+    href,
+    keywords,
+    steps: texts,
+    guidedSteps: guided,
+    order_index,
+    featured,
+    video_url: null,
+    related_tour_step_id: RELATED_TOUR_STEP_BY_GUIDE[id] ?? null,
+    is_active: true,
+  };
+};
+
+/** Resolve passos com rota/seletor para o GuideCoach (sempre retorna lista usável). */
+export function resolveGuideSteps(article: HelpArticle): GuideStepDef[] {
+  const menuSel = menuSelectorFromHref(article.href);
+  if (article.guidedSteps?.length) {
+    return article.guidedSteps.map((step, index) => {
+      const route = step.route || article.href;
+      const explicit = step.selector !== undefined ? step.selector : null;
+      // Nunca deixar passo “cego”: se não houver seletor, aponta o menu da rota.
+      const selector =
+        explicit ||
+        (index === 0 ? menuSel : menuSelectorFromHref(route)) ||
+        menuSel ||
+        '[data-tour="guide-entry"]';
+      return { text: step.text, route, selector };
+    });
+  }
+  return (article.steps || []).map((text, index) => ({
+    text,
+    route: article.href,
+    selector: index === 0 ? menuSel || '[data-tour="guide-entry"]' : menuSel || '[data-tour="guide-entry"]',
+  }));
+}
 
 export const HELP_CATALOG: HelpArticle[] = [
   article(
     "inicio",
     "Primeiros passos",
     "Comece por aqui",
-    "Configure o essencial em ordem: conta, WhatsApp, links e primeiros contatos.",
+    "Ordem profissional: conta → WhatsApp → links → primeiros leads → suporte se travar.",
     "/admin?tab=dashboard",
-    ["início", "configurar", "primeiro acesso", "painel", "passo a passo"],
+    ["início", "configurar", "primeiro acesso", "painel", "passo a passo", "tour"],
     [
-      "No canto inferior direito, toque no botão verde de ajuda (?) se quiser repetir esta orientação a qualquer momento.",
-      "No menu esquerdo, clique em Painel e confira avisos e pendências do dia.",
-      "Abra Configurações (ícone de engrenagem / menu da conta no topo) e confirme seu nome e ID iGreen.",
-      "No menu, clique em WhatsApp. Se aparecer Conectar → ou Conectar WhatsApp, leia o QR Code com o celular.",
-      "No menu, clique em Links → aba Meus Links → escolha um produto → clique em Copiar e teste o endereço no navegador.",
-      "No menu, clique em Clientes interessados para ver quem já chegou. Abra um card pelo ícone de olho para ver a conversa.",
-      "Se algo falhar, volte ao botão verde de ajuda e escolha Perguntar ao suporte com IA descrevendo a tela e o que tentou.",
+      {
+        text: "Abra o Painel no menu esquerdo — é a sua Visão Geral do dia.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="dashboard"], [data-tour="menu-dashboard"]',
+      },
+      {
+        text: "No topo do Painel, escolha o período e confira o escopo (você ou equipe) antes de olhar números.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="painel-toolbar"]',
+      },
+      {
+        text: "Abra Configurações (engrenagem no menu) e confirme nome + ID iGreen — sem isso a sync e os links falham.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="menu-config"]',
+      },
+      {
+        text: "Confirme o ID iGreen e salve. Só digite o ID completo e use Salvar Dados.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="cfg-igreen-id"], [data-tour="cfg-salvar"]',
+      },
+      {
+        text: "Conecte o WhatsApp (menu WhatsApp). Se pedir QR, escaneie em Aparelhos conectados no celular.",
+        route: "/admin?tab=whatsapp",
+        selector: '[data-tour="wa-conectar"], [data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Em Links → Meus Links, copie um link de produto e teste no navegador.",
+        route: "/admin?tab=links",
+        selector: '[data-tour="links-copiar"], [data-tour="links-meus"]',
+      },
+      {
+        text: "Em Clientes interessados, veja quem já chegou e abra um card para a conversa.",
+        route: "/admin?tab=crm",
+        selector: '[data-tour="crm-kanban"], [data-tour="menu-crm"]',
+      },
+      {
+        text: "Sempre que travar: botão ? no topo da tela ou Central de ajuda → suporte com IA.",
+        route: "/ajuda",
+        selector: '[data-tour="ajuda-busca"], [data-tour="menu-ajuda"]',
+      },
     ],
     1,
     true,
@@ -69,54 +178,128 @@ export const HELP_CATALOG: HelpArticle[] = [
   article(
     "painel",
     "Primeiros passos",
-    "Entenda o Painel",
-    "Use indicadores e atalhos do Painel para ir direto ao que precisa de atenção.",
+    "Entenda o Painel (Visão Geral)",
+    "Período, sync iGreen, KPIs de carteira, gráficos e atalhos — leia nesta ordem.",
     "/admin?tab=dashboard",
-    ["dashboard", "indicadores", "resultado", "pendência", "atalho"],
+    ["dashboard", "indicadores", "resultado", "pendência", "atalho", "visão geral", "painel"],
     [
-      "No menu esquerdo, clique em Painel.",
-      "No topo, confira o período (ex.: últimos 30 dias) antes de comparar números.",
-      "Leia os cards de indicadores: clique em um card ou pendência para ir à área correspondente (WhatsApp, CRM, Financeiro, etc.).",
-      "Se houver alerta de WhatsApp desconectado, clique no aviso ou abra WhatsApp no menu e use Conectar WhatsApp.",
-      "Use os atalhos da tela para abrir Captação, Conversão ou Anúncios sem procurar no menu.",
-      "Em dúvida sobre um número, abra o suporte com IA e diga qual card do Painel você está olhando.",
+      {
+        text: "Menu → Painel. Esta é a Visão Geral da operação.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="dashboard"]',
+      },
+      {
+        text: "Barra superior: filtro de licenciado, Sincronizar iGreen, período e Exportar PDF.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="painel-toolbar"]',
+      },
+      {
+        text: "Escolha o período (ex.: 30 dias) antes de comparar qualquer número.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="painel-periodo"]',
+      },
+      {
+        text: "Se a carteira parecer vazia ou desatualizada, use Sincronizar (respeite o cooldown).",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="painel-sync"]',
+      },
+      {
+        text: "Os 4 cards mostram cadastros, média kWh, recorrência e total kWh da carteira iGreen.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="painel-kpis"]',
+      },
+      {
+        text: "Role a página: gráficos, top consumidores e retenção aprofundam o diagnóstico.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="painel-kpis"]',
+      },
+      {
+        text: "PDF: use Exportar PDF na barra quando for enviar relatório ao líder/sócio.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="painel-export-pdf"]',
+      },
+      {
+        text: "Dúvida em um número: ? desta tela ou suporte com IA citando o card que você está olhando.",
+        route: "/ajuda",
+        selector: '[data-tour="menu-ajuda"]',
+      },
     ],
     2,
   ),
   article(
     "clientes-interessados",
     "Clientes e CRM",
-    "Atenda clientes interessados",
-    "No funil Kanban: buscar, abrir o card, ver conversa e mover a etapa.",
+    "Acompanhe clientes interessados",
+    "Kanban do lead novo (em conversa): busca, filtro de passo, cards e análise — sem misturar com CRM em análise.",
     "/admin?tab=crm",
-    ["lead", "kanban", "interessado", "funil", "crm", "card"],
+    ["crm", "interessados", "kanban", "lead", "passo", "em conversa"],
     [
-      "No menu esquerdo (grupo Visão Geral), clique em Clientes interessados.",
-      "No campo Buscar cliente interessado..., digite nome ou telefone.",
-      "Use o filtro Parou no passo para achar quem travou em uma etapa.",
-      "No card desejado, clique no ícone de olho (Ver detalhes, linha do tempo e próxima mensagem).",
-      "Leia a conversa e os dados capturados; se precisar falar na hora, abra o WhatsApp a partir do contato.",
-      "Arraste o card entre colunas para atualizar a etapa, ou use o menu ⋮ → Editar.",
-      "Para incluir alguém na mão: clique em Adicionar Cliente interessado → preencha → Salvar.",
-      "Se a lista for longa, role até Carregar mais deals.",
+      {
+        text: "Menu → Clientes interessados. Aqui entram leads novos em conversa (não confundir com Clientes ativos).",
+        route: "/admin?tab=crm",
+        selector: '[data-tour="menu-crm"]',
+      },
+      {
+        text: "Busque por nome ou telefone para achar um lead rápido.",
+        route: "/admin?tab=crm",
+        selector: '[data-tour="crm-busca"]',
+      },
+      {
+        text: "Filtro “Parou no passo”: quem travou em conta, documento, e-mail ou portal.",
+        route: "/admin?tab=crm",
+        selector: '[data-tour="crm-filtro-passo"]',
+      },
+      {
+        text: "Arraste cards entre colunas ou abra o detalhe (olho) para ver conversa e ações.",
+        route: "/admin?tab=crm",
+        selector: '[data-tour="crm-kanban"]',
+      },
+      {
+        text: "Use Análise / insights quando quiser diagnóstico de volume e gargalos (não é a pizza A).",
+        route: "/admin?tab=crm",
+        selector: '[data-tour="crm-analise-leads"], [data-tour="crm-kanban"]',
+      },
     ],
     10,
-    true,
   ),
   article(
     "clientes-ativos",
     "Clientes e CRM",
     "Acompanhe clientes ativos",
-    "Clientes já no iGreen: situação, documentos, cadastro em análise e pós-venda.",
+    "Pós-cadastro iGreen: em análise, assinatura, aprovados e ciclo 30–120 dias.",
     "/admin?tab=crm-clientes",
-    ["ativo", "validado", "cliente igreen", "sincronização", "análise"],
+    ["ativo", "validado", "cliente igreen", "sincronização", "análise", "pós-venda"],
     [
-      "No menu esquerdo, clique em Clientes ativos (não confunda com Clientes interessados).",
-      "Aqui ficam quem já enviou cadastro / está em análise na iGreen, aprovado, reprovado ou em acompanhamento 30–120 dias.",
-      "Digite nome, telefone ou situação no campo de busca no topo da tela.",
-      "Clique no card ou na linha do cliente para abrir detalhes, documentos e histórico.",
-      "Se os dados parecerem antigos, clique em sincronizar / atualizar quando o botão aparecer na ficha.",
-      "Trate devolutivas e pendências; depois arraste o card na coluna correta do Kanban de pós-venda.",
+      {
+        text: "Menu → Clientes ativos (não é Clientes interessados).",
+        route: "/admin?tab=crm-clientes",
+        selector: '[data-tour="menu-crm-clientes"]',
+      },
+      {
+        text: "Barra superior: busca, filtro de responsável e atalhos de análise.",
+        route: "/admin?tab=crm-clientes",
+        selector: '[data-tour="ativos-toolbar"]',
+      },
+      {
+        text: "Busque por nome, telefone ou situação.",
+        route: "/admin?tab=crm-clientes",
+        selector: '[data-tour="ativos-busca"]',
+      },
+      {
+        text: "Kanban de pós-venda: colunas de análise, assinatura, aprovado/reprovado e 30–120 dias.",
+        route: "/admin?tab=crm-clientes",
+        selector: '[data-tour="ativos-kanban"]',
+      },
+      {
+        text: "Abra o card, resolva devolutiva/documento e só então mova a coluna.",
+        route: "/admin?tab=crm-clientes",
+        selector: '[data-tour="ativos-kanban"]',
+      },
+      {
+        text: "Validar dados: use o botão Validar quando precisar checar inconsistências em lote.",
+        route: "/admin?tab=crm-clientes",
+        selector: '[data-tour="ativos-validar"], [data-tour="ativos-toolbar"]',
+      },
     ],
     11,
   ),
@@ -124,16 +307,40 @@ export const HELP_CATALOG: HelpArticle[] = [
     "base-clientes",
     "Clientes e CRM",
     "Consulte a base de clientes",
-    "Lista completa para achar cadastro, documento e origem.",
+    "Lista completa: novo cliente, sync iGreen, busca, filtros e ficha.",
     "/admin?tab=clientes",
-    ["cadastro", "documento", "base", "pesquisar cliente", "lista"],
+    ["cadastro", "documento", "base", "pesquisar cliente", "lista", "sync"],
     [
-      "No menu esquerdo, clique em Base de clientes.",
-      "Digite nome, telefone ou documento na busca.",
-      "Use os filtros da lista (situação / origem) para reduzir o resultado.",
-      "Clique na linha do cliente para abrir o cadastro completo.",
-      "Altere só os campos necessários e salve.",
-      "Se precisar falar com a pessoa, copie o telefone ou abra o WhatsApp a partir do registro.",
+      {
+        text: "Menu → Base de clientes.",
+        route: "/admin?tab=clientes",
+        selector: '[data-tour="menu-clientes"]',
+      },
+      {
+        text: "Novo cliente: cadastra manualmente quem ainda não veio da sync.",
+        route: "/admin?tab=clientes",
+        selector: '[data-tour="base-novo"]',
+      },
+      {
+        text: "Menu ⋮ → Sincronizar iGreen para puxar a carteira oficial (respeite o cooldown).",
+        route: "/admin?tab=clientes",
+        selector: '[data-tour="base-sync-igreen"], [data-tour="base-novo"]',
+      },
+      {
+        text: "Busca: nome, telefone, CPF ou e-mail.",
+        route: "/admin?tab=clientes",
+        selector: '[data-tour="base-busca"]',
+      },
+      {
+        text: "Filtros: produto, status, licenciado, distribuidora e cidade.",
+        route: "/admin?tab=clientes",
+        selector: '[data-tour="base-filtros"]',
+      },
+      {
+        text: "Clique na linha/card da lista para abrir o cadastro completo e o telefone.",
+        route: "/admin?tab=clientes",
+        selector: '[data-tour="base-lista"]',
+      },
     ],
     12,
   ),
@@ -141,17 +348,35 @@ export const HELP_CATALOG: HelpArticle[] = [
     "conversao",
     "Clientes e CRM",
     "Recupere oportunidades",
-    "Atender agora: quem precisa de você, quem esfriou e o que falar.",
+    "Fila Atender: precisa de você → quente → frio; abra e use Atender.",
     "/admin?tab=conversao",
     ["conversão", "reativar", "lead parado", "oportunidade", "quente", "frio", "atender"],
     [
-      "No menu esquerdo, clique em Conversão.",
-      "Na aba Atender, comece pelo balde Precisa de você (automação pausada).",
-      "Se estiver vazio, veja Quente sem resposta — prontos pra fechar que sumiram.",
-      "Clique em Atender, leia o resumo e envie a mensagem ou abra o chat.",
-      "Use Toda a fila só quando quiser ver todo mundo ainda não cliente.",
-      "Para vários de uma vez (fora de Precisa de você): Selecionar vários → Enviar mensagem.",
-      "Frases, Resultados e Ajustes ficam nas outras abas.",
+      {
+        text: "Menu → Conversão.",
+        route: "/admin?tab=conversao",
+        selector: '[data-tour="menu-conversao"]',
+      },
+      {
+        text: "Fique na aba Atender — é a fila do dia.",
+        route: "/admin?tab=conversao",
+        selector: '[data-tour="conversao-tab-atender"]',
+      },
+      {
+        text: "Prioridade 1: balde Precisa de você (automação pausada / humano).",
+        route: "/admin?tab=conversao",
+        selector: '[data-tour="conversao-balde-precisa"]',
+      },
+      {
+        text: "Prioridade 2: Quente sem resposta.",
+        route: "/admin?tab=conversao",
+        selector: '[data-tour="conversao-balde-quente"]',
+      },
+      {
+        text: "Abra um card e use Atender para mensagem sugerida ou chat.",
+        route: "/admin?tab=conversao",
+        selector: '[data-tour="conversao-atender"]',
+      },
     ],
     13,
   ),
@@ -159,18 +384,30 @@ export const HELP_CATALOG: HelpArticle[] = [
     "whatsapp-conectar",
     "WhatsApp e IA",
     "Conecte o WhatsApp",
-    "Passo a passo do QR Code até o status conectado.",
+    "QR Code até status conectado (Whapi). Não reconecte se já estiver AUTH.",
     "/admin?tab=whatsapp",
-    ["qr code", "conectar", "instância", "número", "desconectado", "whatsapp"],
+    ["qr code", "conectar", "número", "desconectado", "whatsapp", "chip", "whapi"],
     [
-      "No menu esquerdo (Gestão Comercial), clique em WhatsApp.",
-      "Se o topo mostrar Conectar → ou status desconectado, continue neste guia.",
-      "No painel Conexão WhatsApp, clique no botão Conectar WhatsApp.",
-      "Quando aparecer Escaneie / QR Code, no celular abra WhatsApp → Configurações → Dispositivos conectados → Conectar dispositivo e leia o QR.",
-      "Se o QR expirar, clique em Gerar novo QR ou Atualizar agora e tente de novo.",
-      "Espere o status mudar para conectado antes de testar envio de mensagem.",
-      "Para trocar de chip: clique em Desconectar / trocar chip → confirme em Sim, desconectar → conecte o novo número.",
-      "Se travar: use Resetar Conexão (com cuidado) e depois Conectar WhatsApp novamente.",
+      {
+        text: "Menu → WhatsApp.",
+        route: "/admin?tab=whatsapp",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Se desconectado, clique em Conectar WhatsApp.",
+        route: "/admin?tab=whatsapp",
+        selector: '[data-tour="wa-conectar"]',
+      },
+      {
+        text: "Escaneie o QR com o celular (Aparelhos conectados). Se já conectado, o QR não deve reabrir sozinho.",
+        route: "/admin?tab=whatsapp",
+        selector: '[data-tour="wa-qr"], [data-tour="wa-conectar"]',
+      },
+      {
+        text: "Após conectar, use Conversas e Mensagens prontas nas sub-abas.",
+        route: "/admin?tab=whatsapp&section=conversas",
+        selector: '[data-tour="wa-subtabs"]',
+      },
     ],
     20,
     true,
@@ -179,35 +416,113 @@ export const HELP_CATALOG: HelpArticle[] = [
     "whatsapp-atendimento",
     "WhatsApp e IA",
     "Atenda pelo WhatsApp",
-    "Abas Conversas e Atendente IA: responder manual e devolver à automação.",
-    "/admin?tab=whatsapp",
+    "Conversas, composer e Atendente IA — responder e devolver à automação.",
+    "/admin?tab=whatsapp&section=conversas",
     ["conversa", "mensagem", "responder", "pausar ia", "humano", "atendente"],
     [
-      "No menu, clique em WhatsApp.",
-      "Clique na sub-aba Conversas.",
-      "Clique na conversa na lista à esquerda e leia o histórico.",
-      "Digite a resposta no campo de mensagem e envie. Resposta manual pode pausar a automação daquela conversa.",
-      "Clique na sub-aba Atendente IA e confira se a assistente está ativa para o atendimento.",
-      "Quando quiser devolver à automação, clique na opção de reativar / retomar atendimento automático na conversa (quando aparecer).",
-      "Outras sub-abas: Envio em Massa, Templates, Agendamentos e Histórico — só clique em Envio em Massa depois de revisar a mensagem.",
+      {
+        text: "Menu → WhatsApp.",
+        route: "/admin?tab=whatsapp&section=conversas",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Sub-aba Conversas (no celular: Chats).",
+        route: "/admin?tab=whatsapp&section=conversas",
+        selector: '[data-tour="wa-tab-conversas"]',
+      },
+      {
+        text: "Escolha a conversa na lista — histórico à direita.",
+        route: "/admin?tab=whatsapp&section=conversas",
+        selector: '[data-tour="wa-panel-conversas"]',
+      },
+      {
+        text: "Digite e envie no composer. Templates e mídia ficam aqui também.",
+        route: "/admin?tab=whatsapp&section=conversas",
+        selector: '[data-tour="wa-composer"], [data-tour="wa-panel-conversas"]',
+      },
+      {
+        text: "Sub-aba Atendente IA: confira se a assistente está ativa e quando devolver o lead.",
+        route: "/admin?tab=whatsapp&section=agente",
+        selector: '[data-tour="wa-tab-agente"]',
+      },
     ],
     21,
+  ),
+  article(
+    "whatsapp-templates",
+    "WhatsApp e IA",
+    "Crie mensagens prontas",
+    "Públicos, Meus templates e Criar — depois use no composer.",
+    "/admin?tab=whatsapp&section=templates",
+    ["template", "modelo", "mensagem pronta", "criar template", "rápida"],
+    [
+      {
+        text: "Menu → WhatsApp.",
+        route: "/admin?tab=whatsapp&section=templates",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Abra Mensagens prontas.",
+        route: "/admin?tab=whatsapp&section=templates",
+        selector: '[data-tour="wa-tab-templates"]',
+      },
+      {
+        text: "Meus templates: seus modelos editáveis.",
+        route: "/admin?tab=whatsapp&section=templates",
+        selector: '[data-tour="wa-templates-meus"]',
+      },
+      {
+        text: "Criar meu template: nome, texto e mídia.",
+        route: "/admin?tab=whatsapp&section=templates",
+        selector: '[data-tour="wa-criar-template"]',
+      },
+      {
+        text: "Para usar: Conversas → composer → escolha o modelo.",
+        route: "/admin?tab=whatsapp&section=conversas",
+        selector: '[data-tour="wa-tab-conversas"]',
+      },
+    ],
+    25,
+    true,
   ),
   article(
     "ia-conhecimento",
     "WhatsApp e IA",
     "Ensine a assistente de IA",
-    "Cadastre respostas corretas na Base de conhecimento e teste antes de publicar.",
+    "Base de conhecimento: seção, texto, sinônimos, índice e teste.",
     "/admin/conhecimento",
     ["faq", "base da ia", "conhecimento", "resposta", "embeddings"],
     [
-      "No navegador, abra a Base de conhecimento (atalho do menu de ajuda ou endereço /admin/conhecimento).",
-      "Clique para criar uma nova seção (ou editar uma existente).",
-      "Escreva um título claro (ex.: “Cobertura CEMIG”) e o texto completo da resposta que a assistente deve usar.",
-      "Inclua palavras e frases que o cliente costuma digitar (sinônimos e gírias).",
-      "Salve. Se a tela pedir para atualizar o índice da IA, confirme essa ação.",
-      "Teste com uma pergunta real no simulador ou no WhatsApp antes de mudanças grandes.",
-      "Evite informações inventadas (preço, prazo, política). Se não souber, não cadastre.",
+      {
+        text: "Abra a Base de conhecimento (/admin/conhecimento) — atalho pelo menu WhatsApp / ajuda.",
+        route: "/admin/conhecimento",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Crie ou edite uma seção com título claro (ex.: Cobertura CEMIG).",
+        route: "/admin/conhecimento",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Escreva a resposta completa que a assistente deve usar — sem inventar preço/prazo.",
+        route: "/admin/conhecimento",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Inclua sinônimos e frases que o cliente digita de verdade.",
+        route: "/admin/conhecimento",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Salve e atualize o índice da IA se a tela pedir.",
+        route: "/admin/conhecimento",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Teste no simulador ou WhatsApp antes de mudanças grandes.",
+        route: "/admin?tab=whatsapp&section=agente",
+        selector: '[data-tour="wa-tab-agente"]',
+      },
     ],
     22,
     true,
@@ -216,17 +531,35 @@ export const HELP_CATALOG: HelpArticle[] = [
     "fluxos",
     "WhatsApp e IA",
     "Configure o fluxo de atendimento",
-    "Editor de fluxos: editar um passo, simular e só então ativar.",
+    "Editor avançado: um passo por vez, simular, só então ativar.",
     "/admin/fluxos",
     ["fluxo", "mensagem automática", "passo", "pergunta", "editor", "simulador"],
     [
-      "Abra Fluxos de atendimento em /admin/fluxos (ferramenta avançada).",
-      "Escolha o fluxo que deseja revisar na lista.",
-      "Clique em um passo para editar a mensagem, pergunta ou caminho.",
-      "Altere um passo por vez e confira as saídas (para onde o cliente vai em cada resposta).",
-      "Salve as alterações.",
-      "Use o simulador da tela para testar a conversa completa.",
-      "Só ative / publique para clientes depois do teste. Em dúvida, pergunte ao suporte com IA antes de mudar o fluxo principal.",
+      {
+        text: "Abra Fluxos em /admin/fluxos (atalho: WhatsApp → Roteiros do bot).",
+        route: "/admin/fluxos",
+        selector: '[data-tour="wa-roteiros"], [data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Escolha o fluxo na lista e clique em um passo para editar.",
+        route: "/admin/fluxos",
+        selector: '[data-tour="wa-roteiros"], [data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Altere mensagem/pergunta/saídas — um passo por vez.",
+        route: "/admin/fluxos",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Salve e use o simulador da tela.",
+        route: "/admin/fluxos",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Só publique depois do teste. Em dúvida, suporte com IA antes de mudar o fluxo principal.",
+        route: "/ajuda",
+        selector: '[data-tour="menu-ajuda"]',
+      },
     ],
     23,
   ),
@@ -234,18 +567,40 @@ export const HELP_CATALOG: HelpArticle[] = [
     "audio-studio",
     "WhatsApp e IA",
     "Use o Estúdio de áudio",
-    "Gere áudio com voz Sofia/Diego/Rafael, baixe e envie no WhatsApp.",
+    "Tipo → voz → Gerar → ouvir → Baixar → enviar no WhatsApp.",
     "/admin?tab=audio-studio",
-    ["áudio", "estúdio", "gerar", "sofia", "vinheta"],
+    ["áudio", "estúdio", "gerar", "sofia", "vinheta", "diego"],
     [
-      "No menu (Recursos), clique em Estúdio de áudio.",
-      "Escolha o tipo: Mutirão, Comércio ou Texto livre.",
-      "Escolha a voz: Sofia, Diego ou Rafael.",
-      "Clique em Gerar áudio (o botão mostra o tipo escolhido).",
-      "Ouça a prévia. Se precisar, clique em Gerar novamente.",
-      "Clique em Baixar áudio (com ou sem vinheta, conforme as opções da tela).",
-      "Para usar no atendimento: abra WhatsApp → Conversas e envie o arquivo na conversa desejada.",
-      "Opcional: Publicar para outros consultores se a tela oferecer e você quiser compartilhar o áudio.",
+      {
+        text: "Menu (Recursos) → Estúdio de áudio.",
+        route: "/admin?tab=audio-studio",
+        selector: '[data-tour="menu-audio-studio"]',
+      },
+      {
+        text: "Escolha o tipo: Mutirão, Comércio ou Texto livre.",
+        route: "/admin?tab=audio-studio",
+        selector: '[data-tour="audio-tipo-mutirao"]',
+      },
+      {
+        text: "Preencha cidade/texto e escolha a voz pública (Sofia ou Diego). A voz Rafael é privada e não aparece para consultores.",
+        route: "/admin?tab=audio-studio",
+        selector: '[data-tour="audio-tipo-comercio"], [data-tour="audio-tipo-livre"]',
+      },
+      {
+        text: "Clique em Gerar áudio e ouça a prévia.",
+        route: "/admin?tab=audio-studio",
+        selector: '[data-tour="audio-gerar"]',
+      },
+      {
+        text: "Baixar áudio (com/sem vinheta conforme a opção).",
+        route: "/admin?tab=audio-studio",
+        selector: '[data-tour="audio-baixar"], [data-tour="audio-gerar"]',
+      },
+      {
+        text: "Envie no WhatsApp → Conversas anexando o arquivo, ou use o atalho WhatsApp da tela se aparecer.",
+        route: "/admin?tab=whatsapp&section=conversas",
+        selector: '[data-tour="wa-tab-conversas"]',
+      },
     ],
     24,
   ),
@@ -253,17 +608,30 @@ export const HELP_CATALOG: HelpArticle[] = [
     "captacao",
     "Captação e anúncios",
     "Acompanhe a captação",
-    "Filtre leads novos, selecione e inicie atendimento.",
+    "Lista de leads novos/formulário: buscar, selecionar e iniciar atendimento.",
     "/admin?tab=captacao",
     ["captação", "lead ads", "origem", "formulário", "em espera"],
     [
-      "No menu (Gestão Comercial), clique em Captação.",
-      "Escolha o período: 48h, 7d, 30d, 60d, 90d ou Todos.",
-      "Alterne entre as abas Em atendimento e Em espera.",
-      "Use Buscar nome ou telefone para achar um lead.",
-      "Marque leads com Selecionar todos ou Só sem atendimento; use Limpar seleção para desmarcar.",
-      "Clique em Iniciar atendimento nos selecionados quando for assumir a conversa.",
-      "No card do lead, confira se é o titular ou conta de outro titular antes de seguir o cadastro.",
+      {
+        text: "Menu → Captação.",
+        route: "/admin?tab=captacao",
+        selector: '[data-tour="menu-captacao"]',
+      },
+      {
+        text: "Busque por nome ou telefone.",
+        route: "/admin?tab=captacao",
+        selector: '[data-tour="captacao-busca"]',
+      },
+      {
+        text: "Selecione um ou mais leads e clique em Iniciar atendimento.",
+        route: "/admin?tab=captacao",
+        selector: '[data-tour="captacao-iniciar"], [data-tour="captacao-busca"]',
+      },
+      {
+        text: "Depois acompanhe em Clientes interessados / WhatsApp.",
+        route: "/admin?tab=crm",
+        selector: '[data-tour="menu-crm"]',
+      },
     ],
     30,
   ),
@@ -271,16 +639,50 @@ export const HELP_CATALOG: HelpArticle[] = [
     "central-anuncios",
     "Captação e anúncios",
     "Use a Central de anúncios",
-    "Dashboard, campanhas, performance e atalho para criar anúncio.",
+    "Navegação: Resumo → Modelos → Campanhas → Resultados → Assistente → Comissões + criar anúncio.",
     "/admin?tab=central-anuncios",
-    ["central de anúncios", "campanhas", "performance", "dashboard ads"],
+    ["central de anúncios", "campanhas", "resultados", "resumo ads", "meta"],
     [
-      "No menu (Recursos), clique em Central de anúncios.",
-      "Clique nas abas Dashboard, Modelos, Campanhas, Performance, Inteligência ou Comissões conforme o que quiser ver.",
-      "Para criar: clique em Anúncio inteligente ou Anúncio completo.",
-      "Se aparecer Como anunciar no WhatsApp em 4 passos, clique em Abrir aba WhatsApp, Conectar Facebook e Abrir Meta Business Suite na ordem pedida.",
-      "Clique em Atualizar números para atualizar métricas; use Ver último sync se algo parecer atrasado.",
-      "Se ainda não vinculou a Meta, clique em Conectar minha conta (opcional) quando o botão aparecer.",
+      {
+        text: "Menu (Recursos) → Central de anúncios.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="menu-central-anuncios"]',
+      },
+      {
+        text: "Resumo (Dashboard): visão rápida de gasto e resultado.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-nav-dashboard"]',
+      },
+      {
+        text: "Modelos: templates prontos de campanha.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-nav-gallery"]',
+      },
+      {
+        text: "Campanhas: lista e status (ativa, pausada, reprovada).",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-nav-campaigns"]',
+      },
+      {
+        text: "Resultados (Performance): CPL, leads e desperdício.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-nav-performance"]',
+      },
+      {
+        text: "Criar: Anúncio inteligente (simples) ou Anúncio completo (controle total).",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-anuncio-inteligente"]',
+      },
+      {
+        text: "Anúncio completo quando quiser cidade, textos e dias à mão.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-anuncio-completo"]',
+      },
+      {
+        text: "Comissões: acompanhe o que a campanha gerou para parceiros/rede.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-nav-commissions"]',
+      },
     ],
     31,
     true,
@@ -289,17 +691,40 @@ export const HELP_CATALOG: HelpArticle[] = [
     "meta-ads",
     "Captação e anúncios",
     "Crie uma campanha Meta",
-    "Wizard: região, criativo, texto, orçamento e publicar.",
-    "/admin/meta-ads",
-    ["facebook", "instagram", "campanha", "anúncio", "meta", "cpl", "publicar"],
+    "WhatsApp ok → inteligente ou completo → revisar → publicar → Resultados.",
+    "/admin?tab=central-anuncios",
+    ["facebook", "instagram", "campanha", "anúncio", "meta", "cpl", "publicar", "inteligente"],
     [
-      "No menu clique em Central de anúncios → Anúncio inteligente ou Anúncio completo.",
-      "Confirme WhatsApp conectado; se pedir conta Meta, clique em Conectar minha conta.",
-      "No assistente, avance pelas etapas: Região → Criativo → Texto & Mensagem → Orçamento → Revisar & Publicar.",
-      "Em cada etapa, preencha os campos obrigatórios e clique em Continuar.",
-      "Na revisão, confira público, criativo, mensagem e valor diário.",
-      "Clique em Publicar campanha e aguarde a análise da Meta.",
-      "Depois, no menu clique em Central de anúncios → Performance (ou Campanhas) para ver status e custo.",
+      {
+        text: "Central de anúncios no menu.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="menu-central-anuncios"]',
+      },
+      {
+        text: "Confirme WhatsApp conectado antes de publicar.",
+        route: "/admin?tab=whatsapp",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Volte e clique em Anúncio inteligente (caminho recomendado).",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-anuncio-inteligente"]',
+      },
+      {
+        text: "Ou Anúncio completo para escolher região, criativo, texto e orçamento.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-anuncio-completo"]',
+      },
+      {
+        text: "Avance as etapas, revise e publique. Depois abra Campanhas ou Resultados.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-nav-campaigns"]',
+      },
+      {
+        text: "Resultados: acompanhe CPL e pause o que estiver desperdiçando.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-nav-performance"]',
+      },
     ],
     32,
     true,
@@ -308,16 +733,35 @@ export const HELP_CATALOG: HelpArticle[] = [
     "campanha-reprovada",
     "Captação e anúncios",
     "Resolva uma campanha reprovada",
-    "Leia o motivo da Meta, corrija e envie de novo.",
-    "/admin/meta-ads",
+    "Leia o motivo Meta em Campanhas, corrija criativo/destino e reenvie.",
+    "/admin?tab=central-anuncios",
     ["reprovada", "erro meta", "2446885", "whatsapp business", "política"],
     [
-      "Abra Meta Ads ou Central de anúncios → Campanhas.",
-      "Clique na campanha reprovada e leia o motivo completo na tela (não invente a causa).",
-      "Confirme destino WhatsApp Business e se a conexão Meta/WhatsApp está válida.",
-      "Corrija texto, imagem ou público conforme o motivo (ex.: política, destino, criativo).",
-      "Salve e envie novamente para análise.",
-      "Se o motivo continuar sem clareza, abra o suporte com IA e informe o nome exato da campanha e a mensagem de erro.",
+      {
+        text: "Central de anúncios → aba Campanhas.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-nav-campaigns"]',
+      },
+      {
+        text: "Abra a campanha reprovada e leia o motivo completo (não invente a causa).",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-nav-campaigns"]',
+      },
+      {
+        text: "Confirme WhatsApp Business / conexão Meta válidos.",
+        route: "/admin?tab=whatsapp",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Corrija texto, imagem ou público; salve e envie de novo.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-nav-campaigns"]',
+      },
+      {
+        text: "Se o motivo continuar obscuro: Central de ajuda → suporte com o nome da campanha e o erro.",
+        route: "/ajuda",
+        selector: '[data-tour="ajuda-busca"], [data-tour="menu-ajuda"]',
+      },
     ],
     33,
   ),
@@ -325,17 +769,30 @@ export const HELP_CATALOG: HelpArticle[] = [
     "links",
     "Captação e anúncios",
     "Compartilhe seus links",
-    "Copiar link por produto, QR Code e panfleto.",
+    "Meus Links, copiar por produto, QR e panfleto para gráfica.",
     "/admin?tab=links",
     ["link", "página", "landing page", "divulgar", "licença", "copiar", "qr"],
     [
-      "No menu (Recursos), clique em Links.",
-      "Abra a aba Meus Links (Resultados mostra desempenho).",
-      "Toque no produto desejado (ex.: Conexão Green, Cadastro Rápido).",
-      "Em cada rede (WhatsApp, Instagram, etc.), clique em Copiar.",
-      "Cole o link em uma janela anônima do navegador e confira se abre sua página.",
-      "Para QR: clique no ícone QR Code ao lado do link.",
-      "Para impressão: no bloco Panfleto pra Gráfica, clique em Gerar.",
+      {
+        text: "Menu → Links.",
+        route: "/admin?tab=links",
+        selector: '[data-tour="menu-links"]',
+      },
+      {
+        text: "Aba Meus Links.",
+        route: "/admin?tab=links",
+        selector: '[data-tour="links-meus"]',
+      },
+      {
+        text: "Copie o link do produto/rede desejada e teste no navegador.",
+        route: "/admin?tab=links",
+        selector: '[data-tour="links-copiar"], [data-tour="links-meus"]',
+      },
+      {
+        text: "Panfleto pra gráfica → Gerar para impressão com QR.",
+        route: "/admin?tab=links",
+        selector: '[data-tour="links-panfleto"], [data-tour="links-panfleto-gerar"]',
+      },
     ],
     34,
   ),
@@ -343,54 +800,112 @@ export const HELP_CATALOG: HelpArticle[] = [
     "materiais",
     "Captação e anúncios",
     "Baixe materiais de divulgação",
-    "Encontre e baixe imagens/vídeos prontos para anúncio ou cliente.",
+    "Abas por tema, grade de arquivos, Drive extra e envio no Zap.",
     "/admin?tab=materiais",
-    ["material", "baixar", "arquivo", "imagem", "vídeo", "divulgação"],
+    ["material", "baixar", "arquivo", "imagem", "vídeo", "divulgação", "drive"],
     [
-      "No menu (Recursos), clique em Materiais.",
-      "Escolha o produto ou pasta do material.",
-      "Abra o arquivo desejado e use Baixar / download.",
-      "Antes de anunciar, confira se o criativo está atualizado e permitido pela Meta.",
-      "Guarde uma cópia e use no wizard de campanha (etapa Criativo) ou envie ao cliente pelo WhatsApp.",
+      {
+        text: "Menu (Recursos) → Materiais.",
+        route: "/admin?tab=materiais",
+        selector: '[data-tour="menu-materiais"]',
+      },
+      {
+        text: "Escolha a aba do tema (notícias, depoimentos, cashback, etc.).",
+        route: "/admin?tab=materiais",
+        selector: '[data-tour="materiais-tabs"]',
+      },
+      {
+        text: "Na grade, abra o card e baixe ou envie pelo WhatsApp.",
+        route: "/admin?tab=materiais",
+        selector: '[data-tour="materiais-grid"]',
+      },
+      {
+        text: "Materiais extras no Drive: pasta com arquivos adicionais da rede.",
+        route: "/admin?tab=materiais",
+        selector: '[data-tour="materiais-drive"]',
+      },
+      {
+        text: "Antes de anunciar na Meta, confira se o criativo está atualizado e permitido.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-anuncio-inteligente"]',
+      },
     ],
     35,
   ),
   article(
     "agendamentos",
     "Automações",
-    "Use a Central de automações",
-    "Abas Mapa, Grupos, Agenda e Histórico + botão Guia.",
+    "Central de agendamentos",
+    "Mapa A/B/C, quem esfriou, agenda manual, futuros, carteira e histórico.",
     "/admin?tab=agendamentos",
-    ["automação", "agendamento", "mensagem programada", "central", "guia", "mapa"],
+    ["agendamento", "automação", "quem esfriou", "agenda", "programada", "grupo a", "grupo b"],
     [
-      "No menu, clique em Agendamentos (título da tela: Central de Automações).",
-      "Clique no botão Guia no topo para ver o que já funciona, o que pode ligar/desligar e a ordem segura.",
-      "Use as abas: Mapa | Leads novos | Quem esfriou | Quem sumiu | Agenda | Carteira | Histórico.",
-      "Na aba Agenda, escolha a sub-aba: Manual, Pós-venda, Reaquecimento, Campanhas ou Rodízios.",
-      "Para agendar na mão: Agenda → Manual → Agendar nova → preencha → Agendar.",
-      "Filtre Próximos envios por Todos, Motor A→B→C, Manual, Pós-venda, WA, Ligação ou Reaquecer.",
-      "Em Ajustar todos os textos, revise frases antes de ligar envios em volume.",
-      "Só ative interruptores depois de ler o Guia e conferir uma prévia no Histórico.",
+      {
+        text: "Menu → Agendamentos.",
+        route: "/admin?tab=agendamentos",
+        selector: '[data-tour="menu-agendamentos"]',
+      },
+      {
+        text: "Abas do hub: Mapa, Leads novos, Quem esfriou, Quem sumiu, Agenda…",
+        route: "/admin?tab=agendamentos",
+        selector: '[data-tour="agenda-tabs"]',
+      },
+      {
+        text: "Mapa: visão geral dos grupos A/B/C.",
+        route: "/admin?tab=agendamentos&hubTab=mapa",
+        selector: '[data-tour="agenda-tab-mapa"]',
+      },
+      {
+        text: "Quem esfriou (Grupo B): retome quem parou de responder.",
+        route: "/admin?tab=agendamentos&hubTab=grupo-b",
+        selector: '[data-tour="agenda-tab-grupo-b"]',
+      },
+      {
+        text: "Agenda: envios que você marcou. Use Agendar nova.",
+        route: "/admin?tab=agendamentos&hubTab=agenda",
+        selector: '[data-tour="agenda-agendar"], [data-tour="agenda-tab-agenda"]',
+      },
+      {
+        text: "Histórico: o que já saiu (WhatsApp, SMS, voz).",
+        route: "/admin?tab=agendamentos&hubTab=historico",
+        selector: '[data-tour="agenda-tab-historico"]',
+      },
     ],
     40,
-    true,
   ),
   article(
     "cadencia",
     "Automações",
     "Configure o Motor de cadência",
-    "Ligar envios automáticos e horários — preferir pela aba Quem esfriou.",
+    "Ligar/desligar, intervalos, limites e horários — preferir via Quem esfriou.",
     "/admin/motor",
     ["cadência", "follow-up", "ligação", "sms", "sem resposta", "grupo b"],
     [
-      "Caminho recomendado: no menu clique em Agendamentos → aba Quem esfriou. Atalho: /admin/motor.",
-      "Leia o status Ligado / Desligado no topo da tela do motor.",
-      "Para ligar: clique no switch → no diálogo Ligar o motor de cadência? clique em Confirmar e ligar.",
-      "Revise estágios, intervalos e limites de WhatsApp, ligação e SMS nos campos da tela.",
-      "Defina dias e horários permitidos antes de ampliar o volume.",
-      "Clique em Atualizar; só use Executar tick agora para teste pontual e com cuidado.",
-      "Clique em Salvar configurações no rodapé.",
-      "Acompanhe respostas; se algo sair do esperado, clique para Desligado e abra o suporte com IA.",
+      {
+        text: "Caminho recomendado: Agendamentos → Quem esfriou (atalho /admin/motor).",
+        route: "/admin?tab=agendamentos&hubTab=grupo-b",
+        selector: '[data-tour="agenda-tab-grupo-b"]',
+      },
+      {
+        text: "No motor, leia Ligado/Desligado no topo.",
+        route: "/admin/motor",
+        selector: '[data-tour="menu-agendamentos"]',
+      },
+      {
+        text: "Para ligar: switch → Confirmar e ligar. Revise estágios e limites WA/SMS/voz.",
+        route: "/admin/motor",
+        selector: '[data-tour="menu-agendamentos"]',
+      },
+      {
+        text: "Defina dias/horários permitidos antes de ampliar volume. Salve no rodapé.",
+        route: "/admin/motor",
+        selector: '[data-tour="menu-agendamentos"]',
+      },
+      {
+        text: "Se algo sair do esperado: Desligado e suporte com IA.",
+        route: "/ajuda",
+        selector: '[data-tour="menu-ajuda"]',
+      },
     ],
     41,
   ),
@@ -398,16 +913,30 @@ export const HELP_CATALOG: HelpArticle[] = [
     "reaquecimento",
     "Automações",
     "Reaqueça contatos parados",
-    "Retomada controlada de leads frios (tela e/ou Agenda).",
+    "Retomada controlada via Quem esfriou + histórico.",
     "/admin/reaquecimento",
     ["reaquecimento", "reativação", "followup", "frio", "grupo b"],
     [
-      "Abra Agendamentos → Quem esfriou para reativar contatos.",
-      "Escolha o grupo de contatos e o motivo da retomada.",
-      "Revise a mensagem e os intervalos na tela.",
-      "Comece com um grupo pequeno; evite disparo em massa no primeiro teste.",
-      "Ative e acompanhe respostas no Histórico (Agendamentos → Histórico).",
-      "Interrompa ou pause envios sem retorno quando a tela permitir.",
+      {
+        text: "Agendamentos → Quem esfriou.",
+        route: "/admin?tab=agendamentos&hubTab=grupo-b",
+        selector: '[data-tour="agenda-tab-grupo-b"]',
+      },
+      {
+        text: "Escolha o grupo e revise a mensagem/intervalos na tela.",
+        route: "/admin?tab=agendamentos&hubTab=grupo-b",
+        selector: '[data-tour="agenda-tabs"]',
+      },
+      {
+        text: "Comece pequeno — evite massa no primeiro teste.",
+        route: "/admin?tab=agendamentos&hubTab=grupo-b",
+        selector: '[data-tour="agenda-tab-grupo-b"]',
+      },
+      {
+        text: "Acompanhe em Histórico; pause se não houver retorno.",
+        route: "/admin?tab=agendamentos&hubTab=historico",
+        selector: '[data-tour="agenda-tab-historico"]',
+      },
     ],
     42,
   ),
@@ -415,17 +944,50 @@ export const HELP_CATALOG: HelpArticle[] = [
     "ligacao",
     "Automações",
     "Faça ligações pela plataforma",
-    "Aba Ligação: Nova ligação, gravar/gerar áudio e iniciar.",
+    "Nova ligação, SMS, bases, Não Perturbe, ciclo, textos, histórico e painel.",
     "/admin?tab=voz",
-    ["ligação", "voz", "telefone", "discador", "sms", "gravar"],
+    ["ligação", "voz", "telefone", "discador", "sms", "gravar", "não perturbe"],
     [
-      "No menu (Recursos), clique em Ligação.",
-      "Abra a aba Nova ligação.",
-      "Gere áudio com Gerar áudio Sofia (v3) ou clique em Gravar / Upload conforme a etapa do assistente.",
-      "Avance com Continuar até revisar a base e o texto.",
-      "Clique em Iniciar ligações só depois de conferir a lista e o áudio.",
-      "Use as abas Bases, Não Perturbe, Programação do ciclo, SMS e Histórico para organizar e respeitar quem não quer contato.",
-      "Leia a aba Ajuda dentro de Ligação (painel O que este módulo faz) se for a primeira vez.",
+      {
+        text: "Menu (Recursos) → Ligação.",
+        route: "/admin?tab=voz",
+        selector: '[data-tour="menu-voz"]',
+      },
+      {
+        text: "Aba Nova ligação: áudio Sofia / gravar / upload e iniciar.",
+        route: "/admin?tab=voz",
+        selector: '[data-tour="voz-tab-nova"]',
+      },
+      {
+        text: "SMS: envios de texto pela mesma base.",
+        route: "/admin?tab=voz",
+        selector: '[data-tour="voz-tab-sms"]',
+      },
+      {
+        text: "Bases: listas de números. Não Perturbe: quem nunca mais contatar.",
+        route: "/admin?tab=voz",
+        selector: '[data-tour="voz-tab-bases"]',
+      },
+      {
+        text: "Não Perturbe (bloqueados): respeite sempre — fora de envios automáticos.",
+        route: "/admin?tab=voz",
+        selector: '[data-tour="voz-tab-dnc"]',
+      },
+      {
+        text: "Programação do ciclo e Textos automáticos: horários e conteúdo.",
+        route: "/admin?tab=voz",
+        selector: '[data-tour="voz-tab-ciclo"]',
+      },
+      {
+        text: "Histórico e Painel: o que saiu e métricas. Ajuda interna: leia na primeira vez.",
+        route: "/admin?tab=voz",
+        selector: '[data-tour="voz-tab-historico"]',
+      },
+      {
+        text: "Aba Ajuda do módulo: o que este módulo faz, passo a passo.",
+        route: "/admin?tab=voz",
+        selector: '[data-tour="voz-tab-ajuda"]',
+      },
     ],
     43,
   ),
@@ -433,16 +995,40 @@ export const HELP_CATALOG: HelpArticle[] = [
     "produtos",
     "Produtos e vendas",
     "Gerencie produtos e vendas",
-    "Novo orçamento, pipeline e acompanhamento.",
+    "Acompanhamento, orçamentos, pipeline, catálogo e estudo solar.",
     "/admin?tab=produtos",
-    ["produto", "venda", "proposta", "orçamento", "pipeline"],
+    ["produto", "venda", "proposta", "orçamento", "pipeline", "solar"],
     [
-      "No menu, clique em Produtos & Vendas.",
-      "Use as abas: Acompanhamento, Orçamentos, Pipeline e Catálogo.",
-      "Para criar: clique em Novo orçamento → preencha o sheet Criar orçamento → confirme.",
-      "Acompanhe etapas no Pipeline; atualize conforme o avanço da venda.",
-      "Em Acompanhamento, veja Oportunidades de venda cruzada → Configurar / Enviar no WhatsApp quando fizer sentido.",
-      "Registre o motivo quando a venda não avançar, para não perder o histórico.",
+      {
+        text: "Menu → Produtos & Vendas.",
+        route: "/admin?tab=produtos",
+        selector: '[data-tour="menu-produtos"]',
+      },
+      {
+        text: "Acompanhamento: visão das oportunidades e cross-sell.",
+        route: "/admin?tab=produtos",
+        selector: '[data-tour="prod-tab-acompanhamento"]',
+      },
+      {
+        text: "Orçamentos: crie e edite propostas (Novo orçamento).",
+        route: "/admin?tab=produtos",
+        selector: '[data-tour="prod-tab-orcamentos"]',
+      },
+      {
+        text: "Vendas em andamento (Pipeline): arraste conforme o avanço.",
+        route: "/admin?tab=produtos",
+        selector: '[data-tour="prod-tab-pipeline"]',
+      },
+      {
+        text: "Catálogo: produtos disponíveis para proposta.",
+        route: "/admin?tab=produtos",
+        selector: '[data-tour="prod-tab-catalogo"]',
+      },
+      {
+        text: "Ações rápidas (Novo orçamento) e atalho Projeto solar.",
+        route: "/admin?tab=produtos",
+        selector: '[data-tour="prod-acoes"], [data-tour="prod-solar"]',
+      },
     ],
     50,
     true,
@@ -451,67 +1037,214 @@ export const HELP_CATALOG: HelpArticle[] = [
     "solar",
     "Produtos e vendas",
     "Crie um estudo solar",
-    "Endereço, telhado, painéis e salvar estudo para proposta.",
+    "Endereço, telhado, painéis, salvar e usar no orçamento.",
     "/admin/solar-design",
     ["solar", "telhado", "painel", "projeto", "economia"],
     [
-      "Abra Projeto solar em /admin/solar-design.",
-      "Informe o endereço e confirme no mapa / busca da tela.",
-      "Revise a imagem do telhado e ajuste a quantidade de painéis.",
-      "Salve o estudo.",
-      "Volte em Produtos & Vendas / orçamento e use o estudo salvo na proposta quando a tela oferecer.",
+      {
+        text: "Abra Projeto solar (/admin/solar-design) ou o atalho em Produtos.",
+        route: "/admin/solar-design",
+        selector: '[data-tour="prod-solar"], [data-tour="menu-produtos"]',
+      },
+      {
+        text: "Informe o endereço e confirme no mapa.",
+        route: "/admin/solar-design",
+        selector: '[data-tour="prod-solar"], [data-tour="menu-produtos"]',
+      },
+      {
+        text: "Ajuste painéis no telhado e salve o estudo.",
+        route: "/admin/solar-design",
+        selector: '[data-tour="prod-solar"], [data-tour="menu-produtos"]',
+      },
+      {
+        text: "Volte em Produtos → Orçamentos e use o estudo na proposta.",
+        route: "/admin?tab=produtos",
+        selector: '[data-tour="prod-tab-orcamentos"]',
+      },
     ],
     51,
   ),
   article(
     "parceiros",
-    "Produtos e vendas",
-    "Gerencie parceiros",
-    "Cadastrar indicador, gerar link e acompanhar indicações.",
+    "Captação e anúncios",
+    "Rede de parceiros",
+    "Cadastro, abas por parceiro, palavra-chave, QR, banners e ranking de indicações.",
     "/admin?tab=parceiros",
-    ["parceiro", "indicação", "rodízio", "qr code", "comissão"],
     [
-      "No menu, clique em Parceiros.",
-      "Clique em Novo Parceiro (ou Cadastrar primeiro parceiro se a lista estiver vazia).",
-      "No diálogo Novo Parceiro Indicador, preencha nome e dados pedidos → clique em Criar Parceiro.",
-      "Abra o parceiro criado e copie / gere o link exclusivo (e QR se disponível).",
-      "Configure rodízio e notificações se a tela oferecer essas opções.",
-      "Acompanhe os contatos atribuídos na própria área de Parceiros.",
+      "parceiro",
+      "indicação",
+      "comissão",
+      "rede",
+      "qr",
+      "keyword",
+      "banner",
+      "visão geral",
+      "ranking",
+    ],
+    [
+      {
+        text: "Menu → Parceiros — aqui fica a sua rede de indicadores.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="menu-parceiros"]',
+      },
+      {
+        text: "Cabeçalho: título da rede e atalhos principais.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-header"], [data-tour="parceiros-page"]',
+      },
+      {
+        text: "Meus banners: materiais e QR dos seus pontos (consultor).",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-banners"]',
+      },
+      {
+        text: "Novo: cadastra nome, palavra-chave, frase do WhatsApp e telefone de aviso.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-novo"], [data-tour="parceiros-novo-cta"], [data-tour="parceiros-vazio"]',
+      },
+      {
+        text: "Abas: Visão geral + um nome por parceiro. Clique no nome para abrir tudo dele.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-tabs"], [data-tour="parceiros-page"]',
+      },
+      {
+        text: "Se aparecer Fila de revisão: lead de campanha com pool que falhou na atribuição — escolha o parceiro manualmente.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-revisao"], [data-tour="parceiros-page"]',
+      },
+      {
+        text: "Visão geral: pódio e quem mais indicou nos últimos 30 dias.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-podium"], [data-tour="parceiros-kpis"], [data-tour="parceiros-overview"]',
+      },
+      {
+        text: "KPIs: parceiros ativos, interessados (30 dias), conversão e destaque.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-kpis"], [data-tour="parceiros-overview"]',
+      },
+      {
+        text: "Gráficos: volume, tendência, funil e origem das indicações.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-charts"], [data-tour="parceiros-overview"]',
+      },
+      {
+        text: "Ranking detalhado: editar, QR e comparar parceiros lado a lado.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-ranking"], [data-tour="parceiros-overview"]',
+      },
+      {
+        text: "Abra a aba de um parceiro (nome na faixa de abas).",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-tab-partner"], [data-tour="parceiros-tabs"]',
+      },
+      {
+        text: "Card do parceiro: status, código curto e leads recentes.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-card"], [data-tour="parceiros-workspace"]',
+      },
+      {
+        text: "Palavra-chave: o WhatsApp usa isso (ou o marcador #R do código) para atribuir o lead a este parceiro — não escolhe campanha Meta.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-keywords"], [data-tour="parceiros-workspace"]',
+      },
+      {
+        text: "Frase WhatsApp: texto que vai no link/QR quando o lead escaneia.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-frase"], [data-tour="parceiros-workspace"]',
+      },
+      {
+        text: "Editar dados: corrige keyword, frase, ID iGreen e telefone de notificação.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-editar"], [data-tour="parceiros-workspace"]',
+      },
+      {
+        text: "Baixar QR: gere o QR/link para o parceiro indicar leads.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-qr"], [data-tour="parceiros-workspace"]',
+      },
+      {
+        text: "Banners do parceiro: link do portal, pontos nomeados e materiais dele.",
+        route: "/admin?tab=parceiros",
+        selector: '[data-tour="parceiros-banners-panel"], [data-tour="parceiros-link"], [data-tour="parceiros-workspace"]',
+      },
+      {
+        text: "Rodízio de anúncios (Meta) atribui por UUID de campanha — separado da keyword. Comissões ficam em Anúncios.",
+        route: "/admin?tab=central-anuncios",
+        selector: '[data-tour="ads-nav-commissions"], [data-tour="menu-central-anuncios"]',
+      },
     ],
     52,
+    true,
   ),
   article(
     "financeiro",
     "Financeiro",
-    "Entenda o Financeiro",
-    "Abas Boletos, Recebíveis e Carteira Green — sempre confira o período.",
+    "Acompanhe o financeiro",
+    "Boletos, recebíveis, carteira Green e extrato (admin).",
     "/admin?tab=financeiro",
-    ["saldo", "carteira", "comissão", "recebíveis", "boletos", "pagamento"],
+    ["boleto", "financeiro", "recebível", "carteira", "vencimento", "extrato"],
     [
-      "No menu esquerdo, clique em Financeiro.",
-      "Clique na aba Boletos, Recebíveis ou Carteira Green (Extrato pode aparecer para perfis admin).",
-      "Ajuste o período / filtros no topo antes de comparar valores.",
-      "Em Boletos, clique em um item da tabela para ver detalhes e ações de cobrança.",
-      "Em Recebíveis ou Carteira Green, clique na movimentação para ver o detalhe.",
-      "Se um valor confirmado não aparecer, atualize a página; se continuar errado, abra o suporte com IA e informe data e tipo (boleto/comissão/carteira).",
+      {
+        text: "Menu → Financeiro.",
+        route: "/admin?tab=financeiro",
+        selector: '[data-tour="menu-financeiro"]',
+      },
+      {
+        text: "Boletos: vencimentos e status de pagamento.",
+        route: "/admin?tab=financeiro",
+        selector: '[data-tour="fin-tab-boletos"]',
+      },
+      {
+        text: "Recebíveis: ganhos da Conexão Green.",
+        route: "/admin?tab=financeiro",
+        selector: '[data-tour="fin-tab-recebiveis"]',
+      },
+      {
+        text: "Carteira Green: adimplência e métricas iGreen.",
+        route: "/admin?tab=financeiro",
+        selector: '[data-tour="fin-tab-carteira"]',
+      },
+      {
+        text: "Extrato (se liberado): movimentos detalhados.",
+        route: "/admin?tab=financeiro",
+        selector: '[data-tour="fin-tab-extrato"], [data-tour="fin-tab-carteira"]',
+      },
     ],
     60,
-    true,
   ),
   article(
     "pos-venda",
     "Pós-venda",
     "Acompanhe o pós-venda",
-    "Kanban de clientes ativos: análise, assinatura e 30–120 dias.",
+    "Kanban de Clientes ativos + mensagens automáticas em Agendamentos.",
     "/admin?tab=crm-clientes",
     ["pós-venda", "devolutiva", "assinatura", "aprovado", "30 dias"],
     [
-      "No menu, clique em Clientes ativos.",
-      "Filtre pela coluna / situação que precisa de atenção (em análise, aprovado, reprovado, 30/60/90/120 dias).",
-      "Abra o cliente e revise pendências, datas e documentos.",
-      "Resolva devolutivas antes de mover o card.",
-      "Registre o contato feito (WhatsApp ou nota) para manter o histórico.",
-      "Mensagens automáticas de pós-venda ficam em Agendamentos → Agenda → Pós-venda — revise antes de ampliar.",
+      {
+        text: "Menu → Clientes ativos.",
+        route: "/admin?tab=crm-clientes",
+        selector: '[data-tour="menu-crm-clientes"]',
+      },
+      {
+        text: "Use busca e filtros da barra.",
+        route: "/admin?tab=crm-clientes",
+        selector: '[data-tour="ativos-toolbar"]',
+      },
+      {
+        text: "Trabalhe o kanban: análise → assinatura → aprovado → 30–120 dias.",
+        route: "/admin?tab=crm-clientes",
+        selector: '[data-tour="ativos-kanban"]',
+      },
+      {
+        text: "Resolva devolutiva antes de mover o card; registre o contato.",
+        route: "/admin?tab=crm-clientes",
+        selector: '[data-tour="ativos-kanban"]',
+      },
+      {
+        text: "Automações de pós-venda: Agendamentos → Agenda (revise antes de ampliar).",
+        route: "/admin?tab=agendamentos&hubTab=agenda",
+        selector: '[data-tour="agenda-tab-agenda"]',
+      },
     ],
     70,
   ),
@@ -519,15 +1252,30 @@ export const HELP_CATALOG: HelpArticle[] = [
     "academy",
     "Primeiros passos",
     "Aprenda na Academy",
-    "Trilhas, aulas, anotações e provas.",
+    "Catálogo de trilhas, aulas, anotações e provas.",
     "/admin?tab=academy",
     ["academy", "curso", "aula", "treinamento", "prova"],
     [
-      "No menu (Recursos), clique em Academy.",
-      "Escolha uma trilha ou aula na lista.",
-      "Assista ao vídeo e use o caderno de anotações se aparecer o botão de notas.",
-      "Faça a avaliação / prova quando estiver disponível.",
-      "Seu progresso fica salvo — volte depois pela mesma trilha.",
+      {
+        text: "Menu (Recursos) → Academy.",
+        route: "/admin?tab=academy",
+        selector: '[data-tour="menu-academy"]',
+      },
+      {
+        text: "Catálogo: escolha trilha ou aula.",
+        route: "/admin?tab=academy",
+        selector: '[data-tour="academy-catalog"]',
+      },
+      {
+        text: "Assista, anote e faça a prova quando disponível — o progresso fica salvo.",
+        route: "/admin?tab=academy",
+        selector: '[data-tour="academy-catalog"]',
+      },
+      {
+        text: "Volte depois pela mesma trilha; use Central de ajuda se travar em algum módulo.",
+        route: "/ajuda",
+        selector: '[data-tour="menu-ajuda"]',
+      },
     ],
     80,
   ),
@@ -535,16 +1283,45 @@ export const HELP_CATALOG: HelpArticle[] = [
     "conta-dados",
     "Conta e suporte",
     "Atualize seus dados da conta",
-    "Nome, foto, ID iGreen e senha em Configurações.",
+    "Configurações: nome, ID iGreen, automações, senha e WhatsApp.",
     "/admin?tab=dashboard",
     ["dados", "perfil", "configurações", "id igreen", "conta", "senha"],
     [
-      "No topo do Painel, abra Configurações (engrenagem / menu da conta).",
-      "Confira nome, telefone e foto do perfil.",
-      "Confirme se o ID iGreen está correto (necessário para sincronização).",
-      "Altere a senha pelo card de senha, se precisar.",
-      "Salve as alterações e feche o painel de configurações.",
-      "Volte ao Painel e confira se os dados aparecem atualizados.",
+      {
+        text: "Abra Configurações (engrenagem no menu esquerdo).",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="menu-config"]',
+      },
+      {
+        text: "Painel lateral de configurações: dados do perfil.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="cfg-sheet"], [data-tour="cfg-dados"]',
+      },
+      {
+        text: "Confirme nome e telefone.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="cfg-nome"]',
+      },
+      {
+        text: "ID iGreen correto — base da sync e dos links de cadastro.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="cfg-igreen-id"]',
+      },
+      {
+        text: "Mensagens automáticas / Cérebro: ligue só o que quiser (default Cérebro off).",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="cfg-automacoes"]',
+      },
+      {
+        text: "Troque a senha no card de senha, se precisar.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="cfg-senha"]',
+      },
+      {
+        text: "Salvar Dados no rodapé e feche o painel.",
+        route: "/admin?tab=dashboard",
+        selector: '[data-tour="cfg-salvar"]',
+      },
     ],
     91,
   ),
@@ -552,15 +1329,30 @@ export const HELP_CATALOG: HelpArticle[] = [
     "saude-bot",
     "Conta e suporte",
     "Veja a saúde do atendimento",
-    "Alertas do atendimento automático e o que corrigir.",
+    "Alertas de WhatsApp, fluxo e automação — corrija e revalide.",
     "/admin/saude-bot",
     ["saúde", "bot", "alerta", "diagnóstico", "atendimento"],
     [
-      "Abra Saúde do atendimento em /admin/saude-bot.",
-      "Leia os alertas em destaque (WhatsApp, fluxo, automação).",
-      "Clique / siga o link da área indicada para corrigir (ex.: reconectar WhatsApp).",
-      "Volte depois e confira se o alerta sumiu.",
-      "Se o alerta persistir sem explicação clara, abra o suporte com IA com o texto do alerta.",
+      {
+        text: "Abra Saúde do atendimento (/admin/saude-bot).",
+        route: "/admin/saude-bot",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Leia os alertas (WhatsApp, fluxo, automação).",
+        route: "/admin/saude-bot",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Siga o link da área indicada (ex.: reconectar WhatsApp).",
+        route: "/admin?tab=whatsapp",
+        selector: '[data-tour="menu-whatsapp"]',
+      },
+      {
+        text: "Volte e confira se o alerta sumiu; se persistir, suporte com IA.",
+        route: "/ajuda",
+        selector: '[data-tour="menu-ajuda"]',
+      },
     ],
     92,
   ),
@@ -568,17 +1360,40 @@ export const HELP_CATALOG: HelpArticle[] = [
     "suporte",
     "Conta e suporte",
     "Peça ajuda ao suporte",
-    "IA com dados da sua operação + histórico da conversa salvo.",
+    "Central de ajuda + IA com dados da sua operação + tour da plataforma.",
     "/ajuda?suporte=1",
-    ["ajuda", "suporte", "erro", "problema", "humano", "ia"],
+    ["ajuda", "suporte", "erro", "problema", "humano", "ia", "central"],
     [
-      "Toque no botão verde de ajuda (?) no canto inferior direito.",
-      "Clique em Perguntar ao suporte com IA.",
-      "Descreva: o que queria fazer, em qual tela estava e qual botão clicou.",
-      "Cole a mensagem de erro ou o nome da campanha/cliente se houver.",
-      "Siga os passos numerados que a IA responder (ela usa seus dados reais de saldo e Meta quando disponíveis).",
-      "A conversa fica salva; se precisar, limpe com o ícone de lixeira no topo do chat.",
-      "Se a IA não resolver, peça encaminhamento ao suporte humano.",
+      {
+        text: "Abra a Central de ajuda no menu (ou /ajuda).",
+        route: "/ajuda",
+        selector: '[data-tour="menu-ajuda"]',
+      },
+      {
+        text: "Busque a tarefa ou o erro (ex.: campanha reprovada, WhatsApp).",
+        route: "/ajuda",
+        selector: '[data-tour="ajuda-busca"]',
+      },
+      {
+        text: "Ajuda rápida: guias em destaque para o dia a dia.",
+        route: "/ajuda",
+        selector: '[data-tour="ajuda-destaques"]',
+      },
+      {
+        text: "Lista completa por assunto à esquerda / filtros.",
+        route: "/ajuda",
+        selector: '[data-tour="ajuda-guias"]',
+      },
+      {
+        text: "Em cada guia: Me leve e explique (tour guiado) ou Tour da plataforma.",
+        route: "/ajuda",
+        selector: '[data-tour="ajuda-tour-plataforma"]',
+      },
+      {
+        text: "Perguntar ao suporte com IA (? verde): descreva tela, botão e erro. A conversa fica salva.",
+        route: "/ajuda?suporte=1",
+        selector: '[data-tour="ajuda-busca"]',
+      },
     ],
     90,
     true,
@@ -602,21 +1417,39 @@ export function searchHelpCatalog(query: string, category = "all", source: HelpA
     .map(({ item }) => item);
 }
 
+/** Resolve guia por id completo (`guia-…`) ou slug (`whatsapp-conectar`). */
+export function getHelpArticleById(idOrSlug: string, source: HelpArticle[] = HELP_CATALOG): HelpArticle | undefined {
+  const raw = idOrSlug.trim();
+  if (!raw) return undefined;
+  const withPrefix = raw.startsWith("guia-") ? raw : `guia-${raw}`;
+  return source.find((item) => item.id === raw || item.id === withPrefix);
+}
+
 export function mergeHelpArticles(rows: TourArticle[], steps: TourStep[]): HelpArticle[] {
   const stepById = new Map(steps.map((step) => [step.id, step]));
   const dynamic = rows.map((row): HelpArticle => {
     const linked = row.related_tour_step_id ? stepById.get(row.related_tour_step_id) : undefined;
     const parsedSteps = row.body.split("\n").map((line) => line.replace(/^\s*\d+[.)-]?\s*/, "").trim()).filter(Boolean);
+    const href = linked?.cta_href || linked?.route || "/admin";
+    const menuSel = menuSelectorFromHref(href);
     return {
       ...row,
       summary: parsedSteps[0] || row.body.slice(0, 180),
-      href: linked?.cta_href || linked?.route || "/admin",
+      href,
       keywords: [row.category, row.title],
       steps: parsedSteps,
+      guidedSteps: parsedSteps.map((text, index) => ({
+        text,
+        route: href,
+        selector: index === 0 ? menuSel : menuSel,
+      })),
     };
   });
-  const dynamicTitles = new Set(dynamic.map((item) => normalize(item.title)));
-  return [...dynamic, ...HELP_CATALOG.filter((item) => !dynamicTitles.has(normalize(item.title)))];
+  // Catálogo local (com seletores ricos) prevalece sobre artigos do banco com o mesmo título.
+  const catalogByTitle = new Map(HELP_CATALOG.map((item) => [normalize(item.title), item]));
+  const mergedDynamic = dynamic.map((item) => catalogByTitle.get(normalize(item.title)) || item);
+  const usedTitles = new Set(mergedDynamic.map((item) => normalize(item.title)));
+  return [...mergedDynamic, ...HELP_CATALOG.filter((item) => !usedTitles.has(normalize(item.title)))];
 }
 
 /** Texto compacto para injetar no prompt da IA (edge functions). */

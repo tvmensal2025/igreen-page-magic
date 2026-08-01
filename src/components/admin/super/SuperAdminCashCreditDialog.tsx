@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { HandCoins, Loader2 } from "lucide-react";
 import { toast } from "@/components/ui/sonner";
+import { toUserFacingError } from "@/lib/userFacingError";
 
 /**
  * Super Admin credita saldo manual diretamente na carteira do consultor.
@@ -46,7 +47,8 @@ export function SuperAdminCashCreditDialog({
       setNote("");
       onCredited?.();
     } catch (e) {
-      toast.error("Erro: " + (e instanceof Error ? e.message : String(e)));
+      console.error("[SuperAdminCashCreditDialog]", e);
+      toast.error(toUserFacingError(e, "Não foi possível creditar o saldo."));
     } finally {
       setLoading(false);
     }

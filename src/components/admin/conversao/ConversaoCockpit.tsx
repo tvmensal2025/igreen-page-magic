@@ -22,6 +22,7 @@ import { ConversaoLeadDrawer } from "./ConversaoLeadDrawer";
 import { FrasesPanel } from "./FrasesPanel";
 import { ConfigPanel } from "./ConfigPanel";
 import { ResultadosPanel } from "./ResultadosPanel";
+import { GuideEntryButton } from "@/features/onboarding/GuideEntryButton";
 
 /** Labels em português simples (leigo) — a chave técnica (hot/warm…) não muda. */
 const TEMP_META: Record<Temp, { label: string; icon: any; cls: string }> = {
@@ -514,10 +515,10 @@ export function ConversaoCockpit({ consultantId, initialView, onViewConsumed }: 
     <Tabs value={activeView} onValueChange={setActiveView} className="space-y-4 pb-24 min-w-0 max-w-full">
       <div className="w-full max-w-full min-w-0 overflow-x-auto overscroll-x-contain">
         <TabsList className="h-10 w-full min-w-0 justify-start gap-1 sm:w-auto">
-          <TabsTrigger value="fila" className="px-3 sm:px-4 shrink-0">Atender</TabsTrigger>
-          <TabsTrigger value="frases" className="px-3 sm:px-4 shrink-0">Frases</TabsTrigger>
-          <TabsTrigger value="resultados" className="px-3 sm:px-4 shrink-0">Resultados</TabsTrigger>
-          <TabsTrigger value="config" className="px-3 sm:px-4 shrink-0">Ajustes</TabsTrigger>
+          <TabsTrigger value="fila" className="px-3 sm:px-4 shrink-0" data-tour="conversao-tab-atender">Atender</TabsTrigger>
+          <TabsTrigger value="frases" className="px-3 sm:px-4 shrink-0" data-tour="conversao-tab-frases">Frases</TabsTrigger>
+          <TabsTrigger value="resultados" className="px-3 sm:px-4 shrink-0" data-tour="conversao-tab-resultados">Resultados</TabsTrigger>
+          <TabsTrigger value="config" className="px-3 sm:px-4 shrink-0" data-tour="conversao-tab-ajustes">Ajustes</TabsTrigger>
         </TabsList>
       </div>
 
@@ -695,10 +696,13 @@ function FilaToolbar({
   ];
 
   return (
-    <div className="space-y-3 rounded-xl border border-border/50 bg-card p-3 sm:p-4 min-w-0 max-w-full">
+    <div className="space-y-3 rounded-xl border border-border/50 bg-card p-3 sm:p-4 min-w-0 max-w-full" data-tour="conversao-atender">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between min-w-0">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold text-foreground">Atender agora</h2>
+          <div className="flex items-center gap-1">
+            <h2 className="text-base font-semibold text-foreground">Atender agora</h2>
+            <GuideEntryButton articleId="conversao" />
+          </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Pessoas que ainda não viraram cliente, na ordem de urgência.
           </p>
@@ -736,6 +740,13 @@ function FilaToolbar({
             <button
               key={b.id}
               type="button"
+              data-tour={
+                b.id === "precisa"
+                  ? "conversao-balde-precisa"
+                  : b.id === "quente"
+                    ? "conversao-balde-quente"
+                    : "conversao-balde-todos"
+              }
               onClick={() => setBucket(b.id)}
               className={`rounded-lg border px-3 py-2.5 text-left transition min-w-0 ${
                 active

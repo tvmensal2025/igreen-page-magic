@@ -345,7 +345,7 @@ export function ConnectionPanel({
               <p className="text-base font-heading font-bold text-foreground">WhatsApp desconectado</p>
               <p className="text-sm text-muted-foreground max-w-xs">Conecte seu WhatsApp para começar a enviar mensagens personalizadas</p>
             </div>
-            <Button onClick={onConnect} className="gap-2 rounded-xl px-6 h-11 text-sm font-bold shadow-lg shadow-green-500/10 hover:shadow-green-500/20 transition-all" style={{ background: "var(--gradient-green)" }}>
+            <Button onClick={onConnect} className="gap-2 rounded-xl px-6 h-11 text-sm font-bold shadow-lg shadow-green-500/10 hover:shadow-green-500/20 transition-all" style={{ background: "var(--gradient-green)" }} data-tour="wa-conectar">
               <QrCode className="w-4 h-4" /> Conectar WhatsApp
             </Button>
           </div>
@@ -383,7 +383,7 @@ export function ConnectionPanel({
             </div>
             <div className="flex flex-wrap gap-2 justify-center">
               {!fatalLocked && (
-                <Button onClick={onConnect} variant="outline" className="gap-2 rounded-xl px-6 h-11 border-primary/30 hover:bg-primary/5 hover:border-primary/50 transition-all">
+                <Button onClick={onConnect} variant="outline" className="gap-2 rounded-xl px-6 h-11 border-primary/30 hover:bg-primary/5 hover:border-primary/50 transition-all" data-tour="wa-conectar">
                   <QrCode className="w-4 h-4" /> Conectar WhatsApp
                 </Button>
               )}

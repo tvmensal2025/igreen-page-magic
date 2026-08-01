@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
+import ReactMarkdown from "react-markdown";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
 import { Sparkles, Send, Loader2, MessageCircleQuestion, Trash2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { toUserFacingError } from "@/lib/userFacingError";
 
 interface Msg { role: "user" | "assistant"; content: string }
 
@@ -168,8 +170,12 @@ export function SupportChatButton({ className }: SupportChatButtonProps = {}) {
         void persistPair(userId, withReply, pair);
       }
     } catch (e: unknown) {
-      const message = e instanceof Error ? e.message : "Tente novamente em instantes";
-      toast({ title: "Suporte indisponível", description: message, variant: "destructive" });
+      toast({
+        title: "Suporte indisponível",
+        description: toUserFacingError(e, "Tente novamente em instantes."),
+        variant: "destructive",
+        duration: 13000,
+      });
       setMsgs(next);
       if (userId) writeLocal(userId, next);
     } finally {
@@ -209,8 +215,27 @@ export function SupportChatButton({ className }: SupportChatButtonProps = {}) {
 
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
             {msgs.map((m, i) => (
-              <div key={i} className={`text-sm whitespace-pre-line rounded-lg px-3 py-2 ${m.role === "user" ? "bg-primary text-primary-foreground ml-8" : "bg-muted mr-8"}`}>
-                {m.content}
+              <div
+                key={i}
+                className={`text-sm rounded-lg px-3 py-2 ${m.role === "user" ? "bg-primary text-primary-foreground ml-8 whitespace-pre-line" : "bg-muted mr-8"}`}
+              >
+                {m.role === "assistant" ? (
+                  <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-strong:text-foreground">
+                    <ReactMarkdown
+                      components={{
+                        a: ({ href, children }) => (
+                          <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
+                            {children}
+                          </a>
+                        ),
+                      }}
+                    >
+                      {m.content}
+                    </ReactMarkdown>
+                  </div>
+                ) : (
+                  m.content
+                )}
               </div>
             ))}
             {sending && (

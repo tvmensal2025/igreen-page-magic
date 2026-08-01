@@ -12,6 +12,7 @@ import { useTour } from "@/features/onboarding/useTour";
 import { useGuideCoach } from "@/features/onboarding/GuideCoachProvider";
 import type { TourArticle } from "@/features/onboarding/types";
 import { HELP_CATEGORIES, mergeHelpArticles, searchHelpCatalog, type HelpArticle } from "@/features/help/helpCatalog";
+import { GuideEntryButton } from "@/features/onboarding/GuideEntryButton";
 
 export default function AjudaPage() {
   const navigate = useNavigate();
@@ -58,28 +59,31 @@ export default function AjudaPage() {
         <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3 min-w-0">
           <Link to="/admin"><Button variant="ghost" size="icon" aria-label="Voltar ao painel" className="shrink-0"><ArrowLeft className="h-5 w-5" /></Button></Link>
           <BookOpen className="h-5 w-5 text-primary shrink-0" />
-          <div className="min-w-0 flex-1">
+          <div className="min-w-0 flex-1" data-tour="ajuda-header">
             <h1 className="text-lg font-bold sm:text-xl truncate">Central de ajuda</h1>
             <p className="hidden text-xs text-muted-foreground sm:block">Encontre um guia, abra a tela certa ou peça ajuda à IA.</p>
           </div>
-          <Button variant="outline" size="sm" className="ml-auto shrink-0" onClick={() => void start()}><Play className="mr-2 h-4 w-4" /><span className="hidden sm:inline">Conhecer a plataforma</span><span className="sm:hidden">Tour</span></Button>
+          <div className="ml-auto flex items-center gap-2 shrink-0">
+            <GuideEntryButton articleId="suporte" size="sm" label="Ajuda" />
+            <Button variant="outline" size="sm" onClick={() => void start()} data-tour="ajuda-tour-plataforma"><Play className="mr-2 h-4 w-4" /><span className="hidden sm:inline">Conhecer a plataforma</span><span className="sm:hidden">Tour</span></Button>
+          </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-6xl space-y-8 px-4 py-6 sm:py-8">
-        <section className="rounded-2xl border bg-card px-5 py-7 sm:px-8 sm:py-10">
+        <section className="rounded-2xl border bg-card px-5 py-7 sm:px-8 sm:py-10" data-tour="ajuda-hero">
           <div className="max-w-3xl">
             <Badge variant="secondary" className="mb-3"><Sparkles className="mr-1.5 h-3.5 w-3.5" />Ajuda guiada</Badge>
             <h2 className="text-2xl font-bold tracking-tight sm:text-3xl">O que você quer fazer?</h2>
             <p className="mt-2 text-sm text-muted-foreground sm:text-base">Busque por uma tarefa ou problema. Cada guia mostra os passos e leva você até a página correta.</p>
-            <div className="relative mt-5">
+            <div className="relative mt-5" data-tour="ajuda-busca">
               <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
               <Input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ex.: conectar WhatsApp, campanha reprovada ou comissão" className="h-12 bg-background pl-12 text-base" aria-label="Buscar na Central de ajuda" />
             </div>
           </div>
         </section>
 
-        <section aria-labelledby="quick-help-heading">
+        <section aria-labelledby="quick-help-heading" data-tour="ajuda-destaques">
           <div className="mb-3 flex items-center justify-between"><h2 id="quick-help-heading" className="text-lg font-semibold">Ajuda rápida</h2></div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {featured.map((item) => (
@@ -90,8 +94,8 @@ export default function AjudaPage() {
           </div>
         </section>
 
-        <section aria-labelledby="all-guides-heading" className="grid gap-6 lg:grid-cols-[230px_minmax(0,1fr)]">
-          <aside><h2 id="all-guides-heading" className="mb-3 text-sm font-semibold">Assuntos</h2><div className="flex gap-2 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
+        <section aria-labelledby="all-guides-heading" className="grid gap-6 lg:grid-cols-[230px_minmax(0,1fr)]" data-tour="ajuda-guias">
+          <aside data-tour="ajuda-assuntos"><h2 id="all-guides-heading" className="mb-3 text-sm font-semibold">Assuntos</h2><div className="flex gap-2 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
             <Button size="sm" variant={category === "all" ? "default" : "ghost"} className="shrink-0 justify-between lg:w-full" onClick={() => setCategory("all")}>Todos <span className="ml-2 opacity-70">{catalog.length}</span></Button>
             {categories.map(({ name, count }) => <Button key={name} size="sm" variant={category === name ? "default" : "ghost"} className="shrink-0 justify-between lg:w-full" onClick={() => setCategory(name)}>{name}<span className="ml-2 opacity-70">{count}</span></Button>)}
           </div></aside>
@@ -123,11 +127,9 @@ export default function AjudaPage() {
                 <Button variant="default" onClick={() => leadAndExplain(selected)}>
                   <Play className="mr-2 h-4 w-4" />Me leve e explique
                 </Button>
-                {selected.related_tour_step_id && (
-                  <Button variant="outline" onClick={() => { setSelected(null); startRelatedTour(selected); }}>
-                    <Play className="mr-2 h-4 w-4" />Tour completo
-                  </Button>
-                )}
+                <Button variant="outline" onClick={() => { setSelected(null); startRelatedTour(selected); }}>
+                  <Play className="mr-2 h-4 w-4" />Tour da plataforma
+                </Button>
               </div>
               <Button variant="outline" onClick={() => openDestination(selected.href)}>
                 Abrir página

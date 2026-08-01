@@ -117,8 +117,8 @@ export function PartnerDashboard({
 
   if (partners.length === 0) {
     return (
-      <div className="pe-page space-y-6">
-        <div className="pe-page-header">
+      <div className="pe-page space-y-6" data-tour="parceiros-page">
+        <div className="pe-page-header" data-tour="parceiros-header">
           <div className="min-w-0">
             <h2 className="pe-page-title">Parceiros</h2>
             <p className="pe-page-sub">
@@ -130,16 +130,17 @@ export function PartnerDashboard({
               variant="outline"
               onClick={onDownloadBanner}
               className="gap-2 h-8"
+              data-tour="parceiros-banners"
             >
               <Download className="h-4 w-4" />
               Meus banners
             </Button>
-            <Button onClick={onNew} className="gap-2 h-8">
+            <Button onClick={onNew} className="gap-2 h-8" data-tour="parceiros-novo">
               <Plus className="h-4 w-4" /> Novo Parceiro
             </Button>
           </div>
         </div>
-        <Card className="border-dashed">
+        <Card className="border-dashed" data-tour="parceiros-vazio">
           <CardContent className="py-16 flex flex-col items-center text-center gap-4">
             <div className="h-16 w-16 rounded-2xl bg-primary/10 text-primary flex items-center justify-center ring-1 ring-primary/20">
               <Sparkles className="h-8 w-8" />
@@ -151,7 +152,7 @@ export function PartnerDashboard({
                 banner no mesmo lugar.
               </p>
             </div>
-            <Button onClick={onNew} className="gap-2">
+            <Button onClick={onNew} className="gap-2" data-tour="parceiros-novo-cta">
               <Plus className="h-4 w-4" /> Cadastrar primeiro parceiro
             </Button>
           </CardContent>
@@ -161,8 +162,8 @@ export function PartnerDashboard({
   }
 
   return (
-    <div className="pe-page space-y-5">
-      <div className="pe-page-header">
+    <div className="pe-page space-y-5" data-tour="parceiros-page">
+      <div className="pe-page-header" data-tour="parceiros-header">
         <div className="min-w-0">
           <h2 className="pe-page-title">Parceiros</h2>
           <p className="pe-page-sub">
@@ -174,21 +175,27 @@ export function PartnerDashboard({
             variant="outline"
             onClick={onDownloadBanner}
             className="gap-2 h-8"
+            data-tour="parceiros-banners"
           >
             <Download className="h-4 w-4" />
             Meus banners
           </Button>
-          <Button onClick={onNew} className="gap-2 h-8">
+          <Button onClick={onNew} className="gap-2 h-8" data-tour="parceiros-novo">
             <Plus className="h-4 w-4" /> Novo
           </Button>
         </div>
       </div>
 
       {/* Abas: Visão geral + um por parceiro */}
-      <div className="flex gap-1 bg-muted/50 rounded-lg p-1 w-full overflow-x-auto">
+      <div
+        className="flex gap-1 bg-muted/50 rounded-lg p-1 w-full overflow-x-auto"
+        data-tour="parceiros-tabs"
+      >
         <button
           type="button"
           onClick={() => setTab("overview")}
+          aria-current={tab === "overview" ? "page" : undefined}
+          data-tour="parceiros-tab-overview"
           className={`shrink-0 px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 ${
             tab === "overview"
               ? "bg-card text-primary shadow-sm"
@@ -211,6 +218,8 @@ export function PartnerDashboard({
               key={p.id}
               type="button"
               onClick={() => setTab(p.id)}
+              aria-current={tab === p.id ? "page" : undefined}
+              data-tour="parceiros-tab-partner"
               className={`shrink-0 px-3 py-1.5 text-xs font-medium rounded-md transition-colors flex items-center gap-1.5 max-w-[10rem] ${
                 tab === p.id
                   ? "bg-card text-primary shadow-sm"
@@ -234,9 +243,12 @@ export function PartnerDashboard({
       </div>
 
       {tab === "overview" || !selectedPartner ? (
-        <div className="space-y-6">
+        <div className="space-y-6" data-tour="parceiros-overview">
           {unhealthy > 0 && (
-            <div className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-warning text-xs">
+            <div
+              className="flex items-start gap-2 p-3 rounded-lg bg-warning/10 border border-warning/30 text-warning text-xs"
+              data-tour="parceiros-alerta"
+            >
               <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
               <div>
                 <strong>{unhealthy}</strong> parceiro(s) precisam de atenção
@@ -246,17 +258,21 @@ export function PartnerDashboard({
             </div>
           )}
 
-          <PartnerPodium partners={partners} analytics={analytics} />
-          <PartnerKpiRow analytics={analytics} activeCount={partners.length} />
+          <div data-tour="parceiros-podium">
+            <PartnerPodium partners={partners} analytics={analytics} />
+          </div>
+          <div data-tour="parceiros-kpis">
+            <PartnerKpiRow analytics={analytics} activeCount={partners.length} />
+          </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4" data-tour="parceiros-charts">
             <PartnerLeadsBarChart analytics={analytics} />
             <PartnerTrendChart analytics={analytics} />
             <PartnerFunnelChart analytics={analytics} />
             <PartnerOriginDonut analytics={analytics} />
           </div>
 
-          <Card>
+          <Card data-tour="parceiros-ranking">
             <CardHeader className="pb-3">
               <CardTitle className="text-base">Ranking detalhado</CardTitle>
             </CardHeader>
@@ -330,8 +346,8 @@ function PartnerWorkspace(props: PartnerWorkspaceProps) {
   const health = partnerHealth(partner, analytics?.leads_30d ?? 0);
 
   return (
-    <div className="space-y-4">
-      <Card className="border-primary/20">
+    <div className="space-y-4" data-tour="parceiros-workspace">
+      <Card className="border-primary/20" data-tour="parceiros-card">
         <CardContent className="p-4 space-y-3">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0 space-y-1">
@@ -370,6 +386,7 @@ function PartnerWorkspace(props: PartnerWorkspaceProps) {
                 variant="outline"
                 className="h-8 gap-1.5"
                 onClick={onEdit}
+                data-tour="parceiros-editar"
               >
                 <Pencil className="h-3.5 w-3.5" />
                 Editar dados
@@ -379,6 +396,7 @@ function PartnerWorkspace(props: PartnerWorkspaceProps) {
                 size="sm"
                 className="h-8 gap-1.5"
                 onClick={() => onQrCode()}
+                data-tour="parceiros-qr"
               >
                 <QrCode className="h-3.5 w-3.5" />
                 Baixar QR
@@ -398,7 +416,10 @@ function PartnerWorkspace(props: PartnerWorkspaceProps) {
           )}
 
           <div className="grid gap-2 sm:grid-cols-2 text-xs">
-            <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
+            <div
+              className="rounded-lg border border-border/60 bg-muted/20 p-2.5"
+              data-tour="parceiros-keywords"
+            >
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
                 Palavras-chave
               </p>
@@ -406,7 +427,10 @@ function PartnerWorkspace(props: PartnerWorkspaceProps) {
                 {(partner.keywords || []).filter(Boolean).join(", ") || "—"}
               </p>
             </div>
-            <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
+            <div
+              className="rounded-lg border border-border/60 bg-muted/20 p-2.5"
+              data-tour="parceiros-frase"
+            >
               <p className="text-[10px] uppercase tracking-wide text-muted-foreground font-medium">
                 Frase WhatsApp (geral)
               </p>
@@ -418,16 +442,18 @@ function PartnerWorkspace(props: PartnerWorkspaceProps) {
         </CardContent>
       </Card>
 
-      <PartnerBannersPanel
-        consultantId={consultantId}
-        partner={partner}
-        license={license}
-        consultantIgreenId={consultantIgreenId}
-        consultantName={consultantName}
-        consultantPhone={consultantPhone}
-        onOpenPartnerQr={(ctx) => onQrCode(ctx)}
-        onPartnerUpdated={onPartnersChanged}
-      />
+      <div data-tour="parceiros-banners-panel">
+        <PartnerBannersPanel
+          consultantId={consultantId}
+          partner={partner}
+          license={license}
+          consultantIgreenId={consultantIgreenId}
+          consultantName={consultantName}
+          consultantPhone={consultantPhone}
+          onOpenPartnerQr={(ctx) => onQrCode(ctx)}
+          onPartnerUpdated={onPartnersChanged}
+        />
+      </div>
     </div>
   );
 }

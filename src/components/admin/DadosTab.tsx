@@ -243,7 +243,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
               const newName = e.target.value;
               const slug = newName.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9\s-]/g, "").replace(/\s+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
               onFormChange({ name: newName, license: slug });
-            }} placeholder="Seu nome" className="bg-secondary border-border" required />
+            }} placeholder="Seu nome" className="bg-secondary border-border" required data-tour="cfg-nome" />
           </div>
           <div className="space-y-2">
             <Label htmlFor="license" className="text-sm text-muted-foreground">Endereço da licença</Label>
@@ -327,7 +327,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
           </div>
           <div className="space-y-2">
             <Label htmlFor="igreen_id" className="text-sm text-muted-foreground">ID iGreen</Label>
-            <Input id="igreen_id" value={form.igreen_id} onChange={(e) => {
+            <Input id="igreen_id" value={form.igreen_id} data-tour="cfg-igreen-id" onChange={(e) => {
               const id = e.target.value;
               // Portal 2 (Autoconexão) é o padrão único hoje. O link de cadastro
               // sempre aponta para o Autoconexão. (O Portal 1/digital continua no
@@ -537,7 +537,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
       {/* Sincronização sob demanda — substitui vários crons que foram desligados */}
       <SyncAllPanel />
 
-      <Button type="submit" disabled={saving} className="w-full h-12 text-base font-bold rounded-xl gap-2" style={{ background: "var(--gradient-green)" }}>
+      <Button type="submit" disabled={saving} data-tour="cfg-salvar" className="w-full h-12 text-base font-bold rounded-xl gap-2" style={{ background: "var(--gradient-green)" }}>
         <Save className="w-5 h-5" />
         {saving ? "Salvando..." : "Salvar dados"}
       </Button>

@@ -26,7 +26,6 @@ const CrmAnalyticsTab = lazy(() => import("@/components/superadmin/CrmAnalyticsT
 const AuditLogPanel = lazy(() => import("@/components/superadmin/AuditLogPanel").then(m => ({ default: m.AuditLogPanel })));
 const BotFunnelPanel = lazy(() => import("@/components/superadmin/BotFunnelPanel").then(m => ({ default: m.BotFunnelPanel })));
 const WorkerPhaseTimeline = lazy(() => import("@/components/superadmin/WorkerPhaseTimeline").then(m => ({ default: m.WorkerPhaseTimeline })));
-const StuckLeadsWidget = lazy(() => import("@/components/superadmin/StuckLeadsWidget").then(m => ({ default: m.StuckLeadsWidget })));
 const SystemHealthPanel = lazy(() => import("@/components/superadmin/SystemHealthPanel").then(m => ({ default: m.SystemHealthPanel })));
 const BotGlobalKillSwitch = lazy(() => import("@/components/superadmin/BotGlobalKillSwitch").then(m => ({ default: m.BotGlobalKillSwitch })));
 const DevToolsBlockToggle = lazy(() => import("@/components/superadmin/DevToolsBlockToggle").then(m => ({ default: m.DevToolsBlockToggle })));
@@ -35,7 +34,6 @@ const StorageMigrationPanel = lazy(() => import("@/components/superadmin/Storage
 const InfraHealthPanel = lazy(() => import("@/components/superadmin/InfraHealthPanel").then(m => ({ default: m.InfraHealthPanel })));
 const WhatsAppInstanceHealthCard = lazy(() => import("@/components/superadmin/WhatsAppInstanceHealthCard").then(m => ({ default: m.WhatsAppInstanceHealthCard })));
 const PlatformFacebookCard = lazy(() => import("@/components/admin/super/PlatformFacebookCard").then(m => ({ default: m.PlatformFacebookCard })));
-const PlatformPnLCard = lazy(() => import("@/components/admin/super/PlatformPnLCard").then(m => ({ default: m.PlatformPnLCard })));
 const NetworkHealthPanel = lazy(() => import("@/components/admin/super/NetworkHealthPanel").then(m => ({ default: m.NetworkHealthPanel })));
 const AdTemplatesPanel = lazy(() => import("@/components/superadmin/AdTemplatesPanel").then(m => ({ default: m.AdTemplatesPanel })));
 const AILearningHealthPanel = lazy(() => import("@/components/admin/super/AILearningHealthPanel").then(m => ({ default: m.AILearningHealthPanel })));
@@ -81,7 +79,7 @@ const SuperAdmin = () => {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"consultores" | "captacao" | "gestores_ads" | "ia" | "ia_aprendendo" | "crm" | "auditoria" | "funil" | "worker" | "plataforma_fb" | "financeiro" | "templates_ads" | "templates_fluxo" | "saude_rede" | "rollout" | "solar">("consultores");
+  const [activeTab, setActiveTab] = useState<"consultores" | "captacao" | "gestores_ads" | "ia" | "ia_aprendendo" | "crm" | "auditoria" | "funil" | "worker" | "plataforma_fb" | "templates_ads" | "templates_fluxo" | "saude_rede" | "rollout" | "solar">("consultores");
   const [searchTerm, setSearchTerm] = useState("");
   const accessDeniedToastShownRef = useRef(false);
   // Gate alinhado a SuperAdminRemoteSupport: só is_super_admin (não role "admin").
@@ -356,7 +354,6 @@ const SuperAdmin = () => {
     { id: "plataforma_fb" as const, label: "Plataforma FB", icon: Megaphone },
     { id: "templates_ads" as const, label: "Templates de Anúncio", icon: Sparkles },
     { id: "templates_fluxo" as const, label: "Templates de Fluxo", icon: Sparkles },
-    { id: "financeiro" as const, label: "Financeiro / P&L", icon: BarChart3 },
     { id: "rollout" as const, label: "Rollout V3", icon: Activity },
     { id: "solar" as const, label: "Solar 3D", icon: Sun },
   ];
@@ -490,9 +487,6 @@ const SuperAdmin = () => {
 
             {/* Health Panel — saúde geral + religar bot global */}
             <SystemHealthPanel />
-
-            {/* Stuck Leads Widget — visibilidade em tempo real */}
-            <StuckLeadsWidget />
 
             {/* Search */}
             <div className="flex flex-wrap items-center gap-3">
@@ -688,7 +682,6 @@ const SuperAdmin = () => {
         {activeTab === "plataforma_fb" && <PlatformFacebookCard />}
        {activeTab === "templates_ads" && <AdTemplatesPanel />}
         {activeTab === "templates_fluxo" && <FlowTemplateApprovalPanel />}
-        {activeTab === "financeiro" && <PlatformPnLCard />}
         {activeTab === "saude_rede" && <NetworkHealthPanel />}
         {activeTab === "ia_aprendendo" && <AILearningHealthPanel />}
         {activeTab === "rollout" && <RolloutPanel />}

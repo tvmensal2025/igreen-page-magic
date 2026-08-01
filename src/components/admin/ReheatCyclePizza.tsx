@@ -1553,7 +1553,7 @@ export function ReheatCyclePizza({
     if (allIds.length > 0) {
       const { data: custRows } = await (supabase as any)
         .from("customers")
-        .select("id, name, name_source, phone_whatsapp, customer_origin, status, conversation_step, portal_submitted_at, do_not_contact")
+        .select("id, name, name_source, phone_whatsapp, customer_origin, status, conversation_step, portal_submitted_at, do_not_contact, is_converted, pos_venda_stage, andamento_igreen, pos_venda_recadastro_at")
         .in("id", allIds.slice(0, 5000));
       for (const c of (custRows as {
         id: string;
@@ -1565,6 +1565,10 @@ export function ReheatCyclePizza({
         conversation_step: string | null;
         portal_submitted_at: string | null;
         do_not_contact: boolean | null;
+        is_converted: boolean | null;
+        pos_venda_stage: string | null;
+        andamento_igreen: string | null;
+        pos_venda_recadastro_at: string | null;
       }[]) || []) {
         if (
           isCycleLeadEligible({

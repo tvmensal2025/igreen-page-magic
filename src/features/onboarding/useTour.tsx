@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import type { TourStep, TourProgress } from "./types";
+import { navigateAdminForGuide } from "./tourHighlight";
 
 const LS_KEY = "tour_progress_v2";
 
@@ -73,11 +74,8 @@ function useTourState() {
   const goTo = useCallback(async (nextIndex: number, all: TourStep[]) => {
     const step = all[nextIndex];
     if (!step) return;
-    if (step.route && typeof window !== "undefined") {
-      const destination = new URL(step.route, window.location.origin);
-      const current = `${window.location.pathname}${window.location.search}`;
-      const target = `${destination.pathname}${destination.search}`;
-      if (current !== target) navigate(target);
+    if (step.route) {
+      navigateAdminForGuide(navigate, step.route);
     }
     setIndex(nextIndex);
     await saveProgress(userId, { current_step: nextIndex });

@@ -237,6 +237,10 @@ interface AgendamentosHubProps {
   /** Quando true, mostra atalho para abrir como aba principal do Admin */
   showAdminShortcut?: boolean;
   onOpenChat?: (phone: string) => void;
+  /** Admin: limpa pendingHubTab depois de aplicar (não usar timer). */
+  onHubTabApplied?: () => void;
+  /** Admin: sincroniza ?hubTab= na URL. */
+  onActiveHubTabChange?: (tab: AgendamentosHubTab) => void;
 }
 
 export function AgendamentosHub({
@@ -244,11 +248,15 @@ export function AgendamentosHub({
   instanceName,
   isWhapi = false,
   isConnected,
-  defaultTab = "mapa",
+  defaultTab,
   showAdminShortcut = false,
   onOpenChat,
+  onHubTabApplied,
+  onActiveHubTabChange,
 }: AgendamentosHubProps) {
-  const [activeTab, setActiveTab] = useState<AgendamentosHubTab>(() => normalizeHubTab(defaultTab));
+  const [activeTab, setActiveTab] = useState<AgendamentosHubTab>(() =>
+    normalizeHubTab(defaultTab ?? "mapa"),
+  );
   const [agendaSub, setAgendaSub] = useState<"manual" | "pos-venda" | "reaquecimento" | "campanhas" | "rodizios">("manual");
   const [textosOpen, setTextosOpen] = useState(false);
   const [showForm, setShowForm] = useState(false);
@@ -266,7 +274,26 @@ export function AgendamentosHub({
   const [editAt, setEditAt] = useState("");
   const [savingEdit, setSavingEdit] = useState(false);
 
-  const goTab = (tab: AgendamentosHubTab) => setActiveTab(normalizeHubTab(tab));
+  const goTab = (tab: AgendamentosHubTab) => {
+    const next = normalizeHubTab(tab);
+    setActiveTab(next);
+    onActiveHubTabChange?.(next);
+  };
+
+  // Só quando Admin/tour passa hubTab explícito — não forçar "mapa" no mount
+  useEffect(() => {
+    if (defaultTab == null) return;
+    const next = normalizeHubTab(defaultTab);
+    setActiveTab(next);
+    onHubTabApplied?.();
+    onActiveHubTabChange?.(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [defaultTab]);
+
+  useEffect(() => {
+    onActiveHubTabChange?.(activeTab);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const {
     loading,
@@ -770,17 +797,26 @@ export function AgendamentosHub({
         </div>
 
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(normalizeHubTab(v as AgendamentosHubTab))} className="space-y-4">
-          <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/40 p-1">
-            <TabsTrigger value="mapa" className="text-xs font-semibold">Mapa</TabsTrigger>
-            <TabsTrigger value="grupo-a" className="text-xs">Leads novos</TabsTrigger>
-            <TabsTrigger value="grupo-b" className="text-xs font-semibold">Quem esfriou</TabsTrigger>
-            <TabsTrigger value="grupo-c" className="text-xs">Quem sumiu</TabsTrigger>
-            <TabsTrigger value="agenda" className="text-xs">Agenda</TabsTrigger>
-            <TabsTrigger value="futuros" className="text-xs font-semibold">Futuros</TabsTrigger>
-            <TabsTrigger value="carteira" className="text-xs">Carteira</TabsTrigger>
-            <TabsTrigger value="historico" className="text-xs">Histórico</TabsTrigger>
-            <TabsTrigger value="numeros-invalidos" className="text-xs">Números inválidos</TabsTrigger>
+        <Tabs
+          value={activeTab}
+          onValueChange={(v) => {
+            const next = normalizeHubTab(v as AgendamentosHubTab);
+            setActiveTab(next);
+            onActiveHubTabChange?.(next);
+          }}
+          className="space-y-4"
+          data-tour="agenda-hub"
+        >
+          <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/40 p-1" data-tour="agenda-tabs">
+            <TabsTrigger value="mapa" className="text-xs font-semibold" data-tour="agenda-tab-mapa">Mapa</TabsTrigger>
+            <TabsTrigger value="grupo-a" className="text-xs" data-tour="agenda-tab-grupo-a">Leads novos</TabsTrigger>
+            <TabsTrigger value="grupo-b" className="text-xs font-semibold" data-tour="agenda-tab-grupo-b">Quem esfriou</TabsTrigger>
+            <TabsTrigger value="grupo-c" className="text-xs" data-tour="agenda-tab-grupo-c">Quem sumiu</TabsTrigger>
+            <TabsTrigger value="agenda" className="text-xs" data-tour="agenda-tab-agenda">Agenda</TabsTrigger>
+            <TabsTrigger value="futuros" className="text-xs font-semibold" data-tour="agenda-tab-futuros">Futuros</TabsTrigger>
+            <TabsTrigger value="carteira" className="text-xs" data-tour="agenda-tab-carteira">Carteira</TabsTrigger>
+            <TabsTrigger value="historico" className="text-xs" data-tour="agenda-tab-historico">Histórico</TabsTrigger>
+            <TabsTrigger value="numeros-invalidos" className="text-xs" data-tour="agenda-tab-invalidos">Números inválidos</TabsTrigger>
           </TabsList>
 
           {/* ── Mapa A→B→C + fila ── */}
@@ -1031,6 +1067,7 @@ export function AgendamentosHub({
                 style={{ background: "var(--gradient-green)" }}
                 disabled={!channelReady.ok}
                 title={channelBlockedReason || undefined}
+                data-tour="agenda-agendar"
               >
                 <Plus className="w-4 h-4" />
                 Agendar nova

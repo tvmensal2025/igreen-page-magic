@@ -367,7 +367,7 @@ export function PartnerBannersPanel({
   const spotToArchive = spots.find((s) => s.id === archivingId) || null;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-tour="parceiros-banners-panel-inner">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h3 className="font-semibold text-sm">{partner.nome}</h3>
@@ -382,6 +382,7 @@ export function PartnerBannersPanel({
             variant="outline"
             className="h-8 gap-1"
             onClick={() => void ensurePortalToken()}
+            data-tour="parceiros-link"
           >
             <Copy className="h-3.5 w-3.5" />
             Link do parceiro

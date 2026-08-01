@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
-  CheckCircle2, XCircle, Calendar, RotateCcw, UserPlus, Phone, MoreHorizontal, RefreshCw, Eye, ClipboardCheck, Users, AlertTriangle,
+  CheckCircle2, XCircle, Calendar, RotateCcw, UserPlus, Phone, MoreHorizontal, RefreshCw, Eye, ClipboardCheck, Users, AlertTriangle, BarChart3,
 } from "lucide-react";
 import { toast } from "@/components/ui/sonner";
 import { format } from "date-fns";
@@ -438,8 +438,8 @@ export default function PosVendaKanban({
         }}
       />
 
-      <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between">
-        <div className="relative w-full sm:max-w-sm">
+      <div className="flex flex-col lg:flex-row gap-3 items-stretch lg:items-center justify-between" data-tour="ativos-toolbar">
+        <div className="relative w-full sm:max-w-sm" data-tour="ativos-busca">
           <Input
             placeholder="Buscar por nome ou telefone..."
             value={search}
@@ -449,8 +449,26 @@ export default function PosVendaKanban({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-9 text-xs gap-1.5 rounded-xl"
+            data-tour="crm-analise-clientes"
+            onClick={() => {
+              try { window.sessionStorage.setItem("pe:crm-analise-focus", "clientes"); } catch { /* ignore */ }
+              window.dispatchEvent(
+                new CustomEvent("igreen-admin-nav", {
+                  detail: { tab: "crm-analise", crmAnaliseFocus: "clientes" },
+                }),
+              );
+            }}
+          >
+            <BarChart3 className="w-3.5 h-3.5" />
+            Análise
+          </Button>
           <Select value={ownerFilter} onValueChange={setOwnerFilter}>
-            <SelectTrigger className="w-full sm:w-[260px] rounded-xl gap-2">
+            <SelectTrigger className="w-full sm:w-[260px] rounded-xl gap-2" data-tour="ativos-filtro-owner">
               <Users className="w-4 h-4 text-muted-foreground shrink-0" />
               <SelectValue placeholder="Filtrar por quem cadastrou" />
             </SelectTrigger>
@@ -498,7 +516,7 @@ export default function PosVendaKanban({
               Validar sozinho
             </Label>
           </div>
-          <Button size="sm" onClick={() => setValidateSignal((n) => n + 1)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-white shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] min-h-[44px]">
+          <Button size="sm" onClick={() => setValidateSignal((n) => n + 1)} className="gap-2 rounded-xl bg-primary hover:bg-primary/90 text-white shadow-sm transition-all hover:scale-[1.02] active:scale-[0.98] min-h-[44px]" data-tour="ativos-validar">
             <CheckCircle2 className="w-4 h-4 shrink-0" />
             <span className="lg:hidden">Validar</span>
             <span className="hidden lg:inline">Validar novos clientes</span>
@@ -533,7 +551,7 @@ export default function PosVendaKanban({
       {loading ? (
         <div className="text-center py-12 text-sm text-muted-foreground">Carregando…</div>
       ) : (
-        <div className="flex gap-3 overflow-x-auto overscroll-x-contain min-w-0 max-w-full pb-2 snap-x snap-mandatory">
+        <div className="flex gap-3 overflow-x-auto overscroll-x-contain min-w-0 max-w-full pb-2 snap-x snap-mandatory" data-tour="ativos-kanban">
           {STAGES.map((stage) => (
             <div
               key={stage.key}

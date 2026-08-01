@@ -26,7 +26,9 @@ Regras importantes:
 - Uma resposta manual pode pausar a automação da conversa. Oriente o consultor a conferir o estado atual antes de reativar.
 - Nunca afirme que uma automação está ligada, funcionando ou disponível sem evidência nos dados fornecidos.
 - Não diga "robô"; diga "assistente automática". Não use a sigla DNC; diga "bloqueado" ou "nunca mais contatar".
-- O WhatsApp em uso é Whapi; não peça reconectar Evolution só por status antigo.`;
+- NUNCA diga "Evolution", "Whapi", "API" de WhatsApp nem nome de provedor técnico. Para o consultor, diga só "WhatsApp" (conectar, QR Code, conversas, desconectado/conectado).
+- Use os nomes EXATOS dos botões da tela (ex.: "Anúncio inteligente", "Anúncio completo", "Mensagens prontas", "Atualizar números", "Trocar número").
+- Markdown leve (**negrito**, listas) é permitido — a interface renderiza.`;
 
 Deno.serve(async (req) => {
   const json = (o: unknown, status = 200) =>

@@ -23,7 +23,7 @@ export function MaterialsTab({ consultantId = null }: Props) {
   const [active, setActive] = useState<MaterialSection>(sectionsWithItems[0]);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-tour="materiais-root">
       <div className="flex items-center justify-between flex-wrap gap-2">
         <div className="flex items-center gap-2">
           <FolderOpen className="w-5 h-5 text-primary" />
@@ -34,6 +34,7 @@ export function MaterialsTab({ consultantId = null }: Props) {
           variant="outline"
           onClick={() => window.open(DRIVE_URL, "_blank", "noopener,noreferrer")}
           className="gap-2"
+          data-tour="materiais-drive"
         >
           <ExternalLink className="w-4 h-4" />
           Materiais extras no Drive
@@ -44,17 +45,17 @@ export function MaterialsTab({ consultantId = null }: Props) {
         Vídeos e imagens das páginas do site, prontos para baixar ou enviar via WhatsApp pros seus clientes.
       </p>
 
-      <Tabs value={active} onValueChange={(v) => setActive(v as MaterialSection)} className="w-full">
+      <Tabs value={active} onValueChange={(v) => setActive(v as MaterialSection)} className="w-full" data-tour="materiais-tabs">
         <TabsList className="flex flex-wrap h-auto gap-1 bg-muted/50 p-1">
           {sectionsWithItems.map((s) => (
-            <TabsTrigger key={s} value={s} className="text-xs">
+            <TabsTrigger key={s} value={s} className="text-xs" data-tour={`materiais-tab-${s}`}>
               {SECTION_LABEL[s]} ({MATERIALS_BY_SECTION[s].length})
             </TabsTrigger>
           ))}
         </TabsList>
         {sectionsWithItems.map((s) => (
           <TabsContent key={s} value={s} className="mt-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3" data-tour="materiais-grid">
               {MATERIALS_BY_SECTION[s].map((item) => (
                 <MaterialCard key={item.id} item={item} consultantId={consultantId} />
               ))}

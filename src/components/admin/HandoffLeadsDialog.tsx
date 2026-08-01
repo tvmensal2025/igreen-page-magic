@@ -9,7 +9,7 @@ import {
   RefreshCw,
   RotateCcw,
   Ban,
-  UserMinus,
+  UserCheck,
 } from "lucide-react";
 import { suppressContact } from "@/services/contactSuppression";
 import { Button } from "@/components/ui/button";
@@ -132,22 +132,24 @@ export function HandoffLeadsDialog({
     if (result.failed) {
       toast.warning(`${result.ok} devolvido(s); ${result.failed} falhou(aram)`);
     } else {
-      toast.success(`${result.ok} contato(s) voltaram ao acompanhamento — o sistema retoma em breve`);
+      toast.success(
+        `${result.ok} contato(s) voltaram ao acompanhamento — cliente segue pós-venda; lead retoma o ciclo`,
+      );
     }
     await reload();
     onChanged?.();
   }
 
-  async function forgetSelected(ids: string[]) {
+  async function markAsClientSelected(ids: string[]) {
     if (!ids.length) return;
     const ok = await confirm({
       title:
         ids.length === 1
-          ? "Esquecer acompanhamento deste contato?"
-          : `Esquecer acompanhamento de ${ids.length} contatos?`,
+          ? "Marcar como já é cliente?"
+          : `Marcar ${ids.length} contatos como já clientes?`,
       description:
-        "Eles saem do ciclo automático (como “já cliente”). Você ainda pode falar no WhatsApp à mão. Isso não é bloqueio.",
-      confirmText: "Esquecer acompanhamento",
+        "Saem dos leads novos (A/B/C). Continuam no handoff se precisarem de você, e o acompanhamento de cliente (aprovado / 30 / 60…) segue normal. Isso não é bloqueio.",
+      confirmText: "Já é cliente",
       cancelText: "Voltar",
       tone: "info",
     });
@@ -156,18 +158,23 @@ export function HandoffLeadsDialog({
     const byId = new Map(rows.map((r) => [r.cadenceId, r]));
     const items = ids
       .map((id) => byId.get(id))
-      .filter(Boolean)
+      .filter((r) => r && !r.isCliente)
       .map((r) => ({ customerId: r!.customerId, cadenceId: r!.cadenceId }));
+    if (!items.length) {
+      setBusy(false);
+      toast.info("Já estão marcados como cliente");
+      return;
+    }
     const result = await forgetHandoffLeads({ items });
     setBusy(false);
     if (result.failed && !result.ok) {
-      toast.error(result.lastError || "Não deu para esquecer");
+      toast.error(result.lastError || "Não deu para marcar como cliente");
       return;
     }
     if (result.failed) {
-      toast.warning(`${result.ok} esquecido(s); ${result.failed} falhou(aram)`);
+      toast.warning(`${result.ok} marcado(s); ${result.failed} falhou(aram)`);
     } else {
-      toast.success(`${result.ok} esquecido(s) — fora do ciclo automático`);
+      toast.success(`${result.ok} marcado(s) como cliente — fora dos leads novos`);
     }
     await reload();
     onChanged?.();
@@ -186,7 +193,7 @@ export function HandoffLeadsDialog({
     const ok = await confirm({
       title: `Bloquear ${row.displayName}?`,
       description:
-        "O contato sai desta lista e nunca mais recebe mensagem automática (WhatsApp, SMS ou ligação). Não volta para o acompanhamento automático.",
+        "Para de receber mensagens automáticas (leads e pós-venda). O handoff continua — você ainda vê o contato aqui se precisar atender.",
       confirmText: "Bloquear contato",
       cancelText: "Cancelar",
       tone: "danger",
@@ -206,12 +213,16 @@ export function HandoffLeadsDialog({
       toast.error(res.error || "Falha ao bloquear contato");
       return;
     }
-    toast.success(`${row.displayName} bloqueado — não recebe mais contatos`);
+    toast.success(`${row.displayName} bloqueado — não recebe mais automação`);
     await reload();
     onChanged?.();
   }
 
   const selectedIds = Array.from(selected);
+  const selectedLeadIds = selectedIds.filter((id) => {
+    const r = rows.find((x) => x.cadenceId === id);
+    return r && !r.isCliente;
+  });
 
   function renderLeadActions(row: HandoffLead, compact?: boolean) {
     return (
@@ -227,7 +238,11 @@ export function HandoffLeadsDialog({
           className={cn("h-8 text-xs", compact && "col-span-2 justify-center")}
           disabled={busy}
           onClick={() => void returnSelected([row.cadenceId])}
-          title="Devolve o lead ao acompanhamento automático"
+          title={
+            row.isCliente
+              ? "Libera o handoff — pós-venda (aprovado/30/60) continua"
+              : "Devolve o lead ao acompanhamento automático"
+          }
         >
           <RotateCcw className="h-3.5 w-3.5 mr-1.5 shrink-0" />
           {compact ? "Voltar ao ciclo" : "Voltar ao acompanhamento"}
@@ -245,21 +260,23 @@ export function HandoffLeadsDialog({
             WhatsApp
           </Button>
         )}
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          className={cn(
-            "h-8 text-xs text-muted-foreground hover:text-foreground",
-            !onOpenChat && compact && "col-span-2",
-          )}
-          disabled={busy}
-          onClick={() => void forgetSelected([row.cadenceId])}
-          title="Sai do ciclo automático — use se já é cliente. WhatsApp manual continua ok"
-        >
-          <UserMinus className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-          Esquecer
-        </Button>
+        {!row.isCliente && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            className={cn(
+              "h-8 text-xs text-emerald-700 border-emerald-500/40 hover:bg-emerald-500/10 hover:text-emerald-800 dark:text-emerald-400",
+              !onOpenChat && compact && "col-span-2",
+            )}
+            disabled={busy}
+            onClick={() => void markAsClientSelected([row.cadenceId])}
+            title="Marca como já cliente — sai dos leads novos; handoff e pós-venda ok"
+          >
+            <UserCheck className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+            Já é cliente
+          </Button>
+        )}
         <Button
           type="button"
           size="sm"
@@ -268,12 +285,16 @@ export function HandoffLeadsDialog({
             "h-8 text-xs border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive",
             !onOpenChat && compact && "col-span-2",
           )}
-          disabled={busy}
+          disabled={busy || row.doNotContact}
           onClick={() => void blockContact(row)}
-          title="Bloqueia contato e remove sem voltar ao acompanhamento automático"
+          title={
+            row.doNotContact
+              ? "Já está bloqueado — não recebe automação"
+              : "Bloqueia automação; handoff continua"
+          }
         >
           <Ban className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-          Bloquear
+          {row.doNotContact ? "Bloqueado" : "Bloquear"}
         </Button>
       </div>
     );
@@ -294,9 +315,10 @@ export function HandoffLeadsDialog({
               <span className="leading-snug">Atendimentos pausados</span>
             </DialogTitle>
             <DialogDescription className="text-left text-xs sm:text-sm leading-relaxed">
-              Contatos em que a IA pausou. Toque no nome para ver a conversa.{" "}
-              <strong>Voltar</strong> reativa o ciclo · <strong>Esquecer</strong> tira do automático ·{" "}
-              <strong>Bloquear</strong> encerra o contato.
+              Contatos em que a IA pausou (leads e clientes).{" "}
+              <strong>Voltar</strong> libera o acompanhamento · <strong>Já é cliente</strong> tira
+              só dos leads novos · <strong>Bloquear</strong> para automação (handoff continua).
+              Cliente segue com aprovado / 30 / 60 normalmente.
             </DialogDescription>
           </DialogHeader>
 
@@ -381,6 +403,19 @@ export function HandoffLeadsDialog({
                               <Badge variant="secondary" className="text-[10px]">
                                 Precisa de você
                               </Badge>
+                              {row.isCliente && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] border-emerald-500/50 text-emerald-700 dark:text-emerald-400"
+                                >
+                                  Cliente
+                                </Badge>
+                              )}
+                              {row.doNotContact && (
+                                <Badge variant="destructive" className="text-[10px]">
+                                  Bloqueado
+                                </Badge>
+                              )}
                               {row.botPaused && (
                                 <Badge variant="outline" className="text-[10px]">
                                   Automático pausado
@@ -460,9 +495,24 @@ export function HandoffLeadsDialog({
                             </button>
                           </TableCell>
                           <TableCell className="text-xs max-w-[200px]">
-                            <Badge variant="secondary" className="mb-1 text-[10px]">
-                              Precisa de você
-                            </Badge>
+                            <div className="flex flex-wrap gap-1 mb-1">
+                              <Badge variant="secondary" className="text-[10px]">
+                                Precisa de você
+                              </Badge>
+                              {row.isCliente && (
+                                <Badge
+                                  variant="outline"
+                                  className="text-[10px] border-emerald-500/50 text-emerald-700 dark:text-emerald-400"
+                                >
+                                  Cliente
+                                </Badge>
+                              )}
+                              {row.doNotContact && (
+                                <Badge variant="destructive" className="text-[10px]">
+                                  Bloqueado
+                                </Badge>
+                              )}
+                            </div>
                             <div>
                               {formatHandoffReason(
                                 row.alertReason || row.botPausedReason || "handoff_humano",
@@ -506,16 +556,16 @@ export function HandoffLeadsDialog({
               <Button
                 type="button"
                 variant="outline"
-                className="w-full sm:w-auto text-muted-foreground"
-                disabled={busy || selectedIds.length === 0}
-                onClick={() => void forgetSelected(selectedIds)}
+                className="w-full sm:w-auto text-emerald-700 border-emerald-500/40"
+                disabled={busy || selectedLeadIds.length === 0}
+                onClick={() => void markAsClientSelected(selectedLeadIds)}
               >
                 {busy ? (
                   <Loader2 className="h-4 w-4 animate-spin mr-1" />
                 ) : (
-                  <UserMinus className="h-4 w-4 mr-1" />
+                  <UserCheck className="h-4 w-4 mr-1" />
                 )}
-                Esquecer
+                Já é cliente
               </Button>
               <Button
                 type="button"
@@ -599,9 +649,10 @@ export function HandoffLeadsBanner({
             {count} atendimento(s) pausado(s) — escolha o que fazer
           </span>
           <span className="block text-[11px] text-sky-900/80 dark:text-sky-100/80">
-            Clique no nome para ver a conversa.{" "}
+            Leads e clientes.{" "}
             <strong>Voltar ao acompanhamento</strong>,{" "}
-            <strong>Esquecer acompanhamento</strong> ou <strong>Bloquear</strong>.
+            <strong>Já é cliente</strong> (só leads) ou <strong>Bloquear</strong> (para automação;
+            handoff continua).
           </span>
         </div>
         <Button type="button" size="sm" className="h-8 text-xs" onClick={() => setOpen(true)}>

@@ -43,6 +43,7 @@ import { LeadSourceCard } from "../LeadSourceCard";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { AdsTile } from "./AdsTile";
 import { AdsButton } from "./AdsButton";
+import { GuideEntryButton } from "@/features/onboarding/GuideEntryButton";
 
 interface Props {
   consultantId: string;
@@ -100,7 +101,8 @@ export function AdsCentralTab({ consultantId }: Props) {
           <span className="ads-wordmark truncate">
             iGreen · <span className="text-primary">Anúncios</span>
           </span>
-          <span className="hidden xl:inline text-[11px] text-[hsl(var(--ads-muted))] ml-3 truncate">
+          <GuideEntryButton articleId="meta-ads" tone="alert" className="shrink-0" />
+          <span className="hidden xl:inline text-[11px] text-[hsl(var(--ads-muted))] ml-1 truncate">
             Anúncio inteligente = recomendado · Anúncio completo = você escolhe tudo.
           </span>
         </div>
@@ -134,6 +136,7 @@ export function AdsCentralTab({ consultantId }: Props) {
             size="sm"
             onClick={() => setSmartOpen(true)}
             title="Inteligente: cidade da sede + o sistema cuida do orçamento"
+            data-tour="ads-anuncio-inteligente"
           >
             <Brain className="w-3.5 h-3.5" />
             <span className="sm:hidden">Inteligente</span>
@@ -144,6 +147,7 @@ export function AdsCentralTab({ consultantId }: Props) {
             size="sm"
             onClick={() => setWizardOpen(true)}
             title="Completo: você escolhe cidade, textos e dias"
+            data-tour="ads-anuncio-completo"
           >
             <Plus className="w-3.5 h-3.5" />
             <span className="sm:hidden">Completo</span>
@@ -171,6 +175,7 @@ export function AdsCentralTab({ consultantId }: Props) {
                 size="nav"
                 active={view === n.id}
                 onClick={() => setView(n.id)}
+                data-tour={`ads-nav-${n.id}`}
               >
                 <Icon className="w-3.5 h-3.5" />
                 {n.label}

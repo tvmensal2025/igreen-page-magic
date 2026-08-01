@@ -60,6 +60,8 @@ interface WhatsAppTabProps {
   initialSubTab?: SubTab;
   initialAgentSubTab?: string | null;
   onSubTabConsumed?: () => void;
+  /** Notifica a sub-aba viva (topbar/?section= e tour). */
+  onActiveSubTabChange?: (sub: SubTab) => void;
   /** Vindo de Configurações → conectar outro número. */
   autoConnectOnMount?: boolean;
   onAutoConnectConsumed?: () => void;
@@ -91,6 +93,7 @@ export function WhatsAppTab({
   initialSubTab,
   initialAgentSubTab,
   onSubTabConsumed,
+  onActiveSubTabChange,
   autoConnectOnMount,
   onAutoConnectConsumed,
   onDismissConnectGate,
@@ -155,11 +158,22 @@ export function WhatsAppTab({
     userId,
   );
 
-  const [activeSubTab, setActiveSubTab] = useState<SubTab>(initialSubTab ?? "dashboard");
+  const [activeSubTab, setActiveSubTabState] = useState<SubTab>(initialSubTab ?? "dashboard");
+  const setActiveSubTab = useCallback((sub: SubTab) => {
+    setActiveSubTabState(sub);
+    onActiveSubTabChange?.(sub);
+  }, [onActiveSubTabChange]);
+
+  useEffect(() => {
+    onActiveSubTabChange?.(activeSubTab);
+    // só no mount / quando o pai monta o listener
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (!initialSubTab) return;
-    setActiveSubTab(initialSubTab);
+    setActiveSubTabState(initialSubTab);
+    onActiveSubTabChange?.(initialSubTab);
     onSubTabConsumed?.();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialSubTab]);
@@ -178,10 +192,17 @@ export function WhatsAppTab({
     if (connectionStatus === "connected") setGateSkipped(false);
   }, [connectionStatus]);
 
-  /** Pede QR sem logout. Canal já em QR/INIT/OFFLINE. */
+  /** Pede QR sem logout. Nunca chama /users/login se o canal já está AUTH. */
   const requestWhapiQrSafe = useCallback(async () => {
     setWhapiGateBusy(true);
     try {
+      // Confirma saúde antes — pedir QR com sessão viva pode derrubar o canal.
+      const live = await whapiHealth.refresh();
+      if (live === "AUTH") {
+        setWhapiGateQr(null);
+        setForceWhapiPanel(false);
+        return;
+      }
       const { data, error } = await supabase.functions.invoke("whapi-proxy", {
         body: { action: "request_qr", payload: {} },
       });
@@ -310,15 +331,21 @@ export function WhatsAppTab({
   /** Mobile com chat aberto: esconde chrome do módulo para dar espaço ao composer. */
   const immersiveChat = isCompactLayout && activeSubTab === "conversas" && !!selectedChatJid;
 
-  // Whapi: só exibir painel de reconexão no Dashboard quando o canal cair (não está AUTH).
-  const whapiDown = !!isWhapi && whapiHealth.lastCheckedAt !== null && whapiHealth.status !== "AUTH";
+  // Whapi: painel de reconexão só em queda confirmada (QR / OFFLINE após sticky).
+  // INIT/UNKNOWN/blip de rede NÃO contam — evita abrir QR toda hora.
+  const whapiDown =
+    !!isWhapi &&
+    whapiHealth.lastCheckedAt !== null &&
+    (whapiHealth.status === "QR" || whapiHealth.status === "OFFLINE");
   const showWhapiPanel = !!isWhapi && (whapiDown || forceWhapiPanel);
 
-  // Gate: só libera o módulo WhatsApp depois que o canal estiver realmente ligado.
-  // Whapi AUTH = ok; Evolution/Baileys = connectionStatus connected.
-  // Enquanto o 1º health_check não voltou, NÃO bloqueia com gate (evita flicker + QR loop).
+  // Gate: Whapi só bloqueia com QR/OFFLINE confirmado.
+  // AUTH sticky + 1º check pendente + INIT/UNKNOWN = módulo livre (rápido, sem loop).
   const channelReady = isWhapi
-    ? whapiHealth.status === "AUTH" || whapiHealth.lastCheckedAt === null
+    ? !(
+        whapiHealth.lastCheckedAt !== null &&
+        (whapiHealth.status === "QR" || whapiHealth.status === "OFFLINE")
+      )
     : connectionStatus === "connected";
   const showConnectGate = !channelReady && !gateSkipped;
 
@@ -421,6 +448,7 @@ export function WhatsAppTab({
               onClick={() => setActiveSubTab(tab.key)}
               aria-label={tab.label}
               aria-current={isActive ? "page" : undefined}
+              data-tour={`wa-tab-${tab.key}`}
               className={tabBtnClass(isActive)}
             >
               <Icon className={`h-3.5 w-3.5 shrink-0 transition-transform ${isActive ? "scale-110" : ""}`} />
@@ -441,7 +469,23 @@ export function WhatsAppTab({
 
         return (
           <>
-            <div className={`${navShell} lg:hidden`}>
+            {/* Âncoras sempre no DOM (mobile “Mais”): tour/prepare clica sem abrir o dropdown.
+                Sem aria-hidden — senão isElementTourVisible rejeita e o locate falha no celular. */}
+            <div className="pointer-events-none absolute h-0 w-0 overflow-visible" data-tour-anchors="wa-more">
+              {MOBILE_MORE_TABS.map((key) => (
+                <button
+                  key={`wa-tour-anchor-${key}`}
+                  type="button"
+                  tabIndex={-1}
+                  aria-label={`Abrir ${key} (tour)`}
+                  data-tour={`wa-tab-${key}`}
+                  data-tour-sentinel="1"
+                  className="pointer-events-auto absolute left-2 top-2 h-2 w-2 opacity-[0.02]"
+                  onClick={() => setActiveSubTab(key)}
+                />
+              ))}
+            </div>
+            <div className={`${navShell} lg:hidden`} data-tour="wa-subtabs">
               {SUB_TABS.filter((t) => MOBILE_PRIMARY_TABS.includes(t.key)).map((tab) =>
                 renderTabBtn(tab, tab.shortLabel),
               )}
@@ -450,6 +494,7 @@ export function WhatsAppTab({
                   <button
                     type="button"
                     aria-label="Mais opções do WhatsApp"
+                    data-tour="wa-tab-mais"
                     className={tabBtnClass(MOBILE_MORE_TABS.includes(activeSubTab))}
                   >
                     <MoreHorizontal className="h-3.5 w-3.5 shrink-0" />
@@ -463,6 +508,7 @@ export function WhatsAppTab({
                       <DropdownMenuItem
                         key={tab.key}
                         onClick={() => setActiveSubTab(tab.key)}
+                        data-tour={`wa-menu-${tab.key}`}
                         className={activeSubTab === tab.key ? "bg-primary/10 text-primary" : ""}
                       >
                         <Icon className="h-4 w-4 mr-2" />
@@ -480,11 +526,12 @@ export function WhatsAppTab({
               </DropdownMenu>
             </div>
 
-            <div className={`${navShell} hidden lg:flex`}>
+            <div className={`${navShell} hidden lg:flex relative`} data-tour="wa-subtabs">
               {SUB_TABS.map((tab) => renderTabBtn(tab, tab.label))}
               <Link
                 to="/admin/fluxos"
                 aria-label="Roteiros do bot"
+                data-tour="wa-roteiros"
                 className={`${tabBtnClass(false)} text-muted-foreground hover:text-foreground hover:bg-muted/40`}
               >
                 <Workflow className="h-3.5 w-3.5 shrink-0" />
@@ -504,7 +551,7 @@ export function WhatsAppTab({
           helpUrl={whapiHealth.helpUrl}
         />
         {activeSubTab === "dashboard" && (
-          <div className="p-3 space-y-3 overflow-y-auto h-full min-h-0 min-w-0">
+          <div className="p-3 space-y-3 overflow-y-auto h-full min-h-0 min-w-0" data-tour="wa-panel-dashboard">
             {showWhapiPanel && <WhapiConnectionPanel visible={true} />}
             <Suspense fallback={<LazyFallback />}>
               <WhatsAppDashboard consultantId={userId} />
@@ -518,7 +565,7 @@ export function WhatsAppTab({
           // (Evolution API lenta / instabilidade). O painel de QR Code só aparece
           // quando NÃO existe instância configurada (consultor novo).
           (isWhapi || (hasInstance && isConnected)) ? (
-            <div className="flex flex-col h-full min-h-0">
+            <div className="flex flex-col h-full min-h-0" data-tour="wa-panel-conversas">
               {!isConnected && (
                 <div className={`px-3 py-1 border-b text-[11px] flex items-center gap-2 shrink-0 ${fatalLocked ? "bg-destructive/10 border-destructive/20 text-destructive" : "bg-warning/10 border-warning/20 text-warning"}`}>
                   <div className={`h-1.5 w-1.5 rounded-full animate-pulse shrink-0 ${fatalLocked ? "bg-destructive" : "bg-warning"}`} />
@@ -533,6 +580,7 @@ export function WhatsAppTab({
                     <button
                       onClick={() => createAndConnect()}
                       disabled={isLoading}
+                      data-tour="wa-conectar"
                       className="ml-auto text-warning hover:underline font-medium shrink-0"
                       title="Conectar WhatsApp"
                     >
@@ -643,7 +691,7 @@ export function WhatsAppTab({
 
 
         {activeSubTab === "envio_massa" && (
-          <div className="p-3 overflow-auto h-full min-w-0">
+          <div className="p-3 overflow-auto h-full min-w-0" data-tour="wa-panel-envio_massa">
             {isConnected && instanceName ? (
               <Suspense fallback={<LazyFallback />}>
                 <BulkProPanel
@@ -662,7 +710,7 @@ export function WhatsAppTab({
         )}
 
         {activeSubTab === "templates" && (
-          <div className="p-3 overflow-auto h-full min-w-0">
+          <div className="p-3 overflow-auto h-full min-w-0" data-tour="wa-panel-templates">
             <Suspense fallback={<LazyFallback />}>
               <TemplateManager
                 templates={templates}
@@ -678,7 +726,7 @@ export function WhatsAppTab({
         )}
 
         {activeSubTab === "agendamentos" && (
-          <div className="p-3 overflow-auto h-full min-w-0">
+          <div className="p-3 overflow-auto h-full min-w-0" data-tour="wa-panel-agendamentos">
             <Suspense fallback={<LazyFallback />}>
               <SchedulePanel
                 consultantId={userId}
@@ -692,7 +740,7 @@ export function WhatsAppTab({
         )}
 
         {activeSubTab === "agente" && (
-          <div className="p-3 overflow-auto h-full min-w-0">
+          <div className="p-3 overflow-auto h-full min-w-0" data-tour="wa-panel-agente">
             <Suspense fallback={<LazyFallback />}>
               <AIAgentTab userId={userId} initialSubTab={initialAgentSubTab as any} />
             </Suspense>

@@ -68,8 +68,11 @@ export function TemplateManager({
                 <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary/20 to-primary/10 flex items-center justify-center border border-primary/20">
                   <Wand2 className="w-5 h-5 text-primary" />
                 </div>
-                <div className="flex-1">
-                  <h3 className="font-heading font-bold text-foreground text-lg">Templates</h3>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1">
+                    <h3 className="font-heading font-bold text-foreground text-lg">Templates</h3>
+                    {/* Ajuda fica no topo (GuideEntry) + FAB — evita segundo ? nesta tela */}
+                  </div>
                   <p className="text-xs text-muted-foreground">
                     Use os modelos públicos da plataforma ou crie os seus com sua voz, vídeo e imagem.
                   </p>
@@ -81,6 +84,9 @@ export function TemplateManager({
                 <button
                   type="button"
                   onClick={() => { setScope("publicos"); setShowCreate(false); }}
+                  data-tour="wa-templates-publicos"
+                  data-state={scope === "publicos" ? "active" : "inactive"}
+                  aria-pressed={scope === "publicos"}
                   className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                     scope === "publicos"
                       ? "bg-primary/15 text-primary border border-primary/30 shadow-sm"
@@ -94,6 +100,9 @@ export function TemplateManager({
                 <button
                   type="button"
                   onClick={() => setScope("meus")}
+                  data-tour="wa-templates-meus"
+                  data-state={scope === "meus" ? "active" : "inactive"}
+                  aria-pressed={scope === "meus"}
                   className={`flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-sm font-medium transition-all ${
                     scope === "meus"
                       ? "bg-primary/15 text-primary border border-primary/30 shadow-sm"
@@ -147,6 +156,7 @@ export function TemplateManager({
                 <Button
                   type="button"
                   onClick={() => setShowCreate(true)}
+                  data-tour="wa-criar-template"
                   className="w-full gap-2 bg-gradient-to-r from-primary to-primary hover:from-primary hover:to-primary text-white border-0"
                 >
                   <Plus className="w-4 h-4" />

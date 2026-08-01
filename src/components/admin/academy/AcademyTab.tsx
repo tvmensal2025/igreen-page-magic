@@ -310,7 +310,7 @@ export function AcademyTab() {
         </section>
 
         {/* catálogo em fileiras */}
-        <section id="academy-catalog" className="space-y-4">
+        <section id="academy-catalog" className="space-y-4" data-tour="academy-catalog">
           <div>
             <p className="text-[10px] font-bold tracking-[0.3em] uppercase"
                style={{ color: AC.primary, fontFamily: AC_FONT_DISPLAY }}>

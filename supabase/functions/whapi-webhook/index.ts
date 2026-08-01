@@ -11,6 +11,7 @@
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizePhone } from "../_shared/utils.ts";
+import { whapiExternalMessageIdCandidates } from "../_shared/outbound-delivery-reconcile.ts";
 import { createWhapiSender, parseWhapiMessage, resolveInboundConversationMeta } from "../_shared/whapi-api.ts";
 import { checkAndMarkProcessed, logStepTransition, jsonLog } from "../_shared/audit.ts";
 import { isRateLimited, RATE_LIMIT_MAX, RATE_LIMIT_WINDOW_MS } from "./_helpers.ts";
@@ -143,7 +144,8 @@ Deno.serve(async (req) => {
         if (s === "failed" || s === "error") return "failed";
         if (s === "pending" || s === "queued") return "queued";
         if (s === "delivered") return "delivered";
-        if (s === "read" || s === "played") return "read";
+        if (s === "played") return "played";
+        if (s === "read") return "read";
         if (s === "sent" || s === "accepted") return "sent";
         return s || "sent";
       };
@@ -153,10 +155,11 @@ Deno.serve(async (req) => {
         if (!mid) continue;
         const delivery = mapStatus(st?.status ?? st?.state);
         try {
+          const idCandidates = whapiExternalMessageIdCandidates(mid);
           const { data: convs } = await supabase
             .from("conversations")
             .select("id, delivery_status")
-            .eq("external_message_id", mid)
+            .in("external_message_id", idCandidates)
             .limit(5);
           for (const c of convs || []) {
             await supabase
@@ -167,7 +170,7 @@ Deno.serve(async (req) => {
           }
           const logStatus =
             delivery === "failed" ? "failed" : delivery === "queued" ? "queued" : "sent";
-          if (delivery === "delivered" || delivery === "read") {
+          if (delivery === "delivered" || delivery === "read" || delivery === "played") {
             await supabase
               .from("outbound_message_log")
               .update({ result_status: "sent" })

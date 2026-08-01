@@ -474,7 +474,7 @@ export function CustomerManager({
             </div>
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <Button onClick={() => setShowAddDialog(true)} size="sm" className="gap-1.5 rounded-xl font-semibold shadow-lg shadow-primary/15 h-9 px-3.5 text-sm">
+            <Button onClick={() => setShowAddDialog(true)} size="sm" className="gap-1.5 rounded-xl font-semibold shadow-lg shadow-primary/15 h-9 px-3.5 text-sm" data-tour="base-novo">
               <UserPlus className="w-4 h-4" /> <span>Novo</span><span className="hidden sm:inline">&nbsp;cliente</span>
             </Button>
             <DropdownMenu>
@@ -484,7 +484,7 @@ export function CustomerManager({
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-52">
-                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); if (!syncing && syncCooldown === 0) handleSyncIgreen(); }} disabled={syncing || syncCooldown > 0}>
+                <DropdownMenuItem onSelect={(e) => { e.preventDefault(); if (!syncing && syncCooldown === 0) handleSyncIgreen(); }} disabled={syncing || syncCooldown > 0} data-tour="base-sync-igreen">
                   {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                   {syncing ? "Sincronizando..." : syncCooldown > 0 ? `Aguarde ${syncCooldown}s` : "Sincronizar iGreen"}
                 </DropdownMenuItem>
@@ -508,7 +508,7 @@ export function CustomerManager({
         {/* Search & Filters — barra única consolidada */}
         <div className="px-4 sm:px-5 pt-3 sm:pt-4 pb-3 sm:pb-4 space-y-2.5">
           {/* Search bar */}
-          <div className="relative">
+          <div className="relative" data-tour="base-busca">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground/50" />
             <Input
               placeholder="Buscar nome, telefone, CPF, e-mail..."
@@ -519,7 +519,7 @@ export function CustomerManager({
           </div>
 
           {/* Linha única de 5 filtros */}
-          <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5" data-tour="base-filtros">
             <Combobox
               options={[
                 { value: "all", label: "📊 Todos os produtos" },
@@ -619,7 +619,7 @@ export function CustomerManager({
 
 
         {/* List with pagination */}
-        <div className="px-4 sm:px-5 pb-5">
+        <div className="px-4 sm:px-5 pb-5" data-tour="base-lista">
           <PaginatedList
             items={filtered}
             pageSize={20}

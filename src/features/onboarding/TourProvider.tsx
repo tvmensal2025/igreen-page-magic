@@ -8,15 +8,25 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ADMIN_TAB_CHANGED_EVENT, isAdminDashboardSurface } from "@/lib/adminDashboardSurface";
+import { getHelpArticleById } from "@/features/help/helpCatalog";
+import { resolveGuideSlugFromLocation } from "@/features/help/tabGuideMap";
+import {
+  CARD_RESERVE_BOTTOM,
+  CARD_WIDTH,
+  LOCATE_ATTEMPTS,
+  LOCATE_INTERVAL_MS,
+  clamp,
+  computeCardPlacement,
+  computeHighlight,
+  isMenuSelector,
+  isSidebarWhole,
+  prepareGuideTarget,
+  queryGuideTargetChain,
+  waitTourFrames,
+  type TargetRect,
+} from "./tourHighlight";
 
 const INTERNAL_ROUTES = ["/admin", "/ajuda", "/consultor", "/super-admin", "/experiments"];
-const TARGET_PADDING = 8;
-/** Abas do Admin demoram a montar após navigate — mais tentativas que o padrão antigo. */
-const LOCATE_ATTEMPTS = 24;
-const LOCATE_INTERVAL_MS = 300;
-/** Espaço reservado para o card quando ele fica embaixo (conteúdo longo). */
-const CARD_RESERVE_BOTTOM = 280;
-const CARD_WIDTH = 420;
 
 /** Bloco opcional `[[ALERT]]…[[/ALERT]]` no body do tour → callout visual. */
 function splitTourBody(body: string): { intro: string; alertTitle: string | null; alertBody: string | null } {
@@ -28,80 +38,6 @@ function splitTourBody(body: string): { intro: string; alertTitle: string | null
   const alertBody = nl === -1 ? null : alertRaw.slice(nl + 1).trim() || null;
   const intro = body.replace(match[0], "").replace(/\n{3,}/g, "\n\n").trim();
   return { intro, alertTitle: alertTitle || null, alertBody };
-}
-
-type TargetRect = { top: number; left: number; width: number; height: number };
-type CardPlacement = "bottom" | "right" | "left" | "top";
-
-function isMenuSelector(selector: string | null | undefined): boolean {
-  return !!selector && selector.includes("menu-");
-}
-
-function isSidebarWhole(selector: string | null | undefined): boolean {
-  return !!selector && selector.includes("menu-lateral");
-}
-
-function clamp(n: number, min: number, max: number) {
-  return Math.min(max, Math.max(min, n));
-}
-
-function computeHighlight(rect: DOMRect, selector: string | null | undefined): TargetRect {
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const menu = isMenuSelector(selector);
-  const wholeSidebar = isSidebarWhole(selector);
-
-  const rawTop = rect.top - TARGET_PADDING;
-  const rawLeft = rect.left - TARGET_PADDING;
-  const rawWidth = rect.width + TARGET_PADDING * 2;
-  const rawHeight = rect.height + TARGET_PADDING * 2;
-
-  // Menu lateral / itens do menu: nunca cortar o alvo — só encaixar na viewport.
-  // Conteúdo longo (dashboard etc.): limita altura para o card inferior continuar legível.
-  const maxHighlight = menu
-    ? vh - 16
-    : Math.max(160, vh - CARD_RESERVE_BOTTOM - 24);
-
-  const top = clamp(rawTop, 8, vh - 24);
-  const left = clamp(rawLeft, 8, vw - 24);
-  let width = Math.min(rawWidth, vw - left - 8);
-  let height = Math.min(rawHeight, maxHighlight, vh - top - 8);
-
-  // Sidebar inteira: destaca a coluna visível (sem estourar a direita / card).
-  if (wholeSidebar) {
-    const sideRoom = vw >= 900 ? CARD_WIDTH + 32 : 16;
-    width = Math.min(rawWidth, Math.max(120, vw - left - sideRoom));
-    // No mobile o card fica embaixo — reserva espaço pra não cobrir o destaque.
-    const bottomReserve = vw < 720 ? CARD_RESERVE_BOTTOM : 8;
-    height = Math.min(rawHeight, vh - top - bottomReserve);
-  }
-
-  // Itens do menu: garante highlight “inteiro” mesmo se o rect veio parcial por overflow.
-  if (menu && !wholeSidebar) {
-    height = Math.min(Math.max(rawHeight, rect.height + TARGET_PADDING * 2), vh - top - 8);
-    width = Math.min(Math.max(rawWidth, 160), vw - left - 8);
-  }
-
-  return { top, left, width: Math.max(40, width), height: Math.max(40, height) };
-}
-
-function computeCardPlacement(target: TargetRect | null, selector: string | null | undefined): CardPlacement {
-  if (!target) return "bottom";
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-  const menu = isMenuSelector(selector);
-
-  if (menu && vw >= 720) {
-    const rightSpace = vw - (target.left + target.width);
-    if (rightSpace >= CARD_WIDTH + 24) return "right";
-  }
-
-  const belowSpace = vh - (target.top + target.height);
-  if (belowSpace < CARD_RESERVE_BOTTOM && target.top > CARD_RESERVE_BOTTOM + 24) return "top";
-
-  if (!menu && target.left > vw * 0.55 && target.left - 24 >= CARD_WIDTH) return "left";
-
-  return "bottom";
 }
 
 export function TourProvider() {
@@ -181,52 +117,121 @@ export function TourProvider() {
     let timer = 0;
     let measureTimer = 0;
     let cancelled = false;
+    let lockedHard = false;
     const selector = current.selector;
+    const stepRoute = current?.route || current?.cta_href;
     const menuTarget = isMenuSelector(selector);
+    let activeMatched = selector;
 
-    const applyRect = (element: HTMLElement) => {
+    const applyRect = (element: HTMLElement, matchedSelector: string) => {
       if (cancelled) return;
       const rect = element.getBoundingClientRect();
       if (rect.width < 2 && rect.height < 2) {
-        if (attempts++ < LOCATE_ATTEMPTS) timer = window.setTimeout(locate, LOCATE_INTERVAL_MS);
+        if (attempts++ < LOCATE_ATTEMPTS) timer = window.setTimeout(() => void locate(), LOCATE_INTERVAL_MS);
         else setTargetRect(null);
         return;
       }
-      setTargetRect(computeHighlight(rect, selector));
+      activeMatched = matchedSelector;
+      setTargetRect(computeHighlight(rect, matchedSelector));
     };
 
-    const measure = (element: HTMLElement) => {
-      // Áreas grandes (ex.: Dashboard) alinham no topo; itens do menu centralizam no nav.
-      const preferTop = (selector || "").includes("dashboard") || isSidebarWhole(selector);
+    const measure = (element: HTMLElement, matchedSelector: string) => {
+      const preferTop =
+        matchedSelector.includes("dashboard") || isSidebarWhole(matchedSelector);
       element.scrollIntoView({
         behavior: "smooth",
         block: preferTop ? "nearest" : "center",
         inline: "nearest",
       });
-      // Sidebar tem transition 300ms ao expandir — espera antes de medir.
-      const delay = menuTarget ? 360 : 280;
-      measureTimer = window.setTimeout(() => applyRect(element), delay);
+      const delay = isMenuSelector(matchedSelector) ? 360 : 280;
+      measureTimer = window.setTimeout(() => applyRect(element, matchedSelector), delay);
     };
 
-    const locate = () => {
-      const element = document.querySelector<HTMLElement>(selector || "");
-      if (!element) {
-        if (attempts++ < LOCATE_ATTEMPTS) timer = window.setTimeout(locate, LOCATE_INTERVAL_MS);
-        else setTargetRect(null);
+    const locate = async () => {
+      if (cancelled || lockedHard) return;
+
+      prepareGuideTarget(selector);
+      await waitTourFrames(2);
+      if (cancelled || lockedHard) return;
+
+      const nearEnd = attempts >= LOCATE_ATTEMPTS - 6;
+
+      const preferred = queryGuideTargetChain(selector, stepRoute, {
+        prepare: true,
+        allowSoft: false,
+        allowSecondary: false,
+      });
+      if (preferred) {
+        lockedHard = true;
+        measure(preferred.element, preferred.matchedSelector);
         return;
       }
-      measure(element);
+
+      if (nearEnd) {
+        const secondary = queryGuideTargetChain(selector, stepRoute, {
+          prepare: false,
+          allowSoft: false,
+          allowSecondary: true,
+        });
+        if (secondary) {
+          lockedHard = true;
+          measure(secondary.element, secondary.matchedSelector);
+          return;
+        }
+      }
+
+      const soft = queryGuideTargetChain(selector, stepRoute, {
+        prepare: false,
+        allowSoft: true,
+        allowSecondary: false,
+      });
+      if (soft) {
+        activeMatched = soft.matchedSelector;
+        setTargetRect(computeHighlight(soft.element.getBoundingClientRect(), soft.matchedSelector));
+      }
+
+      if (attempts++ < LOCATE_ATTEMPTS) {
+        timer = window.setTimeout(() => void locate(), LOCATE_INTERVAL_MS);
+        return;
+      }
+
+      const lastSecondary = queryGuideTargetChain(selector, stepRoute, {
+        prepare: false,
+        allowSoft: false,
+        allowSecondary: true,
+      });
+      if (lastSecondary) {
+        lockedHard = true;
+        measure(lastSecondary.element, lastSecondary.matchedSelector);
+        return;
+      }
+      if (soft) {
+        lockedHard = true;
+        measure(soft.element, soft.matchedSelector);
+        return;
+      }
+      setTargetRect(null);
     };
 
-    // Pequeno atraso inicial para a rota/?tab= + expand do menu terminarem de renderizar
-    timer = window.setTimeout(locate, menuTarget ? 320 : 200);
+    timer = window.setTimeout(() => void locate(), menuTarget ? 320 : 200);
 
     let scrollDebounce = 0;
     const refresh = () => {
-      attempts = 0;
-      const element = document.querySelector<HTMLElement>(selector || "");
-      if (element) applyRect(element);
-      else locate();
+      if (cancelled) return;
+      const hard = queryGuideTargetChain(selector, stepRoute, {
+        prepare: false,
+        allowSoft: false,
+      });
+      if (hard) {
+        lockedHard = true;
+        applyRect(hard.element, hard.matchedSelector);
+      } else if (lockedHard) {
+        const still = queryGuideTargetChain(activeMatched, stepRoute, {
+          prepare: false,
+          allowSoft: true,
+        });
+        if (still) applyRect(still.element, still.matchedSelector);
+      }
       setViewportTick((t) => t + 1);
     };
     const onScroll = () => {
@@ -234,11 +239,18 @@ export function TourProvider() {
       scrollDebounce = window.setTimeout(refresh, 80);
     };
 
+    const mo = new MutationObserver(() => {
+      if (cancelled || lockedHard) return;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => void locate(), 160);
+    });
+    mo.observe(document.body, { childList: true, subtree: true });
+
     window.addEventListener("resize", refresh);
-    // Scroll do nav do sidebar (overflow) e da página deslocam o alvo.
     window.addEventListener("scroll", onScroll, true);
     return () => {
       cancelled = true;
+      mo.disconnect();
       window.clearTimeout(timer);
       window.clearTimeout(measureTimer);
       window.clearTimeout(scrollDebounce);
@@ -249,7 +261,6 @@ export function TourProvider() {
 
   const cardPlacement = useMemo(
     () => computeCardPlacement(targetRect, current?.selector),
-    // viewportTick força recalcular após resize/scroll
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [targetRect, current?.selector, viewportTick],
   );
@@ -286,9 +297,15 @@ export function TourProvider() {
     return { ...base, left: "50%", bottom: "1.25rem", transform: "translateX(-50%)" };
   }, [cardPlacement, targetRect]);
 
-  const [onDashboard, setOnDashboard] = useState(() => isAdminDashboardSurface(location.pathname));
+  const [onInternalHelpSurface, setOnInternalHelpSurface] = useState(() =>
+    INTERNAL_ROUTES.some((route) => location.pathname === route || location.pathname.startsWith(`${route}/`)),
+  );
   useEffect(() => {
-    const refresh = () => setOnDashboard(isAdminDashboardSurface(location.pathname));
+    const refresh = () => {
+      setOnInternalHelpSurface(
+        INTERNAL_ROUTES.some((route) => location.pathname === route || location.pathname.startsWith(`${route}/`)),
+      );
+    };
     refresh();
     window.addEventListener(ADMIN_TAB_CHANGED_EVENT, refresh);
     return () => window.removeEventListener(ADMIN_TAB_CHANGED_EVENT, refresh);
@@ -301,8 +318,21 @@ export function TourProvider() {
   const percentage = total > 0 ? ((index + 1) / total) * 100 : 0;
   const isLast = index >= total - 1;
   const guideActive = guide.active;
-  // FAB só no Dashboard — nas outras abas/rotas atrapalha o conteúdo
-  const showFab = !open && !guideActive && onDashboard;
+  // FAB clicável fora de tour/guia. Mantém âncora no DOM durante guia (fallback de highlight).
+  const showFabInteractive = !open && !guideActive && onInternalHelpSurface;
+  const showFabAnchor = showFabInteractive || open || !!guideActive;
+
+  const openPageGuide = () => {
+    const entry = document.querySelector<HTMLElement>('[data-tour="guide-entry"]');
+    if (entry) {
+      entry.click();
+      return;
+    }
+    const slug = resolveGuideSlugFromLocation(location.pathname, location.search);
+    const article = getHelpArticleById(slug);
+    if (article) guide.startGuide(article);
+    else navigate("/ajuda");
+  };
   const bodyParts = splitTourBody(current?.body || "");
 
   return (
@@ -397,22 +427,56 @@ export function TourProvider() {
         />
       )}
 
-      {showFab && (
-        <div className="fixed bottom-5 right-4 z-[90] sm:right-5" data-tour="help-fab">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="lg" className="h-14 w-14 rounded-full shadow-2xl transition-transform hover:scale-105" aria-label="Abrir opções de ajuda"><HelpCircle className="h-6 w-6" /></Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-72">
-              <DropdownMenuLabel>Como podemos ajudar?</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              {hasProgress && <DropdownMenuItem onClick={() => resume()}><Play className="mr-2 h-4 w-4" />Continuar orientação</DropdownMenuItem>}
-              <DropdownMenuItem onClick={() => restart()}><RefreshCw className="mr-2 h-4 w-4" />{hasProgress ? "Reiniciar orientação" : "Conhecer a plataforma"}</DropdownMenuItem>
-              <DropdownMenuItem onClick={() => navigate("/ajuda")}><BookOpen className="mr-2 h-4 w-4" />Buscar um passo a passo</DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={() => window.dispatchEvent(new CustomEvent("open-support-chat"))}><MessageCircle className="mr-2 h-4 w-4" />Perguntar ao suporte com IA</DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+      {showFabAnchor && (
+        <div
+          className={`fixed bottom-5 right-4 z-[90] sm:right-5 ${showFabInteractive ? "" : "pointer-events-none"}`}
+          data-tour="help-fab"
+          aria-hidden={!showFabInteractive}
+        >
+          {showFabInteractive ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="relative h-12 w-12 rounded-full border-border/80 bg-background/95 text-muted-foreground shadow-md backdrop-blur-sm hover:bg-muted hover:text-foreground"
+                  aria-label="Abrir ajuda"
+                  title="Ajuda — toque aqui"
+                >
+                  <HelpCircle className="h-6 w-6" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuLabel>Como podemos ajudar?</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={openPageGuide}>
+                  <HelpCircle className="mr-2 h-4 w-4" />
+                  Ajuda desta tela
+                </DropdownMenuItem>
+                {hasProgress && (
+                  <DropdownMenuItem onClick={() => resume()}>
+                    <Play className="mr-2 h-4 w-4" />
+                    Continuar orientação
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem onClick={() => restart()}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  {hasProgress ? "Reiniciar orientação" : "Conhecer a plataforma"}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate("/ajuda")}>
+                  <BookOpen className="mr-2 h-4 w-4" />
+                  Central de ajuda
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => window.dispatchEvent(new CustomEvent("open-support-chat"))}>
+                  <MessageCircle className="mr-2 h-4 w-4" />
+                  Perguntar ao suporte com IA
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <div className="h-12 w-12 rounded-full border border-border/50 bg-muted/40" />
+          )}
         </div>
       )}
     </>

@@ -206,7 +206,7 @@ export function useAgendamentosHub(consultantId: string) {
       const cadenceCustomers = enrichIds.length
         ? await supabase
             .from("customers")
-            .select("id, name, phone_whatsapp, customer_origin, status, conversation_step, portal_submitted_at, do_not_contact")
+            .select("id, name, phone_whatsapp, customer_origin, status, conversation_step, portal_submitted_at, do_not_contact, is_converted, pos_venda_stage, andamento_igreen, pos_venda_recadastro_at")
             .in("id", enrichIds)
         : { data: [] as Array<{
             id: string;
@@ -217,6 +217,10 @@ export function useAgendamentosHub(consultantId: string) {
             conversation_step: string | null;
             portal_submitted_at: string | null;
             do_not_contact: boolean | null;
+            is_converted: boolean | null;
+            pos_venda_stage: string | null;
+            andamento_igreen: string | null;
+            pos_venda_recadastro_at: string | null;
           }> };
 
       const custMap = new Map<string, {
@@ -227,6 +231,10 @@ export function useAgendamentosHub(consultantId: string) {
         conversation_step: string | null;
         portal_submitted_at: string | null;
         do_not_contact: boolean | null;
+        is_converted: boolean | null;
+        pos_venda_stage: string | null;
+        andamento_igreen: string | null;
+        pos_venda_recadastro_at: string | null;
       }>();
       for (const c of (cadenceCustomers.data || []) as Array<{
         id: string;
@@ -237,6 +245,10 @@ export function useAgendamentosHub(consultantId: string) {
         conversation_step: string | null;
         portal_submitted_at: string | null;
         do_not_contact: boolean | null;
+        is_converted: boolean | null;
+        pos_venda_stage: string | null;
+        andamento_igreen: string | null;
+        pos_venda_recadastro_at: string | null;
       }>) {
         custMap.set(c.id, {
           name: c.name,
@@ -246,6 +258,10 @@ export function useAgendamentosHub(consultantId: string) {
           conversation_step: c.conversation_step,
           portal_submitted_at: c.portal_submitted_at,
           do_not_contact: c.do_not_contact,
+          is_converted: c.is_converted,
+          pos_venda_stage: c.pos_venda_stage,
+          andamento_igreen: c.andamento_igreen,
+          pos_venda_recadastro_at: c.pos_venda_recadastro_at,
         });
       }
 

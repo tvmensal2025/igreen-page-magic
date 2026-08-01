@@ -1406,7 +1406,7 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
       </div>
 
       {/* Composer — shell reserva espaço quando a barra minimizada de captação está ativa */}
-      <div className="shrink-0 wa-message-composer-shell relative z-20 bg-card">
+      <div className="shrink-0 wa-message-composer-shell relative z-20 bg-card" data-tour="wa-composer">
       <MessageComposer
         onSend={async (text) => {
           stickToBottomRef.current = true;

@@ -81,11 +81,12 @@ const EVOLUTION_API_KEY = Deno.env.get("EVOLUTION_API_KEY") || "";
 // dispensa a verificação de posse para a invocação interna do webhook.
 const SERVICE_SHARED_SECRET = Deno.env.get("SERVICE_SHARED_SECRET") || "";
 
-type DeliveryStatus = "queued" | "sent" | "delivered" | "read" | "failed";
+type DeliveryStatus = "queued" | "sent" | "delivered" | "read" | "played" | "failed";
 
 function mapEvolutionDeliveryStatus(raw: unknown): { status: DeliveryStatus | null; error?: string } {
   const stNum = Number(raw);
   if (Number.isFinite(stNum)) {
+    if (stNum >= 5) return { status: "played" };
     if (stNum >= 4) return { status: "read" };
     if (stNum === 3) return { status: "delivered" };
     if (stNum === 2) return { status: "sent" };
@@ -98,7 +99,8 @@ function mapEvolutionDeliveryStatus(raw: unknown): { status: DeliveryStatus | nu
   if (["ERROR", "FAILED", "FAILURE", "SEND_ERROR", "UNDELIVERED"].includes(s)) {
     return { status: "failed", error: `Evolution returned ${s} ack` };
   }
-  if (s === "READ" || s === "PLAYED") return { status: "read" };
+  if (s === "PLAYED") return { status: "played" };
+  if (s === "READ") return { status: "read" };
   if (s === "DELIVERY_ACK" || s === "DELIVERED") return { status: "delivered" };
   if (s === "SERVER_ACK" || s === "SENT") return { status: "sent" };
   if (s === "PENDING") return { status: "queued" };
@@ -203,7 +205,7 @@ Deno.serve(async (req) => {
         }
 
         // Hierarchy used to prevent regression: never downgrade from a stronger ack.
-        const rank: Record<string, number> = { failed: 0, queued: 1, sent: 2, delivered: 3, read: 4 };
+        const rank: Record<string, number> = { failed: 0, queued: 1, sent: 2, delivered: 3, read: 4, played: 5 };
 
         for (const it of items) {
           const mids = extractMessageIdCandidates(it);

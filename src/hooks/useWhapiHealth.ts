@@ -38,6 +38,16 @@ export interface WhapiHealth {
 
 const POLL_MS_AUTH = 60_000;
 const POLL_MS_DOWN = 30_000;
+/** Falhas suaves seguidas antes de sair de AUTH (evita QR loop). */
+const AUTH_STICKY_FAILS = 3;
+
+/** Motivos que confirmam queda real do canal (pode abrir gate/QR). */
+const HARD_DOWN_REASONS = new Set<string>([
+  "unpaid",
+  "invalid_token",
+  "channel_not_found",
+  "channel_error",
+]);
 
 function normalize(raw: any): WhapiHealthStatus {
   const s = String(raw?.status || "").toUpperCase();
@@ -48,6 +58,12 @@ function normalize(raw: any): WhapiHealthStatus {
   if (s === "OFFLINE" || s === "ERROR") return "OFFLINE";
   if (!s) return "UNKNOWN";
   return "UNKNOWN";
+}
+
+function isHardDown(status: WhapiHealthStatus, reason: WhapiReasonCode): boolean {
+  if (status === "QR") return true;
+  if (status === "OFFLINE" && reason && HARD_DOWN_REASONS.has(reason)) return true;
+  return false;
 }
 
 export function useWhapiHealth(enabled: boolean): WhapiHealth & {
@@ -75,6 +91,9 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & {
     lastOutboundStatus: null,
   });
   const mountedRef = useRef(true);
+  /** Já confirmou AUTH nesta sessão — não demota por blip de rede. */
+  const stickyAuthRef = useRef(false);
+  const softFailRef = useRef(0);
 
   const refresh = useCallback(async (): Promise<WhapiHealthStatus | null> => {
     if (!enabled) return null;
@@ -85,7 +104,35 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & {
       });
       if (error) throw error;
       if (!mountedRef.current) return null;
-      const status = normalize(data);
+
+      const nextStatus = normalize(data);
+      const reasonCode = (data?.reasonCode ?? null) as WhapiReasonCode;
+      let status = nextStatus;
+
+      if (nextStatus === "AUTH") {
+        stickyAuthRef.current = true;
+        softFailRef.current = 0;
+        status = "AUTH";
+      } else if (stickyAuthRef.current) {
+        if (isHardDown(nextStatus, reasonCode)) {
+          stickyAuthRef.current = false;
+          softFailRef.current = 0;
+          status = nextStatus;
+        } else {
+          softFailRef.current += 1;
+          if (softFailRef.current < AUTH_STICKY_FAILS) {
+            // Mantém AUTH — falha transitória / INIT / rate limit.
+            status = "AUTH";
+          } else {
+            stickyAuthRef.current = false;
+            softFailRef.current = 0;
+            status = nextStatus;
+          }
+        }
+      } else {
+        softFailRef.current = 0;
+      }
+
       setHealth({
         status,
         statusCode: typeof data?.statusCode === "number" ? data.statusCode : null,
@@ -97,7 +144,7 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & {
         checking: false,
         lastCheckedAt: Date.now(),
         error: null,
-        reasonCode: (data?.reasonCode ?? null) as WhapiReasonCode,
+        reasonCode,
         reasonMessage: data?.reasonMessage ?? null,
         helpUrl: data?.helpUrl ?? null,
         deviceLikelyOffline: !!data?.device_likely_offline,
@@ -110,6 +157,22 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & {
       return status;
     } catch (e: any) {
       if (!mountedRef.current) return null;
+      // Rede/timeout: se já estava AUTH, não abre QR por um blip.
+      if (stickyAuthRef.current) {
+        softFailRef.current += 1;
+        if (softFailRef.current < AUTH_STICKY_FAILS) {
+          setHealth((h) => ({
+            ...h,
+            status: "AUTH",
+            checking: false,
+            lastCheckedAt: Date.now(),
+            error: e?.message || "Falha ao consultar canal WhatsApp",
+          }));
+          return "AUTH";
+        }
+        stickyAuthRef.current = false;
+        softFailRef.current = 0;
+      }
       setHealth((h) => ({
         ...h,
         status: "OFFLINE",
@@ -123,7 +186,13 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & {
 
   useEffect(() => {
     mountedRef.current = true;
-    if (!enabled) return () => { mountedRef.current = false; };
+    if (!enabled) {
+      stickyAuthRef.current = false;
+      softFailRef.current = 0;
+      return () => {
+        mountedRef.current = false;
+      };
+    }
     void refresh();
     // Intervalo adapta: AUTH = mais raro (menos carga); fora = 30s.
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -144,4 +213,3 @@ export function useWhapiHealth(enabled: boolean): WhapiHealth & {
 
   return { ...health, refresh };
 }
-

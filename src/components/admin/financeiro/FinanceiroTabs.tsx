@@ -32,6 +32,7 @@ export function FinanceiroTabs({ active, onChange, isAdmin }: Props) {
             type="button"
             role="tab"
             aria-selected={isActive}
+            data-tour={`fin-tab-${id}`}
             onClick={() => onChange(id)}
             className={`inline-flex items-center gap-2 px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 -mb-px transition-colors ${
               isActive

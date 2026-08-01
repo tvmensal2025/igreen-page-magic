@@ -330,7 +330,7 @@ export function AgendamentosZeroLeadPanel({
     const custIds = [...new Set(list.map((r) => r.customer_id).filter(Boolean))];
     const { data: custs } = custIds.length
       ? await supabase.from("customers").select(
-          "id, name, phone_whatsapp, consultant_id, customer_origin, status, do_not_contact, portal_submitted_at, electricity_bill_photo_url, electricity_bill_value, bill_data_confirmed_at, last_inbound_media_kind, last_inbound_media_at, conversation_step",
+          "id, name, phone_whatsapp, consultant_id, customer_origin, status, do_not_contact, portal_submitted_at, electricity_bill_photo_url, electricity_bill_value, bill_data_confirmed_at, last_inbound_media_kind, last_inbound_media_at, conversation_step, is_converted, pos_venda_stage, andamento_igreen, pos_venda_recadastro_at",
         ).in("id", custIds)
       : { data: [] as {
           id: string;
@@ -347,6 +347,10 @@ export function AgendamentosZeroLeadPanel({
           last_inbound_media_kind?: string | null;
           last_inbound_media_at?: string | null;
           conversation_step?: string | null;
+          is_converted?: boolean | null;
+          pos_venda_stage?: string | null;
+          andamento_igreen?: string | null;
+          pos_venda_recadastro_at?: string | null;
         }[] };
     const cmap = new Map((custs || []).map((c) => [c.id, c]));
     const now = Date.now();
@@ -362,6 +366,10 @@ export function AgendamentosZeroLeadPanel({
           do_not_contact: c.do_not_contact,
           paused_reason: r.paused_reason,
           active_cadence: !!r.next_action_at,
+          is_converted: c.is_converted,
+          pos_venda_stage: c.pos_venda_stage,
+          andamento_igreen: c.andamento_igreen,
+          pos_venda_recadastro_at: c.pos_venda_recadastro_at,
         })) return [];
         const phone = c?.phone_whatsapp || "";
         const billAttention = billAttentionFromCustomer(c);

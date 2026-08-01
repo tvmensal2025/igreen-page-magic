@@ -122,7 +122,7 @@ export function LinksTab({ slug, baseUrl, consultantId: consultantIdProp, onCopy
       {/* Abas internas */}
       <div className="flex gap-2 border-b border-border">
         <TabButton active={tab === "dashboard"} onClick={() => setTab("dashboard")} icon={<BarChart3 className="w-4 h-4" />} label="Resultados" />
-        <TabButton active={tab === "links"} onClick={() => setTab("links")} icon={<LinkIcon className="w-4 h-4" />} label="Meus Links" />
+        <TabButton active={tab === "links"} onClick={() => setTab("links")} icon={<LinkIcon className="w-4 h-4" />} label="Meus Links" data-tour="links-meus" />
       </div>
 
       {tab === "dashboard" ? (
@@ -131,13 +131,13 @@ export function LinksTab({ slug, baseUrl, consultantId: consultantIdProp, onCopy
         <div className="space-y-4">
           {/* Panfleto */}
           {onPanfletoOpen && (
-            <div className="bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl border border-primary/20 p-4 flex items-center gap-3">
+            <div className="bg-gradient-to-br from-primary/10 to-primary/5 rounded-2xl border border-primary/20 p-4 flex items-center gap-3" data-tour="links-panfleto">
               <span className="text-2xl">📄</span>
               <div className="flex-1 min-w-0">
                 <p className="font-heading font-bold text-foreground text-sm">Panfleto pra Gráfica</p>
                 <p className="text-[11px] text-muted-foreground">A5 com QR do seu WhatsApp. Imprima quantos quiser.</p>
               </div>
-              <Button size="sm" onClick={onPanfletoOpen} className="gap-1.5 shrink-0">
+              <Button size="sm" onClick={onPanfletoOpen} className="gap-1.5 shrink-0" data-tour="links-panfleto-gerar">
                 <FileText className="w-3.5 h-3.5" /> Gerar
               </Button>
             </div>
@@ -263,7 +263,7 @@ export function LinksTab({ slug, baseUrl, consultantId: consultantIdProp, onCopy
                             <Button size="sm" variant="ghost" className="h-7 w-7 p-0 shrink-0" title="QR Code" onClick={() => onQrOpen(trackedUrl, `${s.label} — ${page.label}`)}>
                               <QrCode className="w-3 h-3" />
                             </Button>
-                            <Button size="sm" variant="outline" className="h-7 px-2 text-[10px] shrink-0 rounded-lg" onClick={() => onCopy(trackedUrl)}>
+                            <Button size="sm" variant="outline" className="h-7 px-2 text-[10px] shrink-0 rounded-lg" onClick={() => onCopy(trackedUrl)} data-tour="links-copiar">
                               <Copy className="w-3 h-3 mr-1" /> Copiar
                             </Button>
                           </div>
@@ -371,10 +371,11 @@ function VersionTab({
   );
 }
 
-function TabButton({ active, onClick, icon, label }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string }) {
+function TabButton({ active, onClick, icon, label, "data-tour": dataTour }: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; "data-tour"?: string }) {
   return (
     <button
       onClick={onClick}
+      data-tour={dataTour}
       className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${active ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
     >
       {icon} {label}

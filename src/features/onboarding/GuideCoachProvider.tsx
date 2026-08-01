@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import type { HelpArticle } from "@/features/help/helpCatalog";
+import { resolveGuideSteps } from "@/features/help/helpCatalog";
 
 type GuideCoachState = {
   article: HelpArticle;
@@ -21,12 +22,24 @@ export function GuideCoachProvider({ children }: { children: ReactNode }) {
   const [active, setActive] = useState<GuideCoachState>(null);
 
   const startGuide = useCallback((article: HelpArticle) => {
-    const href = article.href || "/admin";
-    if (!href.startsWith("http") && typeof window !== "undefined") {
-      const destination = new URL(href, window.location.origin);
+    const steps = resolveGuideSteps(article);
+    const firstRoute = steps[0]?.route || article.href || "/admin";
+    if (!firstRoute.startsWith("http") && typeof window !== "undefined") {
+      const destination = new URL(firstRoute, window.location.origin);
+      const tab = destination.searchParams.get("tab") || "dashboard";
+      const section = destination.searchParams.get("section") || undefined;
+      const hubTab = destination.searchParams.get("hubTab") || undefined;
+      window.dispatchEvent(
+        new CustomEvent("igreen-admin-nav", {
+          detail: { tab, whatsappSub: section, hubTab },
+        }),
+      );
       const current = `${window.location.pathname}${window.location.search}`;
       const target = `${destination.pathname}${destination.search}`;
       if (current !== target) navigate(target);
+    }
+    if (steps[0]?.selector?.includes("menu-")) {
+      window.dispatchEvent(new CustomEvent("igreen-open-sidebar"));
     }
     setActive({ article, stepIndex: 0 });
   }, [navigate]);

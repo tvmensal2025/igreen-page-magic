@@ -276,7 +276,10 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
   if (leads.length === 0) return null;
 
   return (
-    <div className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4">
+    <div
+      className="mb-4 rounded-xl border border-amber-500/40 bg-amber-500/5 p-4"
+      data-tour="parceiros-revisao"
+    >
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />

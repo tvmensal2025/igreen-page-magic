@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   hasUsableHandoffPhone,
   isHandoffBotPauseReason,
+  isHandoffClienteNotLead,
   classifyPauseReason,
   formatHandoffReason,
 } from "./handoffReturnToPizza";
@@ -18,6 +19,55 @@ describe("isHandoffBotPauseReason", () => {
     expect(isHandoffBotPauseReason("opt_out")).toBe(false);
     expect(isHandoffBotPauseReason("complaint")).toBe(false);
     expect(isHandoffBotPauseReason("attendance_rated")).toBe(false);
+  });
+});
+
+describe("isHandoffClienteNotLead", () => {
+  it("carteira igreen_sync não é lead", () => {
+    expect(
+      isHandoffClienteNotLead({
+        id: "1",
+        name: "Osmar",
+        phone_whatsapp: "553496646917",
+        conversation_step: null,
+        bot_paused: true,
+        bot_paused_reason: "humano_assumiu",
+        customer_origin: "igreen_sync",
+        status: "approved",
+        andamento_igreen: "validado",
+        pos_venda_stage: "aprovado",
+      }),
+    ).toBe(true);
+  });
+
+  it("lead whatsapp não é cliente", () => {
+    expect(
+      isHandoffClienteNotLead({
+        id: "2",
+        name: "Novo",
+        phone_whatsapp: "5511999999999",
+        conversation_step: "a1",
+        bot_paused: true,
+        bot_paused_reason: "humano_assumiu",
+        customer_origin: "whatsapp_lead",
+        status: "pending",
+      }),
+    ).toBe(false);
+  });
+
+  it("is_converted = true não é lead", () => {
+    expect(
+      isHandoffClienteNotLead({
+        id: "3",
+        name: "Convertido",
+        phone_whatsapp: "5511888888888",
+        conversation_step: null,
+        bot_paused: false,
+        bot_paused_reason: null,
+        customer_origin: "whatsapp_lead",
+        is_converted: true,
+      }),
+    ).toBe(true);
   });
 });
 

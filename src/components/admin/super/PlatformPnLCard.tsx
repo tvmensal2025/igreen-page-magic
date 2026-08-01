@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { toUserFacingError } from "@/lib/userFacingError";
 
 type PnL = {
   gross_topped_up_cents: number;
@@ -51,7 +52,13 @@ export function PlatformPnLCard() {
       setPnl(((pnlData as any[]) || [])[0] || null);
       setSettings(sData as any);
     } catch (e) {
-      toast({ title: "Erro ao carregar P&L", description: (e as Error).message, variant: "destructive" });
+      console.error("[PlatformPnLCard] load", e);
+      toast({
+        title: "Não foi possível carregar o lucro da plataforma",
+        description: toUserFacingError(e, "Tente atualizar em alguns segundos."),
+        variant: "destructive",
+        duration: 14000,
+      });
     } finally {
       setLoading(false);
     }
@@ -74,7 +81,13 @@ export function PlatformPnLCard() {
       if (error) throw error;
       toast({ title: "Configurações salvas" });
     } catch (e) {
-      toast({ title: "Erro ao salvar", description: (e as Error).message, variant: "destructive" });
+      console.error("[PlatformPnLCard] saveSettings", e);
+      toast({
+        title: "Não foi possível salvar",
+        description: toUserFacingError(e),
+        variant: "destructive",
+        duration: 14000,
+      });
     } finally { setSaving(false); }
   }
 
@@ -102,11 +115,11 @@ export function PlatformPnLCard() {
         <Stat label="Taxas Stripe" value={pnl ? `- ${fmt(pnl.stripe_fees_cents)}` : "—"} icon={TrendingDown} negative />
         <Stat label="Líquido recebido" value={pnl ? fmt(pnl.net_received_cents) : "—"} icon={DollarSign} />
         <Stat label="Estornos" value={pnl ? `- ${fmt(pnl.refunds_cents)}` : "—"} icon={TrendingDown} negative />
-        <Stat label="Gasto bruto Meta" value={pnl ? `- ${fmt(pnl.gross_meta_spend_cents)}` : "—"} icon={TrendingDown} negative />
+        <Stat label="Gasto bruto Meta (anúncios)" value={pnl ? `- ${fmt(pnl.gross_meta_spend_cents)}` : "—"} icon={TrendingDown} negative />
         <Stat label="Cobrado dos consultores" value={pnl ? fmt(pnl.charged_to_consultants_cents) : "—"} icon={DollarSign} />
-        <Stat label="Margem (markup)" value={pnl ? fmt(pnl.margin_cents) : "—"} icon={TrendingUp} positive />
+        <Stat label="Margem da plataforma" value={pnl ? fmt(pnl.margin_cents) : "—"} icon={TrendingUp} positive />
         <Stat
-          label="LUCRO LÍQUIDO"
+          label="Lucro líquido da plataforma"
           value={pnl ? fmt(pnl.net_profit_cents) : "—"}
           icon={TrendingUp}
           positive={pnl ? pnl.net_profit_cents >= 0 : false}

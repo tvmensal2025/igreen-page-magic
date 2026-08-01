@@ -42,7 +42,7 @@ export function WhatsAppConnectGate({
   error,
   fatalLocked = false,
   phoneNumber,
-  whapiStatusLabel: _whapiStatusLabel,
+  whapiStatusLabel,
   whapiQrImage,
   onConnect,
   onRefreshQr,
@@ -57,27 +57,32 @@ export function WhatsAppConnectGate({
   const displayQr = isWhapi ? whapiQrImage : qrCode;
   const hasQr = !!displayQr;
   const userError = error && !isTechnicalNoise(error) ? error : null;
+  const alreadyConnected =
+    connectionStatus === "connected" ||
+    (isWhapi && String(whapiStatusLabel || "").toUpperCase() === "AUTH");
 
   const startPairing = () => {
+    if (alreadyConnected) return;
     setPhase("working");
     if (isWhapi) return onWhapiReauth?.();
     return onConnect();
   };
 
   // Conta nova / gate aberto → pede o código sozinho.
+  // Se já conectado (Whapi AUTH), NÃO dispara QR.
   useEffect(() => {
     if (!open || fatalLocked) return;
-    if (connectionStatus === "connected") return;
+    if (alreadyConnected) return;
     if (hasQr || isLoading) return;
     if (startedRef.current) return;
     startedRef.current = true;
     void startPairing();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, fatalLocked, isWhapi, connectionStatus, hasQr, isLoading]);
+  }, [open, fatalLocked, isWhapi, alreadyConnected, hasQr, isLoading]);
 
   // Ruído técnico ("outra aba") ou falha → retry automático (máx 3).
   useEffect(() => {
-    if (!open || fatalLocked || hasQr || isLoading) return;
+    if (!open || fatalLocked || hasQr || isLoading || alreadyConnected) return;
     if (!startedRef.current) return;
     if (retryCountRef.current >= 3) {
       setPhase("failed");
@@ -91,7 +96,7 @@ export function WhatsAppConnectGate({
     }, 1100);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, fatalLocked, hasQr, isLoading, error]);
+  }, [open, fatalLocked, hasQr, isLoading, error, alreadyConnected]);
 
   // Se loading terminou sem QR e sem mais retries → falhou.
   useEffect(() => {
@@ -125,7 +130,7 @@ export function WhatsAppConnectGate({
     (isLoading || phase === "working" || (startedRef.current && retryCountRef.current < 3 && phase !== "failed"));
 
   const handleRefresh = async () => {
-    if (refreshCooldown > 0 || fatalLocked) return;
+    if (refreshCooldown > 0 || fatalLocked || alreadyConnected) return;
     setRefreshCooldown(30);
     setPhase("working");
     if (isWhapi) await onWhapiReauth?.();
@@ -133,6 +138,7 @@ export function WhatsAppConnectGate({
   };
 
   const handleManualStart = () => {
+    if (alreadyConnected) return;
     retryCountRef.current = 0;
     startedRef.current = true;
     setPhase("working");
@@ -191,7 +197,7 @@ export function WhatsAppConnectGate({
             </div>
           ) : showingQr ? (
             <div className="flex flex-col items-center gap-4">
-              <div className="rounded-2xl border-2 border-primary/20 bg-white p-3 shadow-sm">
+              <div className="rounded-2xl border-2 border-primary/20 bg-white p-3 shadow-sm" data-tour="wa-qr">
                 <img
                   src={
                     displayQr!.startsWith("data:") || displayQr!.startsWith("http")
@@ -247,13 +253,14 @@ export function WhatsAppConnectGate({
                     : "Pronto para conectar seu WhatsApp."}
               </p>
               <div className="flex flex-col sm:flex-row gap-2 w-full max-w-xs">
-                <Button
-                  type="button"
-                  className="flex-1 gap-2 rounded-xl h-11 font-semibold"
-                  style={{ background: "var(--gradient-green)" }}
-                  disabled={isLoading}
-                  onClick={handleManualStart}
-                >
+                  <Button
+                    type="button"
+                    className="flex-1 gap-2 rounded-xl h-11 font-semibold"
+                    style={{ background: "var(--gradient-green)" }}
+                    disabled={isLoading}
+                    onClick={handleManualStart}
+                    data-tour="wa-conectar"
+                  >
                   {isLoading ? (
                     <Loader2 className="w-4 h-4 animate-spin" />
                   ) : (

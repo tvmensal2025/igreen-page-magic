@@ -6,11 +6,12 @@
  *   - Comércio (nome do comércio, cidade, endereço, horário) — com/sem vinheta
  *   - Texto livre (corpo fixo + nome opcional só na frente)
  *
- * Vozes ElevenLabs: Sofia, Diego, Rafael — Mutirão/Comércio padrão Diego; Texto livre Sofia.
+ * Vozes ElevenLabs: Sofia e Diego (públicas). Rafael é PRIVADA (só SuperAdmin)
+ * e nunca entra na biblioteca pública.
  * Modelo: sempre Eleven v3 (expressivo).
  *
  * Cada áudio gerado é salvo em `audio_library` (privado) e pode ser publicado
- * para que qualquer consultor reaproveite via busca por cidade.
+ * para que qualquer consultor reaproveite via busca por cidade (exceto voz Rafael).
  *
  * Cache TTS continua em 3 camadas: in-memory → IndexedDB → bucket tts-cache.
  * Áudios reaproveitados da biblioteca pública tocam direto do MP3 já gerado
@@ -47,14 +48,19 @@ const VOICE_SOFIA = "EJV7H2baGt5ab95tOoSG";
 const VOICE_DIEGO = "rpNe0HOx7heUulPiOEaG";
 const VOICE_RAFAEL = "9qVywhT8Ja45eyJbO8lc";
 const VOICES = [
-  { id: VOICE_SOFIA, label: "Sofia" },
-  { id: VOICE_DIEGO, label: "Diego" },
-  { id: VOICE_RAFAEL, label: "Rafael" },
+  { id: VOICE_SOFIA, label: "Sofia", private: false },
+  { id: VOICE_DIEGO, label: "Diego", private: false },
+  /** Voz do dono — só SuperAdmin; nunca publicar na biblioteca pública. */
+  { id: VOICE_RAFAEL, label: "Rafael", private: true },
 ] as const;
 type VoiceId = (typeof VOICES)[number]["id"];
 
 function isKnownVoiceId(id: string | undefined | null): id is VoiceId {
   return VOICES.some((v) => v.id === id);
+}
+
+function isPrivateVoice(id: string | null | undefined): boolean {
+  return id === VOICE_RAFAEL;
 }
 
 function voiceLabelOf(id: string | null | undefined): string {
@@ -561,13 +567,36 @@ export function AudioStudio({ userId }: { userId: string }) {
     return "mutirao";
   });
   const [voiceId, setVoiceId] = useState<VoiceId>(() => {
-    if (isKnownVoiceId(initialDraft?.voiceId)) return initialDraft.voiceId;
+    // No 1º paint o role ainda não carregou — nunca inicia em voz privada pelo draft.
+    if (isKnownVoiceId(initialDraft?.voiceId) && !isPrivateVoice(initialDraft.voiceId)) {
+      return initialDraft.voiceId;
+    }
     const k = initialDraft?.kind;
     const kind0: Kind = k === "comercio" || k === "livre" || k === "mutirao" ? k : "mutirao";
     return defaultVoiceForKind(kind0);
   });
   // Regra: sempre eleven_v3 (melhor expressividade; v2 só existe no código legado).
   const [modelId] = useState<TtsModelId>(MODEL_V3);
+
+  // Voz Rafael = privada: some da UI e cai para o padrão se o consultor não for SuperAdmin.
+  // SuperAdmin: restaura Rafael do draft uma única vez após o role carregar.
+  const restoredPrivateDraftRef = useRef(false);
+  useEffect(() => {
+    if (!isSuperAdmin) {
+      if (isPrivateVoice(voiceId)) setVoiceId(defaultVoiceForKind(kind));
+      return;
+    }
+    if (
+      !restoredPrivateDraftRef.current &&
+      isKnownVoiceId(initialDraft?.voiceId) &&
+      isPrivateVoice(initialDraft.voiceId)
+    ) {
+      restoredPrivateDraftRef.current = true;
+      setVoiceId(initialDraft.voiceId);
+    }
+  }, [isSuperAdmin, voiceId, kind, initialDraft?.voiceId]);
+
+  const visibleVoices = VOICES.filter((v) => !v.private || isSuperAdmin);
 
   // Form (compartilhado entre as duas variantes)
   const [cidade,     setCidade]     = useState(() => initialDraft?.cidade ?? "");
@@ -848,6 +877,8 @@ export function AudioStudio({ userId }: { userId: string }) {
         supabase.from("audio_library").select("*").eq("consultant_id", userId).eq("kind", kind).order("created_at", { ascending: false }).limit(50).then(r => r),
         (() => {
           let q = supabase.from("audio_library").select("*").eq("is_public", true).eq("kind", kind);
+          // Voz Rafael nunca aparece na biblioteca pública para consultores.
+          if (!isSuperAdmin) q = q.neq("voice_id", VOICE_RAFAEL);
           if (term) q = q.ilike("city", `%${term}%`);
           return q.order("play_count", { ascending: false }).order("created_at", { ascending: false }).limit(50).then(r => r);
         })(),
@@ -899,10 +930,12 @@ export function AudioStudio({ userId }: { userId: string }) {
         }
       }
 
-      const pub = await supabase
+      let pubQ = supabase
         .from("audio_library").select("*")
-        .eq("is_public", true).eq("kind", kind).eq("audio_hash", fullHash)
-        .order("play_count", { ascending: false }).limit(1).maybeSingle();
+        .eq("is_public", true).eq("kind", kind).eq("audio_hash", fullHash);
+      // Não reaproveitar áudio público com voz Rafael para quem não é SuperAdmin.
+      if (!isSuperAdmin) pubQ = pubQ.neq("voice_id", VOICE_RAFAEL);
+      const pub = await pubQ.order("play_count", { ascending: false }).limit(1).maybeSingle();
       if (pub.data) {
         const src = pub.data as AudioRow;
         // Grava no histórico do consultor reusando o MP3 já existente (0 token, 0 upload).
@@ -1089,6 +1122,14 @@ export function AudioStudio({ userId }: { userId: string }) {
 
   const publishCurrent = async () => {
     if (!lastRowId) return;
+    if (isPrivateVoice(voiceId)) {
+      toast({
+        title: "Voz Rafael é privada",
+        description: "Áudios com esta voz não podem ir para a biblioteca pública.",
+        variant: "destructive",
+      });
+      return;
+    }
     const { error } = await supabase.from("audio_library").update({ is_public: true }).eq("id", lastRowId);
     if (error) { toast({ title: "Erro ao publicar", description: error.message, variant: "destructive" }); return; }
     setLastIsPublic(true);
@@ -1157,6 +1198,15 @@ export function AudioStudio({ userId }: { userId: string }) {
   };
 
   const togglePublishRow = async (row: AudioRow) => {
+    const makingPublic = !row.is_public;
+    if (makingPublic && isPrivateVoice(row.voice_id)) {
+      toast({
+        title: "Voz Rafael é privada",
+        description: "Este áudio não pode ser publicado para outros consultores.",
+        variant: "destructive",
+      });
+      return;
+    }
     const { error } = await supabase.from("audio_library").update({ is_public: !row.is_public }).eq("id", row.id);
     if (error) { toast({ title: "Erro", description: error.message, variant: "destructive" }); return; }
     toast({ title: row.is_public ? "Áudio retirado da biblioteca pública" : "🌎 Publicado!" });
@@ -1307,6 +1357,7 @@ export function AudioStudio({ userId }: { userId: string }) {
                 <button
                   key={t.id}
                   type="button"
+                  data-tour={`audio-tipo-${t.id}`}
                   onClick={() => {
                     setKind(t.id);
                     setVoiceId(defaultVoiceForKind(t.id));
@@ -1327,13 +1378,14 @@ export function AudioStudio({ userId }: { userId: string }) {
           <div className="flex items-center gap-1.5 sm:gap-2">
             <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground shrink-0 w-7 sm:w-auto">Voz</span>
             <div className="flex gap-1 sm:gap-1.5 flex-1">
-              {VOICES.map((v) => {
+              {visibleVoices.map((v) => {
                 const active = voiceId === v.id;
                 return (
                   <button
                     key={v.id}
                     type="button"
                     onClick={() => setVoiceId(v.id)}
+                    title={v.private ? "Voz privada (só SuperAdmin)" : undefined}
                     className={`flex-1 h-8 sm:h-9 px-2 sm:px-3 rounded-lg text-[11px] sm:text-xs font-semibold transition-all ${
                       active
                         ? "bg-foreground text-background"
@@ -1341,6 +1393,7 @@ export function AudioStudio({ userId }: { userId: string }) {
                     }`}
                   >
                     {v.label}
+                    {v.private ? <Lock className="inline w-3 h-3 ml-1 opacity-70" /> : null}
                   </button>
                 );
               })}
@@ -1584,6 +1637,7 @@ export function AudioStudio({ userId }: { userId: string }) {
             <Button
               onClick={handleGenerate}
               disabled={generating}
+              data-tour="audio-gerar"
               className="w-full h-12 sm:h-14 text-sm sm:text-base font-bold rounded-xl sm:rounded-2xl gap-2 bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/25"
             >
               {generating ? (
@@ -1652,6 +1706,7 @@ export function AudioStudio({ userId }: { userId: string }) {
                 {/* DOWNLOAD UNIFICADO — Mutirão/Comércio baixam as 2 versões */}
                 <Button
                   onClick={handleDownload}
+                  data-tour="audio-baixar"
                   className="w-full h-12 font-semibold rounded-xl gap-2 bg-primary hover:bg-primary/90 text-primary-foreground"
                 >
                   <Download className="w-4 h-4" />
@@ -1707,7 +1762,7 @@ export function AudioStudio({ userId }: { userId: string }) {
                   </Button>
                 )}
 
-                {lastRowId && (
+                {lastRowId && !isPrivateVoice(voiceId) && (
                   <Button
                     onClick={publishCurrent}
                     disabled={lastIsPublic}
@@ -1720,6 +1775,11 @@ export function AudioStudio({ userId }: { userId: string }) {
                       <><Upload className="w-3.5 h-3.5" /> Publicar para outros consultores</>
                     )}
                   </Button>
+                )}
+                {lastRowId && isPrivateVoice(voiceId) && (
+                  <p className="text-[11px] text-center text-muted-foreground flex items-center justify-center gap-1.5">
+                    <Lock className="w-3 h-3" /> Voz Rafael é privada — não publica na biblioteca
+                  </p>
                 )}
 
                 <button
@@ -1875,13 +1935,22 @@ export function AudioStudio({ userId }: { userId: string }) {
                       </button>
                       {libTab === "mine" && (
                         <>
-                          <button
-                            onClick={() => togglePublishRow(row)}
-                            title={row.is_public ? "Despublicar" : "Publicar"}
-                            className="h-8 px-2.5 rounded-lg bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground text-[11px] flex items-center justify-center"
-                          >
-                            {row.is_public ? <Lock className="w-3 h-3" /> : <Upload className="w-3 h-3" />}
-                          </button>
+                          {isPrivateVoice(row.voice_id) && !row.is_public ? (
+                            <span
+                              className="h-8 px-2.5 rounded-lg bg-muted/20 text-muted-foreground text-[11px] inline-flex items-center justify-center"
+                              title="Voz Rafael é privada — não publica"
+                            >
+                              <Lock className="w-3 h-3" />
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => togglePublishRow(row)}
+                              title={row.is_public ? "Despublicar" : "Publicar"}
+                              className="h-8 px-2.5 rounded-lg bg-muted/40 hover:bg-muted text-muted-foreground hover:text-foreground text-[11px] flex items-center justify-center"
+                            >
+                              {row.is_public ? <Lock className="w-3 h-3" /> : <Upload className="w-3 h-3" />}
+                            </button>
+                          )}
                           <button
                             onClick={() => deleteRow(row)}
                             title="Apagar"

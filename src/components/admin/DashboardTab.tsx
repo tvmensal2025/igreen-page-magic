@@ -556,23 +556,23 @@ export function DashboardTab({
     <div ref={dashboardRef} className="space-y-6" data-tour="dashboard">
 
       {/* TOOLBAR */}
-      <div className="flex items-center justify-between gap-1.5 flex-wrap p-1.5 rounded-xl bg-card/40 border border-border/40 backdrop-blur">
+      <div className="flex items-center justify-between gap-1.5 flex-wrap p-1.5 rounded-xl bg-card/40 border border-border/40 backdrop-blur" data-tour="painel-toolbar">
         <div className="flex items-center gap-1.5 flex-wrap min-w-0">
           <Select value={selectedLicenciado} onValueChange={setSelectedLicenciado}>
-            <SelectTrigger className="h-7 w-[150px] sm:w-[180px] text-[11px] px-2"><Filter className="w-3 h-3 mr-1 shrink-0" /><SelectValue placeholder="Licenciado" /></SelectTrigger>
+            <SelectTrigger className="h-7 w-[150px] sm:w-[180px] text-[11px] px-2" data-tour="painel-escopo"><Filter className="w-3 h-3 mr-1 shrink-0" /><SelectValue placeholder="Licenciado" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos os Licenciados</SelectItem>
               {licenciadoOptions.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={handleDashboardSync} disabled={syncingDashboard || syncCooldown > 0} className="h-7 text-[11px] px-2 gap-1" title="Sincronizar TODAS as contas iGreen (lista completa de clientes)">
+          <Button variant="outline" size="sm" onClick={handleDashboardSync} disabled={syncingDashboard || syncCooldown > 0} className="h-7 text-[11px] px-2 gap-1" title="Sincronizar TODAS as contas iGreen (lista completa de clientes)" data-tour="painel-sync">
             {syncingDashboard ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
             <span className="hidden lg:inline">{syncingDashboard ? "Sincronizando..." : syncCooldown > 0 ? `${syncCooldown}s` : "Sincronizar"}</span>
           </Button>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
           <Select value={String(periodDays)} onValueChange={(v) => onPeriodChange(Number(v))}>
-            <SelectTrigger className="h-7 w-[110px] text-[11px] px-2"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-7 w-[110px] text-[11px] px-2" data-tour="painel-periodo"><SelectValue /></SelectTrigger>
             <SelectContent>
               <SelectItem value="7">Últimos 7 dias</SelectItem>
               <SelectItem value="15">Últimos 15 dias</SelectItem>
@@ -580,7 +580,7 @@ export function DashboardTab({
               <SelectItem value="90">Últimos 90 dias</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={exporting} className="h-7 text-[11px] px-2 gap-1" title="Exportar PDF">
+          <Button variant="outline" size="sm" onClick={handleExportPdf} disabled={exporting} className="h-7 text-[11px] px-2 gap-1" title="Exportar PDF" data-tour="painel-export-pdf">
             {exporting ? <Loader2 className="w-3 h-3 animate-spin" /> : <FileDown className="w-3 h-3" />}
             <span className="hidden lg:inline">{exporting ? "Gerando..." : "PDF"}</span>
           </Button>
@@ -642,7 +642,7 @@ export function DashboardTab({
       })()}
 
       {/* CLIENTES iGREEN — 4 cards (2 cols no mobile modo PC; 4 no md+) */}
-      <div className="grid grid-cols-1 min-[380px]:grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4 min-w-0">
+      <div className="grid grid-cols-1 min-[380px]:grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4 min-w-0" data-tour="painel-kpis">
         <StatCard icon={<Users className="w-5 h-5" />} label="Total de cadastros" value={filteredMetrics?.totalCustomers ?? 0} color="primary" />
         <StatCard icon={<Zap className="w-5 h-5" />} label="Média kWh/cliente" value={`${(filteredMetrics?.avgKw ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kW`} color="accent" subtitle={`Total: ${(filteredMetrics?.totalKw ?? 0).toLocaleString("pt-BR")} kW`} />
         <StatCard

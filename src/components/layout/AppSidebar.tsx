@@ -24,6 +24,7 @@ import {
   CircleHelp,
   Shield,
   Rocket,
+  Wallet,
 } from "lucide-react";
 
 
@@ -45,7 +46,9 @@ export type AdminTabId =
   | "audio-studio"
   | "voz"
   | "academy"
-  | "venda-plataforma";
+  | "venda-plataforma"
+  | "lucro-plataforma"
+  | "crm-analise";
 
 /** Itens de navegação (tabs internas + atalhos href). */
 type SidebarNavId = AdminTabId | "super-admin";
@@ -72,6 +75,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "dashboard", label: "Painel", icon: BarChart3 },
       { id: "crm", label: "Clientes interessados", icon: LayoutGrid },
       { id: "crm-clientes", label: "Clientes ativos", icon: UserCheck },
+      { id: "crm-analise", label: "Análise do CRM", icon: BarChart3 },
       { id: "conversao", label: "Conversão", icon: Flame },
       { id: "clientes", label: "Base de clientes", icon: Database },
       { id: "financeiro", label: "Financeiro", icon: Receipt },
@@ -79,6 +83,12 @@ const NAV_GROUPS: NavGroup[] = [
         id: "venda-plataforma",
         label: "Venda plataforma",
         icon: Rocket,
+        superAdminOnly: true,
+      },
+      {
+        id: "lucro-plataforma",
+        label: "Lucro da plataforma",
+        icon: Wallet,
         superAdminOnly: true,
       },
     ],
@@ -266,6 +276,7 @@ export function AppSidebar({
                   onNavigate?.("/ajuda");
                   onOpenChange?.(false);
                 }}
+                data-tour="menu-ajuda"
                 className="pe-nav-item w-full text-left"
                 title={collapsed ? "Central de ajuda" : undefined}
                 aria-label="Central de ajuda"
@@ -274,16 +285,17 @@ export function AppSidebar({
                 {!collapsed && <span className="truncate">Central de ajuda</span>}
               </button>
               {onOpenSettings && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    onOpenSettings();
-                    onOpenChange?.(false);
-                  }}
-                  className="pe-nav-item w-full text-left"
-                  title={collapsed ? "Configurações" : undefined}
-                  aria-label="Configurações"
-                >
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenSettings();
+                  onOpenChange?.(false);
+                }}
+                data-tour="menu-config"
+                className="pe-nav-item w-full text-left"
+                title={collapsed ? "Configurações" : undefined}
+                aria-label="Configurações"
+              >
                   <Settings className="w-[18px] h-[18px] shrink-0" />
                   {!collapsed && <span className="truncate">Configurações</span>}
                 </button>

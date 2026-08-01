@@ -25,6 +25,8 @@ import { WhatsAppPhoneStatusBanner } from "@/components/admin/WhatsAppPhoneStatu
 import PageStatus from "@/components/common/PageStatus";
 import { AppSidebar, type AdminTabId } from "@/components/layout/AppSidebar";
 import { AppTopbar } from "@/components/layout/AppTopbar";
+import { GuideEntryButton } from "@/features/onboarding/GuideEntryButton";
+import { TAB_GUIDE_SLUG, resolveWhatsAppGuideSlug } from "@/features/help/tabGuideMap";
 import { useAlertasBoletosCount } from "@/components/admin/financeiro/useAlertasBoletosCount";
 import { useUserRole } from "@/hooks/useUserRole";
 
@@ -70,6 +72,12 @@ const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").th
 const VendaPlataformaPanel = lazy(() =>
   import("@/components/superadmin/VendaPlataformaPanel").then((m) => ({ default: m.VendaPlataformaPanel })),
 );
+const PlatformFinancePanel = lazy(() =>
+  import("@/components/admin/super/PlatformFinancePanel").then((m) => ({ default: m.PlatformFinancePanel })),
+);
+const CrmInsightsPanel = lazy(() =>
+  import("@/components/whatsapp/CrmInsightsPanel").then((m) => ({ default: m.CrmInsightsPanel })),
+);
 const ProdutosModule = lazy(() => import("@/features/produtos/ProdutosModule").then(m => ({ default: m.ProdutosModule })));
 const FinanceiroPanel = lazy(() => import("@/components/admin/financeiro/FinanceiroPanel").then(m => ({ default: m.FinanceiroPanel })));
 
@@ -80,7 +88,7 @@ import { ADMIN_ACTIVE_TAB_KEY, notifyAdminTabChanged } from "@/lib/adminDashboar
 const ADMIN_TAB_IDS: readonly AdminTabId[] = [
   "dashboard", "crm", "crm-clientes", "conversao", "clientes", "financeiro", "produtos",
   "captacao", "parceiros", "whatsapp", "agendamentos", "central-anuncios", "links",
-  "materiais", "audio-studio", "voz", "academy", "venda-plataforma",
+  "materiais", "audio-studio", "voz", "academy", "venda-plataforma", "lucro-plataforma", "crm-analise",
 ];
 
 const AdminContent = () => {
@@ -178,6 +186,16 @@ const AdminContent = () => {
   });
   const [produtosSubTab, setProdutosSubTab] = useState<ProdutosTabId>("acompanhamento");
   const [posVendaHighlightId, setPosVendaHighlightId] = useState<string | null>(null);
+  const [crmAnaliseFocus, setCrmAnaliseFocus] = useState<"leads" | "clientes">(() => {
+    if (typeof window === "undefined") return "leads";
+    const f = new URLSearchParams(window.location.search).get("focus");
+    if (f === "leads" || f === "clientes") return f;
+    try {
+      const stored = window.sessionStorage.getItem("pe:crm-analise-focus");
+      if (stored === "leads" || stored === "clientes") return stored;
+    } catch { /* ignore */ }
+    return "leads";
+  });
 
   const [pendingConversaoView, setPendingConversaoView] = useState<string | null>(null);
   const [pendingWhatsAppSub, setPendingWhatsAppSub] = useState<string | null>(null);
@@ -193,13 +211,15 @@ const AdminContent = () => {
   });
   const [pendingChatMessage, setPendingChatMessage] = useState<string | undefined>(undefined);
 
-  // Deep-link / tour: /admin?tab=… muda a aba mesmo com Admin já montado
+  // Deep-link / tour: /admin?tab=… muda a aba mesmo com Admin já montado.
+  // Mantém tab/section na URL — tours e guias precisam disso para o highlight.
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     const tab = params.get("tab");
     const phone = params.get("phone");
     const section = params.get("section");
-    if (!tab && !phone && !section) return;
+    const hubTab = params.get("hubTab");
+    if (!tab && !phone && !section && !hubTab) return;
 
     if (tab) {
       let resolved: AdminTabId | null = null;
@@ -213,16 +233,20 @@ const AdminContent = () => {
       if (resolved) setActiveTab(resolved);
       if ((AI_SUB_TABS as readonly string[]).includes(tab)) setPendingAiSubTab(tab);
     }
-    if (section === "envio_massa" || section === "agendamentos") setPendingWhatsAppSub(section);
+    if (section === "envio_massa" || section === "agendamentos" || section === "templates" || section === "conversas" || section === "agente") {
+      setPendingWhatsAppSub(section);
+    }
+    if (hubTab) setPendingHubTab(hubTab);
     if (phone) setPendingChatPhone(phone);
 
-    params.delete("tab");
-    params.delete("section");
-    params.delete("phone");
-    const qs = params.toString();
-    const nextUrl = `${location.pathname}${qs ? `?${qs}` : ""}`;
-    const currentUrl = `${location.pathname}${location.search}`;
-    if (nextUrl !== currentUrl) navigate(nextUrl, { replace: true });
+    // Só limpa phone (one-shot). tab/section/hubTab ficam para o tour localizar a tela.
+    if (phone) {
+      params.delete("phone");
+      const qs = params.toString();
+      const nextUrl = `${location.pathname}${qs ? `?${qs}` : ""}`;
+      const currentUrl = `${location.pathname}${location.search}`;
+      if (nextUrl !== currentUrl) navigate(nextUrl, { replace: true });
+    }
   }, [location.pathname, location.search, navigate]);
 
   const [qrPanfleto, setQrPanfleto] = useState<{ url: string; label: string } | null>(null);
@@ -256,6 +280,7 @@ const AdminContent = () => {
         whatsappSub?: string;
         conversaoView?: string;
         hubTab?: string;
+        crmAnaliseFocus?: "leads" | "clientes";
       } | undefined;
       if (!detail?.tab) return;
       if (detail.tab === "agendamentos" || ADMIN_TAB_IDS.includes(detail.tab as AdminTabId)) {
@@ -264,10 +289,18 @@ const AdminContent = () => {
       if (detail.whatsappSub) setPendingWhatsAppSub(detail.whatsappSub);
       if (detail.conversaoView) setPendingConversaoView(detail.conversaoView);
       if (detail.hubTab) setPendingHubTab(detail.hubTab);
+      if (detail.crmAnaliseFocus === "leads" || detail.crmAnaliseFocus === "clientes") {
+        setCrmAnaliseFocus(detail.crmAnaliseFocus);
+        try { window.sessionStorage.setItem("pe:crm-analise-focus", detail.crmAnaliseFocus); } catch { /* ignore */ }
+      }
     };
     window.addEventListener("igreen-admin-nav", onNav);
     return () => window.removeEventListener("igreen-admin-nav", onNav);
   }, []);
+
+  // Consome hubTab só quando o hub confirma a aba (não por timer — race com lazy).
+  // pendingHubTab fica até onHubTabApplied.
+  const [liveWhatsAppSub, setLiveWhatsAppSub] = useState<string | null>(null);
   const [periodDays, setPeriodDays] = useState(30);
 
   const {
@@ -482,6 +515,7 @@ const AdminContent = () => {
     "dashboard": { title: "Painel", subtitle: "Resumo do seu dia" },
     "crm": { title: "Clientes interessados", subtitle: "Do WhatsApp até finalizar o cadastro" },
     "crm-clientes": { title: "Clientes ativos", subtitle: "Já cadastrados: aguardando, aprovados, reprovados e acompanhamento mês a mês" },
+    "crm-analise": { title: "Análise do CRM", subtitle: "Quem escutou áudio, quem leu, passo a passo de interessados e clientes" },
     "conversao": { title: "Conversão", subtitle: "Quem atender agora para fechar" },
     "clientes": { title: "Clientes", subtitle: "Base ativa e gestão de contas" },
     "financeiro": { title: "Financeiro", subtitle: "Boletos, vencimentos e recebimentos da sua rede iGreen" },
@@ -497,8 +531,15 @@ const AdminContent = () => {
     "voz": { title: "Ligação", subtitle: "Ligações com número da empresa e histórico detalhado" },
     "academy": { title: "iGreen Academy", subtitle: "Treinamentos, provas e seu nível de conhecimento" },
     "venda-plataforma": { title: "Venda da plataforma", subtitle: "Piloto SuperAdmin — WhatsApp, SMS e ligação para consultores" },
+    "lucro-plataforma": { title: "Lucro da plataforma", subtitle: "Receitas, gastos Meta, margem e saldo dos consultores" },
   };
+  /** Guia do ? no topo — sempre presente; WhatsApp muda conforme a sub-aba. */
+  const TAB_GUIDE = TAB_GUIDE_SLUG as Partial<Record<AdminTabId, string>>;
   const currentMeta = TAB_META[activeTab];
+  const currentGuideId =
+    activeTab === "whatsapp"
+      ? resolveWhatsAppGuideSlug(liveWhatsAppSub || pendingWhatsAppSub)
+      : (TAB_GUIDE[activeTab] ?? "inicio");
 
   if (loading) {
     return <PageStatus title="Carregando painel..." pulse />;
@@ -553,7 +594,17 @@ const AdminContent = () => {
       <AdminSidebarWithBadges
         userId={userId}
         activeTab={activeTab}
-        onTabChange={(t) => setActiveTab(t)}
+        onTabChange={(t) => {
+          setActiveTab(t);
+          // Mantém a URL alinhada à aba (tours/deep-link não “perdem” o contexto).
+          const params = new URLSearchParams(window.location.search);
+          if (t === "dashboard") params.delete("tab");
+          else params.set("tab", t);
+          if (t !== "whatsapp") params.delete("section");
+          if (t !== "agendamentos") params.delete("hubTab");
+          const qs = params.toString();
+          navigate(`/admin${qs ? `?${qs}` : ""}`, { replace: true });
+        }}
         onNavigate={(href) => navigate(href)}
         consultantName={form.name || "Consultor"}
         consultantLevel={form.igreen_id ? `ID ${form.igreen_id}` : "iGreen Energy"}
@@ -577,6 +628,7 @@ const AdminContent = () => {
           privacyMode={privacyMode}
           onTogglePrivacy={togglePrivacy}
           onOpenAi={() => setAiChatOpen(true)}
+          extra={<GuideEntryButton articleId={currentGuideId} size="sm" label="Ajuda" />}
           notificationSlot={
             <Suspense fallback={<div className="w-9 h-9" />}>
               <NotificationCenter
@@ -669,6 +721,15 @@ const AdminContent = () => {
             </div>
           )}
 
+          {userId && activeTab === "crm-analise" && (
+            <div className="flex-1 min-h-0 overflow-y-auto px-1">
+              <CrmInsightsPanel
+                consultantId={userId}
+                initialFocus={crmAnaliseFocus}
+              />
+            </div>
+          )}
+
 
 
 
@@ -695,7 +756,6 @@ const AdminContent = () => {
           {userId && activeTab === "whatsapp" && (
             <WhatsAppErrorBoundary>
               <WhatsAppTab
-                key={`whatsapp-tab-${pendingWhatsAppSub ?? "default"}`}
                 userId={userId}
                 customers={customers as never[]}
                 pendingChatPhone={pendingChatPhone}
@@ -704,10 +764,27 @@ const AdminContent = () => {
                 initialSubTab={
                   pendingWhatsAppSub === "envio_massa" ? "envio_massa"
                   : pendingWhatsAppSub === "agendamentos" ? "agendamentos"
+                  : pendingWhatsAppSub === "templates" ? "templates"
+                  : pendingWhatsAppSub === "conversas" ? "conversas"
+                  : pendingWhatsAppSub === "agente" ? "agente"
                   : pendingAiSubTab ? "agente" : undefined
                 }
                 initialAgentSubTab={pendingAiSubTab as any}
                 onSubTabConsumed={() => setPendingWhatsAppSub(null)}
+                onActiveSubTabChange={(sub) => {
+                  setLiveWhatsAppSub(sub);
+                  // Mantém ?section= sincronizado para o tour/FAB
+                  try {
+                    const params = new URLSearchParams(window.location.search);
+                    params.set("tab", "whatsapp");
+                    params.set("section", sub);
+                    const qs = params.toString();
+                    const next = `/admin?${qs}`;
+                    if (`${window.location.pathname}${window.location.search}` !== next) {
+                      navigate(next, { replace: true });
+                    }
+                  } catch { /* ignore */ }
+                }}
                 autoConnectOnMount={pendingWhatsAppAutoConnect}
                 onAutoConnectConsumed={() => setPendingWhatsAppAutoConnect(false)}
                 onDismissConnectGate={() => setActiveTab("dashboard")}
@@ -723,7 +800,19 @@ const AdminContent = () => {
                 isWhapi={!!isWhapi}
                 isConnected={!!isWhapi || connectionStatus === "connected"}
                 defaultTab={(pendingHubTab as import("@/lib/agendamentosHub").AgendamentosHubTab | null) ?? undefined}
-                key={pendingHubTab || "agendamentos-default"}
+                onHubTabApplied={() => setPendingHubTab(null)}
+                onActiveHubTabChange={(hubTab) => {
+                  try {
+                    const params = new URLSearchParams(window.location.search);
+                    params.set("tab", "agendamentos");
+                    params.set("hubTab", hubTab);
+                    const qs = params.toString();
+                    const next = `/admin?${qs}`;
+                    if (`${window.location.pathname}${window.location.search}` !== next) {
+                      navigate(next, { replace: true });
+                    }
+                  } catch { /* ignore */ }
+                }}
                 onOpenChat={handleOpenChatFromCustomer}
               />
             </Suspense>
@@ -800,6 +889,16 @@ const AdminContent = () => {
               />
             )
           )}
+          {activeTab === "lucro-plataforma" && userId && (
+            isSuperAdmin ? (
+              <PlatformFinancePanel />
+            ) : (
+              <PageStatus
+                title="Acesso restrito"
+                description="Esta área é exclusiva do SuperAdmin."
+              />
+            )
+          )}
 
         </Suspense>
       </main>
@@ -811,19 +910,23 @@ const AdminContent = () => {
 
       {/* Settings Sheet (Dados) */}
       <Sheet open={settingsOpen} onOpenChange={setSettingsOpen}>
-        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto">
+        <SheetContent side="right" className="w-full sm:max-w-2xl overflow-y-auto" data-tour="cfg-sheet">
           <SheetHeader>
-            <SheetTitle>Configurações</SheetTitle>
+            <div className="flex items-center gap-2 pr-8">
+              <SheetTitle>Configurações</SheetTitle>
+              <GuideEntryButton articleId="conta-dados" size="sm" label="Ajuda" />
+            </div>
           </SheetHeader>
-          <div className="mt-6 space-y-6">
+          <div className="mt-6 space-y-6" data-tour="cfg-dados">
             <DadosTab form={form} photoPreview={effectivePhotoPreview} saving={saving} onFormChange={handleFormChange} onPhotoChange={handlePhotoChange} onSave={handleSaveAndSyncIdentity} userId={userId || ""} />
             <Suspense fallback={null}>
-              {userId && <ConsultantAutomationPrefsCard consultantId={userId} variant="full" />}
+              {userId && <div data-tour="cfg-automacoes"><ConsultantAutomationPrefsCard consultantId={userId} variant="full" /></div>}
               {userId && <IGreenConnectionCard userId={userId} />}
               {userId && <IGreenSyncStatusBar consultantId={userId} />}
               <BonusTiersAdminCard />
-              <ChangePasswordCard />
+              <div data-tour="cfg-senha"><ChangePasswordCard /></div>
               {userId && (
+                <div data-tour="cfg-wa-conexao">
                 <WhatsAppConnectionSettingsCard
                   isWhapi={!!isWhapi}
                   connectionStatus={connectionStatus}
@@ -843,6 +946,7 @@ const AdminContent = () => {
                     setActiveTab("whatsapp");
                   }}
                 />
+                </div>
               )}
             </Suspense>
           </div>

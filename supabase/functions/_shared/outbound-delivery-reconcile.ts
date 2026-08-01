@@ -30,8 +30,22 @@ const ACK_RANK: Record<string, number> = {
   sent: 2,
   delivered: 3,
   read: 4,
-  played: 4,
+  played: 5,
 };
+
+export function normalizeWhapiExternalMessageId(raw: string): string {
+  const s = String(raw || "").trim();
+  if (s.startsWith("whapi_human:")) return s.slice("whapi_human:".length);
+  return s;
+}
+
+/** IDs possíveis no banco para um ACK Whapi cru. */
+export function whapiExternalMessageIdCandidates(raw: string): string[] {
+  const s = String(raw || "").trim();
+  if (!s) return [];
+  const core = normalizeWhapiExternalMessageId(s);
+  return Array.from(new Set([s, core, `whapi_human:${core}`]));
+}
 
 export function mapWhapiDeliveryStatus(raw: unknown): DeliveryAck {
   const s = String(raw || "").toLowerCase().trim();
@@ -41,15 +55,17 @@ export function mapWhapiDeliveryStatus(raw: unknown): DeliveryAck {
   if (s === "queued" || s === "accepted") return "queued";
   if (s === "sent" || s === "server") return "sent";
   if (s === "delivered" || s === "delivery") return "delivered";
-  if (s === "read" || s === "played" || s === "viewed") return "read";
-  // códigos numéricos Whapi (failed=0 … read=4)
+  if (s === "played") return "played";
+  if (s === "read" || s === "viewed") return "read";
+  // códigos numéricos Whapi: 0 failed … 3 delivered, 4 read, 5 played
   const n = Number(raw);
   if (Number.isFinite(n)) {
     if (n <= 0) return "failed";
     if (n === 1) return "pending";
     if (n === 2) return "sent";
     if (n === 3) return "delivered";
-    if (n >= 4) return "read";
+    if (n === 4) return "read";
+    if (n >= 5) return "played";
   }
   return "unknown";
 }
@@ -81,15 +97,19 @@ export async function fetchWhapiMessageAck(
   apiToken: string,
   messageId: string,
   baseUrl = "https://gate.whapi.cloud",
-): Promise<{ ok: true; status: DeliveryAck; raw?: unknown } | { ok: false; detail: string }> {
+): Promise<
+  | { ok: true; status: DeliveryAck; mediaDurationSec?: number | null; raw?: unknown }
+  | { ok: false; detail: string }
+> {
+  const pollId = normalizeWhapiExternalMessageId(messageId);
   const base = baseUrl.replace(/\/$/, "");
   const headers = {
     Authorization: `Bearer ${apiToken}`,
     Accept: "application/json",
   };
   const paths = [
-    `/messages/${encodeURIComponent(messageId)}`,
-    `/statuses/${encodeURIComponent(messageId)}`,
+    `/messages/${encodeURIComponent(pollId)}`,
+    `/statuses/${encodeURIComponent(pollId)}`,
   ];
   let lastDetail = "";
   for (const path of paths) {
@@ -116,11 +136,14 @@ export async function fetchWhapiMessageAck(
         data?.statuses?.[0]?.status ??
         data?.code;
       const status = mapWhapiDeliveryStatus(rawStatus);
+      const mediaDurationSec =
+        Number(data?.audio?.seconds ?? data?.video?.seconds ?? data?.message?.audio?.seconds ?? data?.message?.video?.seconds) ||
+        null;
       if (status === "unknown" && !rawStatus) {
         lastDetail = "no_status_field";
         continue;
       }
-      return { ok: true, status, raw: data };
+      return { ok: true, status, mediaDurationSec, raw: data };
     } catch (e) {
       lastDetail = (e as Error)?.message || String(e);
     }

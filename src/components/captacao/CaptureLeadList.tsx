@@ -1085,7 +1085,7 @@ export function CaptureLeadList({
           </div>
         )}
 
-        <div className="relative">
+        <div className="relative" data-tour="captacao-busca">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
           <Input
             value={q}
@@ -1185,6 +1185,7 @@ export function CaptureLeadList({
             disabled={!whatsappConnected}
             title={!whatsappConnected ? "WhatsApp desconectado" : undefined}
             onClick={openBatch}
+            data-tour="captacao-iniciar"
           >
             {selectedVisibleCount === 1
               ? "Iniciar atendimento"
@@ -1293,6 +1294,7 @@ export function CaptureLeadList({
             disabled={!whatsappConnected}
             title={!whatsappConnected ? "WhatsApp desconectado" : undefined}
             onClick={openBatch}
+            data-tour="captacao-iniciar"
           >
             {selectedVisibleCount === 1
               ? "Iniciar atendimento"

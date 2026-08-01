@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { GripVertical, Plus, Pencil, Trash2, Settings2, Check, X, Zap, Search } from "lucide-react";
+import { GripVertical, Plus, Pencil, Trash2, Settings2, Check, X, Zap, Search, BarChart3 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { StageAutoMessageConfig } from "./StageAutoMessageConfig";
 import { AddLeadDialog } from "./AddLeadDialog";
@@ -22,6 +22,13 @@ import type { MediaCategory } from "@/services/messageSender";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Tables } from "@/integrations/supabase/types";
 import CustomerQuickViewDialog from "./CustomerQuickViewDialog";
+
+function openCrmAnalise(focus: "leads" | "clientes") {
+  try { window.sessionStorage.setItem("pe:crm-analise-focus", focus); } catch { /* ignore */ }
+  window.dispatchEvent(
+    new CustomEvent("igreen-admin-nav", { detail: { tab: "crm-analise", crmAnaliseFocus: focus } }),
+  );
+}
 
 type KanbanStageRow = Tables<"kanban_stages">;
 type CrmDealRow = Tables<"crm_deals">;
@@ -185,12 +192,12 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
           />
         </div>
         <div className="flex flex-col gap-2 w-full min-w-0 sm:flex-row sm:flex-wrap sm:items-center sm:w-auto">
-          <div className="relative w-full min-w-0 sm:w-auto">
+          <div className="relative w-full min-w-0 sm:w-auto" data-tour="crm-busca">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input placeholder="Buscar cliente interessado..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} className="h-7 text-xs pl-8 w-full sm:w-[180px]" />
           </div>
           <Select value={stepFilter} onValueChange={setStepFilter}>
-            <SelectTrigger className="h-7 text-xs w-full sm:w-[200px]"><SelectValue placeholder="Parou no passo" /></SelectTrigger>
+            <SelectTrigger className="h-7 text-xs w-full sm:w-[200px]" data-tour="crm-filtro-passo"><SelectValue placeholder="Parou no passo" /></SelectTrigger>
             <SelectContent className="max-h-[320px]">
               <SelectItem value="all" className="text-xs">Todos os passos</SelectItem>
               <SelectItem value="none" className="text-xs">Sem interação</SelectItem>
@@ -204,6 +211,17 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
             <span className="whitespace-nowrap">Mostrar testes</span>
           </label>
           <div className="flex flex-wrap items-center gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7 text-xs gap-1.5"
+            data-tour="crm-analise-leads"
+            onClick={() => openCrmAnalise("leads")}
+          >
+            <BarChart3 className="h-3.5 w-3.5" />
+            Análise
+          </Button>
           <AddLeadDialog consultantId={consultantId} stages={stages.map((s) => ({ stage_key: s.stage_key, label: s.label, color: s.color }))} onLeadAdded={fetchDeals} />
           <Dialog open={showSettings} onOpenChange={setShowSettings}>
             <DialogTrigger asChild>
@@ -285,7 +303,7 @@ export function KanbanBoard({ consultantId, instanceName }: KanbanBoardProps) {
       </div>
 
       {/* Kanban columns */}
-      <div className="flex-1 min-h-0 min-w-0 max-w-full flex gap-2 overflow-x-auto overflow-y-hidden pb-2 items-stretch snap-x snap-mandatory scroll-pl-2" data-resize-scope style={{ "--kanban-col-w": "min(85vw, 248px)" } as React.CSSProperties}>
+      <div className="flex-1 min-h-0 min-w-0 max-w-full flex gap-2 overflow-x-auto overflow-y-hidden pb-2 items-stretch snap-x snap-mandatory scroll-pl-2" data-tour="crm-kanban" data-resize-scope style={{ "--kanban-col-w": "min(85vw, 248px)" } as React.CSSProperties}>
         <DragResizer storageKey="kanban-col" cssVar="kanban-col-w" defaultPx={248} minPx={200} maxPx={480} />
         {stages.map((s) => (
           <KanbanColumn key={s.id} stage={s} deals={deals} searchQuery={searchQuery} stepFilter={stepFilter} customStepMap={customStepMap} onDrop={handleDrop} onDragStart={setDraggedId} onEditDeal={openEditDeal} onDeleteDeal={setDeletingDealId} onReclassify={reclassifyAsReal} onView={setViewTarget} />

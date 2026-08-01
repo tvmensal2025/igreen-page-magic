@@ -72,7 +72,7 @@ export function ProdutosModule({
       <div className="max-w-[1440px] mx-auto px-4 sm:px-8 py-6 space-y-8">
         {/* Topbar editorial */}
         <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-pv-mid/30 pb-4 gap-4">
-          <nav className="flex gap-4 sm:gap-8 text-sm font-medium text-pv-ink/60 overflow-x-auto scrollbar-thin -mx-1 px-1">
+          <nav className="flex gap-4 sm:gap-8 text-sm font-medium text-pv-ink/60 overflow-x-auto scrollbar-thin -mx-1 px-1" data-tour="prod-tabs">
             {TABS.map(({ id, label, shortLabel, icon: Icon }) => {
               const active = tab === id;
               return (
@@ -82,6 +82,7 @@ export function ProdutosModule({
                   onClick={() => change(id)}
                   aria-label={label}
                   aria-current={active ? "page" : undefined}
+                  data-tour={`prod-tab-${id}`}
                   className={`pb-2 flex items-center gap-1.5 whitespace-nowrap transition-colors duration-200 min-h-[44px] ${
                     active
                       ? "text-pv-ink border-b-2 border-pv-accent"
@@ -95,7 +96,7 @@ export function ProdutosModule({
               );
             })}
           </nav>
-          <div className="hidden md:flex items-center gap-2">
+          <div className="hidden md:flex items-center gap-2" data-tour="prod-acoes">
           <OrcamentoButton
             consultantId={consultantId}
             instanceName={instanceName}
@@ -103,6 +104,7 @@ export function ProdutosModule({
           />
           <Link
             to="/admin/solar-design"
+            data-tour="prod-solar"
             className="inline-flex items-center gap-2 rounded-full border border-pv-mid/40 bg-white px-4 py-2 text-sm font-medium text-pv-ink shadow-sm hover:bg-pv-bg transition-colors"
           >
             <Sun className="h-4 w-4 text-amber-600" />
