@@ -23,7 +23,7 @@ import {
 } from "@/components/ui/select";
 import { CheckCircle2, XCircle, AlertTriangle, Clock, Phone, PhoneOff, Settings2, Ban, HelpCircle, FileSignature, PauseCircle, ArrowLeft, Inbox, ChevronDown, ChevronRight, CalendarClock } from "lucide-react";
 
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { formatPhoneBR, initialsFrom, avatarTone, isPlaceholderPhone } from "@/lib/posVenda/format";
 import {
   resolvePosVendaReferenceDate,

@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import BrandLogo from "@/components/common/BrandLogo";
 import { sendPasswordResetEmail } from "@/lib/passwordReset";
+import { toUserFacingError } from "@/lib/userFacingError";
 
 import {
   ArrowLeft,
@@ -37,7 +38,10 @@ function humanUrlError(code: string | null, description: string | null): string 
   if (code === "access_denied") {
     return "Este link não é mais válido. Peça um novo link de recuperação.";
   }
-  if (description) return decodeURIComponent(description.replace(/\+/g, " "));
+  if (description) {
+    const decoded = decodeURIComponent(description.replace(/\+/g, " "));
+    return toUserFacingError(decoded, "Não conseguimos validar o link de recuperação.");
+  }
   return "Não conseguimos validar o link de recuperação.";
 }
 
@@ -148,7 +152,7 @@ export default function ResetPassword() {
     } catch (error: unknown) {
       toast({
         title: "Não foi possível alterar a senha",
-        description: error instanceof Error ? error.message : "Tente novamente.",
+        description: toUserFacingError(error, "Tente novamente."),
         variant: "destructive",
       });
     } finally {
@@ -169,8 +173,8 @@ export default function ResetPassword() {
       });
     } catch (error: unknown) {
       toast({
-        title: "Não foi possível enviar",
-        description: error instanceof Error ? error.message : "Tente novamente em instantes.",
+        title: "Não foi possível enviar o link",
+        description: toUserFacingError(error, "Tente novamente em instantes."),
         variant: "destructive",
       });
     } finally {

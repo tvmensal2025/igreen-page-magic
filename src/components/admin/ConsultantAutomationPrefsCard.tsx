@@ -5,7 +5,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useConsultantAutomationPrefs } from "@/hooks/useConsultantAutomationPrefs";
 import { ConsultantAutomationPrefsModal } from "@/components/admin/ConsultantAutomationPrefsModal";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 type Props = {
   consultantId: string;

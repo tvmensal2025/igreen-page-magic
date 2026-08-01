@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { ArrowLeft, Save, RotateCcw, Sparkles } from "lucide-react";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 

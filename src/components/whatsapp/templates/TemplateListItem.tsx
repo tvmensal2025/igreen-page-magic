@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import type { MessageTemplate, TemplateMediaType, TemplateItem } from "@/types/whatsapp";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { mediaIcon, mediaBadge } from "./templateUtils";
 import { TemplateItemsEditor, emptyTemplateItem, templateItemsValid } from "./TemplateItemsEditor";
 import { resolveTemplateItems } from "@/services/templateSender";

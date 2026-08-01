@@ -101,7 +101,7 @@ export function AdsCentralTab({ consultantId }: Props) {
             iGreen · <span className="text-primary">Anúncios</span>
           </span>
           <span className="hidden xl:inline text-[11px] text-[hsl(var(--ads-muted))] ml-3 truncate">
-            Anunciar rápido = recomendado · Montar completo = você escolhe tudo.
+            Anúncio inteligente = recomendado · Anúncio completo = você escolhe tudo.
           </span>
         </div>
         <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap min-w-0 w-full sm:w-auto">
@@ -133,11 +133,11 @@ export function AdsCentralTab({ consultantId }: Props) {
             variant="secondary"
             size="sm"
             onClick={() => setSmartOpen(true)}
-            title="Rápido: cidade da sede + o sistema cuida do orçamento"
+            title="Inteligente: cidade da sede + o sistema cuida do orçamento"
           >
             <Brain className="w-3.5 h-3.5" />
-            <span className="sm:hidden">Rápido</span>
-            <span className="hidden sm:inline">Anunciar rápido</span>
+            <span className="sm:hidden">Inteligente</span>
+            <span className="hidden sm:inline">Anúncio inteligente</span>
           </AdsButton>
           <AdsButton
             variant="cta"
@@ -147,7 +147,7 @@ export function AdsCentralTab({ consultantId }: Props) {
           >
             <Plus className="w-3.5 h-3.5" />
             <span className="sm:hidden">Completo</span>
-            <span className="hidden sm:inline">Montar completo</span>
+            <span className="hidden sm:inline">Anúncio completo</span>
           </AdsButton>
         </div>
       </header>
@@ -309,7 +309,7 @@ export function AdsCentralTab({ consultantId }: Props) {
           <div className="rounded-xl border border-dashed border-[hsl(var(--ads-border-strong))] bg-[hsl(var(--ads-surface)/.5)] p-3 flex items-start gap-2 text-xs text-[hsl(var(--ads-muted))]">
             <Brain className="w-3.5 h-3.5 text-primary mt-0.5 shrink-0" />
             <div>
-              Em dúvida? Use <strong className="text-[hsl(var(--ads-emerald-2))]">Anunciar rápido</strong>
+              Em dúvida? Use <strong className="text-[hsl(var(--ads-emerald-2))]">Anúncio inteligente</strong>
               {" "}(o sistema cuida do orçamento).{" "}
               <button
                 type="button"

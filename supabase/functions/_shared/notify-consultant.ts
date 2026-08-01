@@ -18,7 +18,8 @@ export async function notifyConsultant(
 ): Promise<boolean> {
   try {
     // Whapi primeiro (canal ativo); Evolution só como fallback em sendRawToAlertNumber.
-    const text = `${ICON[level]} *${title}*\n\n${body}\n\n_Mensagem automática iGreen_`;
+    // Formatação leve: 1 emoji + título em negrito; corpo sem asteriscos em toda palavra.
+    const text = `${ICON[level]} ${title}\n\n${body}\n\n— iGreen`;
     return await sendRawToAlertNumber(consultantId, text);
   } catch (e) {
     console.error("[notify] erro:", (e as Error).message);

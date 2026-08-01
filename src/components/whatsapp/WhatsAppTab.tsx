@@ -63,6 +63,8 @@ interface WhatsAppTabProps {
   /** Vindo de Configurações → conectar outro número. */
   autoConnectOnMount?: boolean;
   onAutoConnectConsumed?: () => void;
+  /** Fecha o gate e volta ao Dashboard do painel. */
+  onDismissConnectGate?: () => void;
 }
 
 type SubTab = "dashboard" | "conversas" | "agente" | "envio_massa" | "templates" | "agendamentos" | "historico";
@@ -91,6 +93,7 @@ export function WhatsAppTab({
   onSubTabConsumed,
   autoConnectOnMount,
   onAutoConnectConsumed,
+  onDismissConnectGate,
 }: WhatsAppTabProps) {
   const isCompactLayout = useIsLgDown();
   const [sideCollapsed, setSideCollapsed] = useState<boolean>(() => {
@@ -129,6 +132,8 @@ export function WhatsAppTab({
   const [forceWhapiPanel, setForceWhapiPanel] = useState(false);
   const [whapiGateQr, setWhapiGateQr] = useState<string | null>(null);
   const [whapiGateBusy, setWhapiGateBusy] = useState(false);
+  /** Consultor fechou o modal — não trava o módulo; mostra faixa “Conectar”. */
+  const [gateSkipped, setGateSkipped] = useState(false);
 
   const {
     templates,
@@ -164,8 +169,14 @@ export function WhatsAppTab({
     if (whapiHealth.status === "AUTH") {
       setForceWhapiPanel(false);
       setWhapiGateQr(null);
+      setGateSkipped(false);
     }
   }, [whapiHealth.status]);
+
+  // Evolution conectou → limpa skip
+  useEffect(() => {
+    if (connectionStatus === "connected") setGateSkipped(false);
+  }, [connectionStatus]);
 
   /** Pede QR sem logout. Canal já em QR/INIT/OFFLINE. */
   const requestWhapiQrSafe = useCallback(async () => {
@@ -309,7 +320,16 @@ export function WhatsAppTab({
   const channelReady = isWhapi
     ? whapiHealth.status === "AUTH" || whapiHealth.lastCheckedAt === null
     : connectionStatus === "connected";
-  const showConnectGate = !channelReady;
+  const showConnectGate = !channelReady && !gateSkipped;
+
+  const handleDismissGate = () => {
+    setGateSkipped(true);
+    onDismissConnectGate?.();
+  };
+
+  const handleReopenGate = () => {
+    setGateSkipped(false);
+  };
 
   return (
     <div className="relative flex flex-col gap-0 flex-1 min-h-0 min-w-0 overflow-hidden">
@@ -327,6 +347,7 @@ export function WhatsAppTab({
         onConnect={createAndConnect}
         onRefreshQr={refreshQr}
         onWhapiReauth={requestWhapiQrSafe}
+        onDismiss={handleDismissGate}
       />
 
       {/* Enquanto o gate está aberto, não mostra abas/chat — só o QR. */}
@@ -334,6 +355,22 @@ export function WhatsAppTab({
         <div className="flex-1 min-h-[50vh]" aria-hidden />
       ) : (
       <>
+      {!channelReady && gateSkipped && (
+        <div className="flex items-center justify-between gap-3 px-3 py-2 rounded-xl border border-amber-500/25 bg-amber-500/5 shrink-0 mb-1">
+          <p className="text-xs text-muted-foreground">
+            WhatsApp ainda não conectado. Conecte quando quiser — o restante do painel já funciona.
+          </p>
+          <button
+            type="button"
+            className="shrink-0 h-8 px-3 rounded-lg text-xs font-semibold text-primary-foreground"
+            style={{ background: "var(--gradient-green)" }}
+            onClick={handleReopenGate}
+          >
+            Conectar agora
+          </button>
+        </div>
+      )}
+
       {/* Status só quando NÃO conectado — economiza 32px no dia a dia */}
       {!immersiveChat && !isConnected && !isWhapi && (
       <div className="flex items-center justify-between px-3 py-1.5 bg-gradient-to-r from-destructive/5 via-card to-card border border-border/60 rounded-t-xl shrink-0 h-8">
@@ -347,6 +384,7 @@ export function WhatsAppTab({
         </div>
         <button
           onClick={() => {
+            setGateSkipped(false);
             setActiveSubTab("conversas");
             if (!fatalLocked && hasInstance && connectionStatus === "disconnected") createAndConnect();
           }}

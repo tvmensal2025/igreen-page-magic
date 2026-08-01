@@ -12,7 +12,7 @@ import {
   ClipboardList, ExternalLink, MessageCircle, ChevronLeft, ChevronDown, ChevronUp,
   ChevronsLeft, ChevronsRight, ClipboardCheck, X, Bot, Ban, RotateCcw,
 } from "lucide-react";
-import { toast as sonnerToast } from "sonner";
+import { toast as sonnerToast } from "@/components/ui/sonner";
 import { MessageComposer } from "@/components/whatsapp/MessageComposer";
 import { AttendanceStatusBar } from "@/components/whatsapp/AttendanceStatusBar";
 import { useTemplates } from "@/hooks/useTemplates";

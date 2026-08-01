@@ -18,7 +18,7 @@ import { ShieldCheck, ShieldX, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import type { SupportSession } from "./types";
 import { acceptSession, endSession } from "./api";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 interface Props {
   session: SupportSession | null;

@@ -20,7 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { SaveMessageAsTemplateDialog } from "@/components/whatsapp/SaveMessageAsTemplateDialog";
 import type { ChatMessage } from "@/hooks/useMessages";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 interface Props {
   customerId: string;

@@ -1,10 +1,12 @@
 /**
  * consultant-identity-bootstrap
  *
- * Quando o consultor completa nome + IA + telefone, gera:
+ * Quando o consultor completa nome + IA + consultor/consultora, gera:
  * - corpos A2 (M/F) em ai_media_library com a identidade dele
  * - call bodies da cadência A/B/C em voice_audio_clips + override em cadence_stage_config
  * - sobe clips no Velip (admin-call-audio-bootstrap)
+ *
+ * Telefone e WhatsApp conectado NÃO bloqueiam a geração (só o envio operacional).
  *
  * NÃO altera config global (consultant_id null).
  *
@@ -18,7 +20,6 @@ import {
   resolveAssistantDisplayName,
   resolveConsultantRoleGender,
 } from "../_shared/consultant-public-label.ts";
-import { consultantHasConnectedWhatsApp } from "../_shared/consultant-wa-phone.ts";
 import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
 
 const cors = {
@@ -191,19 +192,10 @@ Deno.serve(async (req) => {
   }
   const nameOk = String(cons.name || "").trim().length >= 3;
   if (!nameOk) return json(400, { error: "name_required" });
-  const phoneDigits = String(cons.phone || "").replace(/\D/g, "");
-  if (phoneDigits.length < 10) return json(400, { error: "phone_required" });
 
-  // Só gera mídia com WhatsApp conectado (não bootstrap em massa / cadastro seco).
-  // Superadmin Whapi: não depende de whatsapp_instances Evolution (needs_reconnect).
-  const waConnected = await consultantHasConnectedWhatsApp(admin, consultantId);
-  if (!waConnected) {
-    return json(200, {
-      ok: true,
-      skipped: true,
-      reason: "whatsapp_not_connected",
-      consultant_id: consultantId,
-    });
+  const genderRaw = String(cons.gender || "").trim();
+  if (genderRaw !== "consultor" && genderRaw !== "consultora") {
+    return json(400, { error: "gender_required" });
   }
 
   const roleGender = resolveConsultantRoleGender(cons.gender, cons.name || cons.display_name);

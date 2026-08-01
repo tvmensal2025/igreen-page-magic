@@ -22,9 +22,10 @@ import {
   FileText,
   AlertTriangle,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
+import { toUserFacingError } from "@/lib/userFacingError";
 import {
   CATEGORIA_LABEL,
   TEXTOS_CATALOGO,
@@ -661,8 +662,8 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
     setSaving(key);
 
     // O nome da IA é lido em produção de `consultants.assistant_name`.
-    // Sem gravar lá, salvar aqui não mudava nada no bot (e ainda pulava o
-    // trigger de nomes reservados). Grava primeiro na fonte da verdade.
+    // Sem gravar lá, salvar aqui não mudava nada no bot. Reuso de nome
+    // entre consultores é permitido (áudio compartilhado).
     if (field === "persona_name") {
       const nome = text.trim();
       if (!nome) { setSaving(null); toast.error("Informe o nome da IA"); return; }
@@ -672,11 +673,7 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
         .eq("id", consultantId);
       if (consErr) {
         setSaving(null);
-        toast.error(
-          /reserv/i.test(consErr.message)
-            ? `O nome "${nome}" é reservado/já pertence a outro consultor. Escolha outro.`
-            : consErr.message,
-        );
+        toast.error(toUserFacingError(consErr, "Não foi possível salvar o nome da IA."));
         return;
       }
     }

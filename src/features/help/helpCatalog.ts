@@ -277,7 +277,7 @@ export const HELP_CATALOG: HelpArticle[] = [
     [
       "No menu (Recursos), clique em Central de anúncios.",
       "Clique nas abas Dashboard, Modelos, Campanhas, Performance, Inteligência ou Comissões conforme o que quiser ver.",
-      "Para criar: clique em Anunciar rápido ou Montar completo.",
+      "Para criar: clique em Anúncio inteligente ou Anúncio completo.",
       "Se aparecer Como anunciar no WhatsApp em 4 passos, clique em Abrir aba WhatsApp, Conectar Facebook e Abrir Meta Business Suite na ordem pedida.",
       "Clique em Atualizar números para atualizar métricas; use Ver último sync se algo parecer atrasado.",
       "Se ainda não vinculou a Meta, clique em Conectar minha conta (opcional) quando o botão aparecer.",
@@ -293,7 +293,7 @@ export const HELP_CATALOG: HelpArticle[] = [
     "/admin/meta-ads",
     ["facebook", "instagram", "campanha", "anúncio", "meta", "cpl", "publicar"],
     [
-      "No menu clique em Central de anúncios → Anunciar rápido ou Montar completo.",
+      "No menu clique em Central de anúncios → Anúncio inteligente ou Anúncio completo.",
       "Confirme WhatsApp conectado; se pedir conta Meta, clique em Conectar minha conta.",
       "No assistente, avance pelas etapas: Região → Criativo → Texto & Mensagem → Orçamento → Revisar & Publicar.",
       "Em cada etapa, preencha os campos obrigatórios e clique em Continuar.",

@@ -27,7 +27,7 @@ import {
   User,
   Volume2,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import AudioPlayer from "@/components/admin/media/AudioPlayer";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import {

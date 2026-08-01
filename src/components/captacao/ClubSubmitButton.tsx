@@ -2,7 +2,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Gift, Loader2, AlertCircle, FlaskConical } from "lucide-react";
-import { toast as sonnerToast } from "sonner";
+import { toast as sonnerToast } from "@/components/ui/sonner";
 import {
   AlertDialog,
   AlertDialogAction,

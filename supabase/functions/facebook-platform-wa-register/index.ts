@@ -54,20 +54,126 @@ Deno.serve(async (req) => {
 
     const { token, pageId, pageName, pixelId, row } = platform;
 
-    const wabaDiscovery = await discoverPlatformWabaId(pageId, token);
+    const knownPhoneFromRow = row.whatsapp_phone_number_id
+      ? String(row.whatsapp_phone_number_id)
+      : null;
+    // Fallback: número já gravado em algum consultor (piloto SuperAdmin).
+    let knownPhoneFallback = knownPhoneFromRow;
+    if (!knownPhoneFallback) {
+      const { data: anyWa } = await adminClient()
+        .from("consultant_ad_settings")
+        .select("whatsapp_phone_number_id")
+        .not("whatsapp_phone_number_id", "is", null)
+        .limit(1)
+        .maybeSingle();
+      knownPhoneFallback = anyWa?.whatsapp_phone_number_id
+        ? String(anyWa.whatsapp_phone_number_id)
+        : null;
+    }
+
+    // Diagnóstico profundo (só SuperAdmin) — não altera estado.
+    if (action === "debug_waba") {
+      if (!isSa) return json({ error: "Apenas SuperAdmin." }, 403);
+      const appId = Deno.env.get("FACEBOOK_APP_ID") || "";
+      const appSecret = Deno.env.get("FACEBOOK_APP_SECRET") || "";
+      const appToken = appId && appSecret ? `${appId}|${appSecret}` : "";
+      const preferred = String(row.waba_id || "").replace(/\D/g, "");
+      const knownPhone = String(knownPhoneFallback || "").replace(/\D/g, "");
+
+      const dbg = appToken
+        ? await fetch(
+          `https://graph.facebook.com/v21.0/debug_token?input_token=${encodeURIComponent(token)}&access_token=${encodeURIComponent(appToken)}`,
+        ).then((r) => r.json()).catch((e) => ({ error: String(e) }))
+        : { error: "missing_app_credentials" };
+
+      const pageFields = await fetch(
+        `https://graph.facebook.com/v21.0/${pageId}?fields=id,name,whatsapp_business_account,connected_whatsapp_business_account,page_backed_whatsapp_business_account&access_token=${encodeURIComponent(token)}`,
+      ).then((r) => r.json()).catch((e) => ({ error: String(e) }));
+
+      const wabaGet = preferred
+        ? await fetch(
+          `https://graph.facebook.com/v21.0/${preferred}?fields=id,name,account_review_status,ownership_type&access_token=${encodeURIComponent(token)}`,
+        ).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }))
+        : null;
+
+      const wabaPhones = preferred
+        ? await fetch(
+          `https://graph.facebook.com/v21.0/${preferred}/phone_numbers?fields=id,display_phone_number,code_verification_status,verified_name&access_token=${encodeURIComponent(token)}`,
+        ).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }))
+        : null;
+
+      const meBiz = await fetch(
+        `https://graph.facebook.com/v21.0/me/businesses?fields=id,name,verification_status&access_token=${encodeURIComponent(token)}`,
+      ).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }));
+
+      const phoneGet = knownPhone
+        ? await fetch(
+          `https://graph.facebook.com/v21.0/${knownPhone}?fields=id,display_phone_number,verified_name,code_verification_status&access_token=${encodeURIComponent(token)}`,
+        ).then(async (r) => ({ status: r.status, body: await r.json().catch(() => ({})) }))
+        : null;
+
+      return json({
+        ok: true,
+        action: "debug_waba",
+        page_id: pageId,
+        page_name: pageName,
+        stored_waba_id: preferred || null,
+        stored_phone_number_id: knownPhone || null,
+        token_debug: {
+          is_valid: dbg?.data?.is_valid ?? null,
+          app_id: dbg?.data?.app_id ?? null,
+          type: dbg?.data?.type ?? null,
+          scopes: dbg?.data?.scopes ?? null,
+          granular_scopes: dbg?.data?.granular_scopes ?? null,
+          expires_at: dbg?.data?.expires_at ?? null,
+          error: dbg?.data?.error || dbg?.error || null,
+        },
+        page_fields: pageFields,
+        waba_get: wabaGet,
+        waba_phones: wabaPhones,
+        me_businesses: meBiz,
+        known_phone_get: phoneGet,
+      });
+    }
+
+    const wabaDiscovery = await discoverPlatformWabaId(pageId, token, {
+      preferredWabaId: row.waba_id ? String(row.waba_id) : null,
+      knownPhoneNumberId: knownPhoneFallback,
+    });
     if (!wabaDiscovery?.id) {
       return json({
         error:
-          "A Página da plataforma não tem WABA Cloud API vinculada. Vincule uma WABA Cloud à Página uma vez (Business Suite) e reconecte o Facebook aceitando WhatsApp Business Management.",
+          "A conta Facebook da plataforma (SuperAdmin) não encontrou uma WABA Cloud API. No Business Suite, vincule uma WABA Cloud à Página principal uma vez e reconecte o Facebook aceitando WhatsApp Business Management. Todas as campanhas dos consultores usam essa mesma Página/WABA.",
         page_id: pageId,
         page_name: pageName,
         pixel_id: pixelId,
-        hint: "page_backed (app WhatsApp) não serve para cadastrar número pela API.",
+        hint: "Modelo compartilhado: 1 Página SuperAdmin → todas as campanhas. page_backed (app WhatsApp) não serve para cadastrar número pela API.",
         limit_hint: LIMIT_HINT,
       }, 400);
     }
     const wabaId = wabaDiscovery.id;
-    const numbers = await listWabaPhones(wabaId, token);
+    // Persiste WABA descoberta para não depender de Graph flaky no próximo request.
+    if (!row.waba_id || String(row.waba_id) !== wabaId) {
+      await adminClient()
+        .from("platform_facebook_account")
+        .update({ waba_id: wabaId, updated_at: new Date().toISOString() })
+        .eq("id", true);
+    }
+    // status do modal NÃO lista phones na Graph (estourava #80008).
+    // create/verify/limits/save_* precisam da lista viva.
+    const needsLiveNumbers = !["status"].includes(action);
+    const numbers = needsLiveNumbers ? await listWabaPhones(wabaId, token) : [];
+    if (
+      numbers.length === 0 &&
+      String(wabaDiscovery.via || "").includes("trusted") &&
+      wabaDiscovery.probe_error
+    ) {
+      console.warn(
+        "[platform-wa] list phones empty with trusted waba",
+        wabaId,
+        wabaDiscovery.probe_error,
+      );
+    }
     const mine = await loadConsultantWaLock(auth.id);
 
     // Telefone do cadastro do consultor — usado p/ detectar vínculo errado
@@ -95,66 +201,78 @@ Deno.serve(async (req) => {
     const canReplaceWrongLock = Boolean(mine.locked && !mineMatchesConsultantPhone);
 
     if (action === "status" || action === "limits") {
-      // Probe Business: verificação + contagem de números em todas as WABAs acessíveis
+      // Probe pesado (todas as WABAs do Business) SÓ em action=limits.
+      // O modal abre com status a cada vez — isso estourava rate limit Meta (#80008/#4)
+      // e virava falso "sem WABA".
       const businessesProbe: Array<Record<string, unknown>> = [];
-      let totalPhonesAcrossBusiness = 0;
+      let totalPhonesAcrossBusiness = numbers.length;
       let anyBusinessVerified = false;
-      const meBiz = await fetch(
-        `https://graph.facebook.com/v21.0/me/businesses?fields=id,name,verification_status,created_time`,
-        { headers: { Authorization: `Bearer ${token}` } },
-      ).then((r) => r.json()).catch(() => ({}));
-      const bizRows = Array.isArray(meBiz?.data) ? meBiz.data : [];
-      for (const b of bizRows) {
-        const bid = String(b?.id || "");
-        if (!bid) continue;
-        // Meta usa valores como "verified" | "not_verified" | "pending" etc.
-        const vStatus = String(b?.verification_status || "unknown");
-        if (vStatus.toLowerCase() === "verified") anyBusinessVerified = true;
 
-        let phoneCount = 0;
-        const phoneSamples: Array<{ waba_id: string; id: string; display: string }> = [];
-        for (const kind of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
-          const wr = await fetch(
-            `https://graph.facebook.com/v21.0/${bid}/${kind}?fields=id,name`,
-            { headers: { Authorization: `Bearer ${token}` } },
-          ).then((r) => r.json()).catch(() => ({}));
-          const wabas = Array.isArray(wr?.data) ? wr.data : [];
-          for (const w of wabas) {
-            const wid = String(w?.id || "");
-            if (!wid) continue;
-            const pr = await fetch(
-              `https://graph.facebook.com/v21.0/${wid}/phone_numbers?fields=display_phone_number,code_verification_status,verified_name`,
+      if (action === "limits") {
+        const meBiz = await fetch(
+          `https://graph.facebook.com/v21.0/me/businesses?fields=id,name,verification_status,created_time`,
+          { headers: { Authorization: `Bearer ${token}` } },
+        ).then((r) => r.json()).catch(() => ({}));
+        const bizRows = Array.isArray(meBiz?.data) ? meBiz.data : [];
+        totalPhonesAcrossBusiness = 0;
+        for (const b of bizRows) {
+          const bid = String(b?.id || "");
+          if (!bid) continue;
+          const vStatus = String(b?.verification_status || "unknown");
+          if (vStatus.toLowerCase() === "verified") anyBusinessVerified = true;
+
+          let phoneCount = 0;
+          const phoneSamples: Array<{ waba_id: string; id: string; display: string }> = [];
+          for (const kind of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
+            const wr = await fetch(
+              `https://graph.facebook.com/v21.0/${bid}/${kind}?fields=id,name`,
               { headers: { Authorization: `Bearer ${token}` } },
             ).then((r) => r.json()).catch(() => ({}));
-            const phones = Array.isArray(pr?.data) ? pr.data : [];
-            phoneCount += phones.length;
-            for (const p of phones.slice(0, 10)) {
-              phoneSamples.push({
-                waba_id: wid,
-                id: String(p.id),
-                display: String(p.display_phone_number || ""),
-              });
+            const wabas = Array.isArray(wr?.data) ? wr.data : [];
+            for (const w of wabas) {
+              const wid = String(w?.id || "");
+              if (!wid) continue;
+              const pr = await fetch(
+                `https://graph.facebook.com/v21.0/${wid}/phone_numbers?fields=display_phone_number,code_verification_status,verified_name`,
+                { headers: { Authorization: `Bearer ${token}` } },
+              ).then((r) => r.json()).catch(() => ({}));
+              const phones = Array.isArray(pr?.data) ? pr.data : [];
+              phoneCount += phones.length;
+              for (const p of phones.slice(0, 10)) {
+                phoneSamples.push({
+                  waba_id: wid,
+                  id: String(p.id),
+                  display: String(p.display_phone_number || ""),
+                });
+              }
             }
           }
+          totalPhonesAcrossBusiness += phoneCount;
+          businessesProbe.push({
+            id: bid,
+            name: b?.name || null,
+            verification_status: vStatus,
+            phone_numbers_count: phoneCount,
+            phone_samples: phoneSamples,
+          });
         }
-        totalPhonesAcrossBusiness += phoneCount;
-        businessesProbe.push({
-          id: bid,
-          name: b?.name || null,
-          verification_status: vStatus,
-          phone_numbers_count: phoneCount,
-          phone_samples: phoneSamples,
-        });
+      } else if (String(wabaDiscovery.probe_error || "").includes("80008") || String(wabaDiscovery.probe_error || "").includes("too many calls")) {
+        // status leve: sinaliza rate limit sem varrer o Business inteiro
+        anyBusinessVerified = true; // assume teto 20; evita probe
+      } else {
+        anyBusinessVerified = true;
       }
 
-      // Limite documentado Meta: 2 inicial; 20 se business verified OU messaging limit 2k.
-      // Não há endpoint público confiável para "pedir aumento" — é automático.
       const inferredCap = anyBusinessVerified ? 20 : 2;
       const increasePossibleViaApi = false;
       const increaseHow =
         anyBusinessVerified
           ? "Business já verificado → teto típico 20. Acima de 20 só via Meta Direct Support (Enterprise), não via API."
           : "Para ir de 2→20: conclua verificação do Business no Meta Business Suite (ou atinja limite de mensagens 2.000). Não existe pedido de aumento via API.";
+
+      const rateLimited = /80008|too many calls|request limit/i.test(
+        String(wabaDiscovery.probe_error || ""),
+      );
 
       return json({
         ok: true,
@@ -164,6 +282,8 @@ Deno.serve(async (req) => {
         pixel_id: pixelId,
         waba_id: wabaId,
         waba_via: wabaDiscovery.via,
+        waba_probe_error: wabaDiscovery.probe_error || null,
+        meta_rate_limited: rateLimited,
         numbers,
         numbers_count: numbers.length,
         numbers_on_page_waba: numbers.length,
@@ -176,6 +296,9 @@ Deno.serve(async (req) => {
         limit_hint: LIMIT_HINT,
         increase_via_api: increasePossibleViaApi,
         increase_how: increaseHow,
+        warning: rateLimited
+          ? "Meta em rate limit (#80008). Aguarde 10–30 min antes de cadastrar número / pedir SMS."
+          : null,
         mine: {
           locked: mine.locked,
           digits: mine.digits,
@@ -315,6 +438,10 @@ Deno.serve(async (req) => {
             error: createdRes.error,
             limit_hint: LIMIT_HINT,
             numbers_count: numbers.length,
+            waba_id: wabaId,
+            waba_via: wabaDiscovery.via,
+            meta_code: (createdRes as { meta?: { error?: { code?: number; error_subcode?: number } } }).meta?.error?.code ?? null,
+            meta_subcode: (createdRes as { meta?: { error?: { code?: number; error_subcode?: number } } }).meta?.error?.error_subcode ?? null,
           }, 400);
         }
         phoneNumberId = createdRes.phone_number_id;

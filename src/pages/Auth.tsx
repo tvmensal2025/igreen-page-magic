@@ -10,6 +10,7 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import BrandLogo from "@/components/common/BrandLogo";
 import { hardReset } from "@/lib/hardReset";
 import { sendPasswordResetEmail } from "@/lib/passwordReset";
+import { isAlreadyExistsError, toUserFacingError } from "@/lib/userFacingError";
 
 
 function slugify(s: string) {
@@ -78,7 +79,7 @@ const Auth = () => {
       setResettingApp(false);
       toast({
         title: "Não foi possível atualizar",
-        description: error instanceof Error ? error.message : "Tente novamente ou abra /reset.",
+        description: toUserFacingError(error, "Tente novamente ou abra /reset."),
         variant: "destructive",
       });
     }
@@ -147,8 +148,8 @@ const Auth = () => {
 
     } catch (error: unknown) {
       toast({
-        title: "Não foi possível enviar",
-        description: error instanceof Error ? error.message : "Tente novamente em instantes.",
+        title: "Não foi possível enviar o link",
+        description: toUserFacingError(error, "Tente novamente em instantes."),
         variant: "destructive",
       });
     } finally {
@@ -176,8 +177,8 @@ const Auth = () => {
       if (data.session) checkAdminAndNavigate(data.session.user.id);
     } catch (error: unknown) {
       toast({
-        title: "Erro ao alterar senha",
-        description: error instanceof Error ? error.message : "Tente novamente.",
+        title: "Não foi possível alterar a senha",
+        description: toUserFacingError(error, "Tente novamente."),
         variant: "destructive",
       });
     } finally {
@@ -235,11 +236,18 @@ const Auth = () => {
 
           if (insErr) {
             console.error("[auth] falha ao criar consultor:", insErr);
-            toast({
-              title: "Conta criada, mas faltou registrar consultor",
-              description: insErr.message,
-              variant: "destructive",
-            });
+            if (isAlreadyExistsError(insErr)) {
+              toast({
+                title: "Esta conta já existe",
+                description: "Faça login com este e-mail. Se não lembrar a senha, use Esqueci minha senha.",
+              });
+            } else {
+              toast({
+                title: "Não foi possível concluir o cadastro",
+                description: toUserFacingError(insErr),
+                variant: "destructive",
+              });
+            }
           } else {
             toast({
               title: "Cadastro realizado!",
@@ -254,9 +262,12 @@ const Auth = () => {
         }
       }
     } catch (error: unknown) {
+      const title = isLogin
+        ? "Não foi possível entrar"
+        : "Não foi possível criar a conta";
       toast({
-        title: "Erro",
-        description: error instanceof Error ? error.message : "Erro desconhecido",
+        title,
+        description: toUserFacingError(error),
         variant: "destructive",
       });
     } finally {

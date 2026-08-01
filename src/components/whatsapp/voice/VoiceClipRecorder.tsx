@@ -3,7 +3,7 @@ import { Mic, Square, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadOpusRecorder } from "@/lib/opusRecorderLoader";
 import { uploadMedia } from "@/services/minioUpload";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 interface Props {
   consultantId: string;

@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { Database, HardDrive, Loader2, RefreshCw, Save } from "lucide-react";
+import { OpsAlertsModal } from "@/components/superadmin/OpsAlertsModal";
 
 interface MinioReading {
   created_at: string;
@@ -135,6 +136,9 @@ export function InfraHealthPanel() {
             {latest?.meta?.truncated && (
               <Badge variant="secondary" className="text-[10px]">amostra parcial</Badge>
             )}
+            <div className="ml-auto">
+              <OpsAlertsModal />
+            </div>
           </div>
           <p className="text-xs text-muted-foreground mt-1">
             Bucket <span className="font-mono">{latest?.meta?.bucket || "—"}</span>

@@ -54,7 +54,7 @@ export function CadenceMobilePreview({
   text,
   buttons = [],
   channel,
-  contactName = "Sofia · iGreen",
+  contactName = "Assistente · iGreen",
   audioUrl,
   showAudio,
   audioPlacement = "before_text",
@@ -69,6 +69,9 @@ export function CadenceMobilePreview({
     channel === "whatsapp_audio";
   const showAudioChip = showAudio || isAudio || !!audioUrl;
   const audioAfterText = audioPlacement === "after_text";
+  const assistantLabel = String(contactName || "")
+    .split("·")[0]
+    .trim() || "Assistente";
 
   if (isSms) {
     return (
@@ -106,7 +109,7 @@ export function CadenceMobilePreview({
               <Phone className="h-6 w-6" />
             </div>
             <p className="text-base font-semibold">{contactName}</p>
-            <p className="mt-1 text-[12px] text-white/70">Ligação · Sofia</p>
+            <p className="mt-1 text-[12px] text-white/70">Ligação · {assistantLabel}</p>
           </div>
           <div className="mx-3 mb-4 max-h-[240px] overflow-y-auto rounded-xl bg-black/35 px-3.5 py-3">
             <WhatsAppFormattedText

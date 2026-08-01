@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CheckCircle2, Loader2, Mic, Image as ImageIcon, MessageSquare, Play, Square, RotateCcw, XCircle, Paperclip, Timer, X } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 import type { MessageTemplate } from "@/types/whatsapp";
 import type { CaptureBatchLead } from "@/components/captacao/CaptureLeadList";

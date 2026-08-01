@@ -1,7 +1,7 @@
 // Fast-start "Iniciar atendimento" — invoca start-customer-attendance com toasts
 // consistentes. Usado pelos CTAs de topo (Chat/Cockpit/Lista) para 1 lead.
 import { supabase } from "@/integrations/supabase/client";
-import { toast as sonnerToast } from "sonner";
+import { toast as sonnerToast } from "@/components/ui/sonner";
 import { notifyAttendanceOutcome, type AttendanceOutcome } from "@/lib/attendanceShortcut";
 
 export interface FastStartResult {

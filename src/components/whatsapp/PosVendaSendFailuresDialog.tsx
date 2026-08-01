@@ -14,7 +14,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertTriangle, Ban, Loader2, Phone, PhoneOff, Pencil, Trash2, XCircle,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import {
   formatPhoneBR, initialsFrom, avatarTone, isPlaceholderPhone, POS_VENDA_STAGES,
 } from "@/lib/posVenda/format";

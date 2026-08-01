@@ -2,8 +2,13 @@
  * Cobrança comercial iGreen Fone (SMS + ligação).
  * Preços: SMS R$ 0,10 / envio ok · voz R$ 0,10 a cada 30s atendida (ceil).
  * Débito só via RPC `debit_platform_usage_observation` (idempotente).
+ *
+ * Saldo zerado → avisa o CONSULTOR (Zap) + SUPER-ADMIN (com nome do consultor).
+ * Só dispara quando houve uso real (débito) — quem não usa SMS/ligação não é alertado.
  */
 import { notifyConsultant } from "./notify-consultant.ts";
+import { notifySuperAdminOpsAlert } from "./superadmin-alert.ts";
+import { resolvePublicConsultantLabel } from "./consultant-public-label.ts";
 
 export const PLATFORM_SMS_CENTS = 10;
 export const PLATFORM_VOICE_BLOCK_SEC = 30;
@@ -38,6 +43,8 @@ type AdminLike = {
     fn: string,
     args?: Record<string, unknown>,
   ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  // deno-lint-ignore no-explicit-any
+  from: (table: string) => any;
 };
 
 export function parsePlatformChargeResult(raw: unknown): PlatformChargeResult {
@@ -167,6 +174,15 @@ export async function debitVoiceAnswered(
   });
 }
 
+function formatBrlFromCents(cents: number | null | undefined): string {
+  const n = Number(cents);
+  const safe = Number.isFinite(n) ? n : 0;
+  return (safe / 100).toLocaleString("pt-BR", {
+    style: "currency",
+    currency: "BRL",
+  });
+}
+
 async function maybeNotifyLowBalance(
   admin: AdminLike,
   consultantId: string,
@@ -185,20 +201,127 @@ async function maybeNotifyLowBalance(
     }
     if (data !== true) return;
 
-    await notifyConsultant(
-      consultantId,
-      "warning",
-      "Crédito do iGreen Fone acabou",
-      [
-        "Seu saldo de *SMS* e *ligações* chegou a *zero*.",
-        "",
-        "✅ *WhatsApp* e *chatbot* → continuam *grátis*",
-        "📲 *SMS* → R$ 0,10 por envio",
-        "📞 *Ligação* → R$ 0,10 a cada 30s (só se atender)",
-        "",
-        "👉 Fale com o *administrador* para adicionar crédito e seguir o acompanhamento.",
-      ].join("\n"),
-    );
+    const { data: cons } = await admin
+      .from("consultants")
+      .select("name, display_name, phone, notification_phone")
+      .eq("id", consultantId)
+      .maybeSingle();
+
+    const row = (cons || {}) as {
+      name?: string | null;
+      display_name?: string | null;
+      phone?: string | null;
+      notification_phone?: string | null;
+    };
+    const label = resolvePublicConsultantLabel(row.name, row.display_name, "");
+    const who =
+      label ||
+      String(row.display_name || row.name || "").trim() ||
+      consultantId.slice(0, 8);
+    const alertPhone = String(row.notification_phone || row.phone || "").replace(/\D/g, "");
+    const balanceLabel = formatBrlFromCents(result.balance_after_cents ?? 0);
+    const debtLabel = formatBrlFromCents(result.debt_cents ?? 0);
+
+    // Texto limpo: 1 emoji no título (via notifyConsultant), sem negrito em toda palavra.
+    const consultantBody = [
+      `Seu saldo de SMS e ligações chegou a zero (${balanceLabel}).`,
+      result.debt_cents && result.debt_cents > 0
+        ? `Há uma pendência de ${debtLabel}.`
+        : null,
+      "",
+      "WhatsApp e chatbot continuam grátis.",
+      "SMS: R$ 0,10 por envio",
+      "Ligação: R$ 0,10 a cada 30s (só se atender)",
+      "",
+      "Fale com o administrador para adicionar crédito e seguir o acompanhamento.",
+    ]
+      .filter((line) => line !== null)
+      .join("\n");
+
+    let consultantSent = false;
+    let consultantReason = "ok";
+    if (!alertPhone) {
+      consultantReason = "sem_telefone_alerta";
+    } else {
+      consultantSent = await notifyConsultant(
+        consultantId,
+        "warning",
+        "Crédito do iGreen Fone acabou",
+        consultantBody,
+      );
+      if (!consultantSent) consultantReason = "envio_whatsapp_falhou";
+    }
+
+    const saLines = [
+      `iGreen Fone zerado — ${who}`,
+      "",
+      `Saldo: ${balanceLabel}` +
+        (result.debt_cents && result.debt_cents > 0 ? ` · dívida: ${debtLabel}` : ""),
+      `WhatsApp ao consultor: ${consultantSent ? "enviado" : `NÃO chegou (${consultantReason})`}`,
+      alertPhone ? `Destino: ${alertPhone}` : "Destino: (sem notification_phone / phone)",
+      "",
+      "Adicione crédito em Super Admin → consultor (carteira / crédito manual).",
+    ];
+
+    const saStatus = await notifySuperAdminOpsAlert(admin as never, {
+      key: `igreen_fone:${consultantId}`,
+      severity: consultantSent ? "warn" : "critical",
+      dedupMinutes: 24 * 60,
+      text: saLines.join("\n"),
+      metricKey: "ops_alert",
+      extraMeta: {
+        channel: "igreen_fone",
+        consultant_id: consultantId,
+        consultant_name: who,
+        balance_cents: result.balance_after_cents ?? 0,
+        debt_cents: result.debt_cents ?? 0,
+        consultant_wa_sent: consultantSent,
+        consultant_wa_reason: consultantReason,
+        alert_phone: alertPhone || null,
+      },
+    });
+
+    // Dedup do SA não grava linha — registra a tentativa do consultor no modal.
+    if (saStatus === "skipped_dedup") {
+      try {
+        await admin.from("infra_metrics").insert({
+          metric_key: "ops_alert",
+          value_num: result.balance_after_cents ?? 0,
+          meta: {
+            key: `igreen_fone:${consultantId}`,
+            severity: consultantSent ? "warn" : "critical",
+            text: saLines.join("\n"),
+            sent: false,
+            reason: "sa_dedup",
+            channel: "igreen_fone",
+            consultant_id: consultantId,
+            consultant_name: who,
+            balance_cents: result.balance_after_cents ?? 0,
+            debt_cents: result.debt_cents ?? 0,
+            consultant_wa_sent: consultantSent,
+            consultant_wa_reason: consultantReason,
+            alert_phone: alertPhone || null,
+          },
+        });
+      } catch (logErr) {
+        console.warn("[platform-billing] dedup log", (logErr as Error).message);
+      }
+    }
+
+    // Se o Zap do consultor falhou, libera retry em ~1h (não queima as 24h).
+    if (!consultantSent) {
+      try {
+        await admin
+          .from("platform_low_balance_alerts")
+          .update({
+            last_notified_at: new Date(Date.now() - 23 * 3600_000).toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq("consultant_id", consultantId);
+      } catch (rollErr) {
+        console.warn("[platform-billing] rollback cooldown", (rollErr as Error).message);
+      }
+    }
   } catch (e) {
     console.warn("[platform-billing] notify low balance", (e as Error).message);
   }

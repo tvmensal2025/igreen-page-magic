@@ -37,7 +37,7 @@ import {
   summarizeSlaBacklog,
   type SlaBacklogLead,
 } from "@/lib/slaBacklogLeads";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 const FAR_FUTURE_MS = 3650 * 24 * 3600_000;
 const SESSION_AUTO_KEY = "igreen-sla-backlog-modal-auto";

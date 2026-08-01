@@ -6,7 +6,7 @@ import {
   Loader2, RefreshCw, TrendingUp, MessageCircleReply, ArrowUpRight,
   XCircle, Send, Hourglass,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { stepLabel, loadFlowTitles } from "./stepLabels";
 
 /**

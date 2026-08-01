@@ -23,7 +23,7 @@ import type { SupportSession, RemoteCommand } from "./types";
 import { requestSupport, endSession, rotateCode, logAction } from "./api";
 import { createRequesterPeer, captureViewportInfo } from "./screenShare";
 import { executeCommand, setActivePeerForQuality, setRemoteControlPaused } from "./actionHandler";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 // ---------------------------------------------------------------------------
 // Constantes

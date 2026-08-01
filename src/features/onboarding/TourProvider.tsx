@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { ArrowLeft, ArrowRight, BookOpen, ExternalLink, HelpCircle, MessageCircle, Play, RefreshCw, Sparkles, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, BookOpen, ExternalLink, HelpCircle, MessageCircle, Play, RefreshCw, Sparkles, X } from "lucide-react";
 import { useTour } from "./useTour";
 import { GuideCoach } from "./GuideCoach";
 import { useGuideCoach } from "./GuideCoachProvider";
@@ -15,8 +15,20 @@ const TARGET_PADDING = 8;
 const LOCATE_ATTEMPTS = 24;
 const LOCATE_INTERVAL_MS = 300;
 /** Espaço reservado para o card quando ele fica embaixo (conteúdo longo). */
-const CARD_RESERVE_BOTTOM = 220;
+const CARD_RESERVE_BOTTOM = 280;
 const CARD_WIDTH = 420;
+
+/** Bloco opcional `[[ALERT]]…[[/ALERT]]` no body do tour → callout visual. */
+function splitTourBody(body: string): { intro: string; alertTitle: string | null; alertBody: string | null } {
+  const match = body.match(/\[\[ALERT\]\]\s*([\s\S]*?)\s*\[\[\/ALERT\]\]/);
+  if (!match) return { intro: body, alertTitle: null, alertBody: null };
+  const alertRaw = match[1].trim();
+  const nl = alertRaw.indexOf("\n");
+  const alertTitle = nl === -1 ? alertRaw : alertRaw.slice(0, nl).trim();
+  const alertBody = nl === -1 ? null : alertRaw.slice(nl + 1).trim() || null;
+  const intro = body.replace(match[0], "").replace(/\n{3,}/g, "\n\n").trim();
+  return { intro, alertTitle: alertTitle || null, alertBody };
+}
 
 type TargetRect = { top: number; left: number; width: number; height: number };
 type CardPlacement = "bottom" | "right" | "left" | "top";
@@ -106,11 +118,59 @@ export function TourProvider() {
     window.dispatchEvent(new CustomEvent("igreen-open-sidebar"));
   }, [open, current?.id, current?.selector]);
 
+  // Auto-start só no Dashboard, depois do setup (gate + prefs). Nunca no meio do preenchimento.
   useEffect(() => {
-    if (!ready || !location.pathname.startsWith("/admin") || !shouldAutoStart) return;
-    const timer = window.setTimeout(() => void start(), 600);
-    return () => window.clearTimeout(timer);
-  }, [ready, shouldAutoStart, location.pathname, start]);
+    if (!ready || !shouldAutoStart || open) return;
+    if (!location.pathname.startsWith("/admin")) return;
+
+    let cancelled = false;
+    let timer = 0;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 180; // ~90s — cobre gate + modal de automações
+    const INTERVAL_MS = 500;
+
+    let clearStreak = 0;
+    const STABLE_TICKS = 2; // ~1s livre de blockers antes de abrir
+
+    const canStartNow = () => {
+      if (!isAdminDashboardSurface(location.pathname)) return false;
+      if (document.querySelector("[data-tour-blocker]")) return false;
+      return !!document.querySelector('[data-tour="dashboard"]');
+    };
+
+    const tryStart = () => {
+      if (cancelled) return;
+      if (canStartNow()) {
+        clearStreak += 1;
+        if (clearStreak >= STABLE_TICKS) {
+          void start();
+          return;
+        }
+      } else {
+        clearStreak = 0;
+      }
+      if (attempts++ < MAX_ATTEMPTS) {
+        timer = window.setTimeout(tryStart, INTERVAL_MS);
+      }
+    };
+
+    timer = window.setTimeout(tryStart, 800);
+
+    const onTab = () => {
+      if (cancelled || open) return;
+      window.clearTimeout(timer);
+      attempts = 0;
+      timer = window.setTimeout(tryStart, 300);
+    };
+
+    window.addEventListener(ADMIN_TAB_CHANGED_EVENT, onTab);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+      window.removeEventListener(ADMIN_TAB_CHANGED_EVENT, onTab);
+    };
+  }, [ready, shouldAutoStart, location.pathname, start, open]);
 
   useEffect(() => {
     if (!open || !current?.selector) {
@@ -243,6 +303,7 @@ export function TourProvider() {
   const guideActive = guide.active;
   // FAB só no Dashboard — nas outras abas/rotas atrapalha o conteúdo
   const showFab = !open && !guideActive && onDashboard;
+  const bodyParts = splitTourBody(current?.body || "");
 
   return (
     <>
@@ -277,7 +338,31 @@ export function TourProvider() {
                 <h2 id="tour-title" className="mt-2 pr-8 text-lg font-bold leading-tight">{current.title || `Passo ${current.order_index}`}</h2>
               </div>
               <div className="space-y-3 px-5 py-4 overflow-y-auto min-h-0">
-                <p id="tour-description" className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">{current.body || "Este conteúdo está sendo preparado."}</p>
+                <div id="tour-description" className="space-y-3">
+                  <p className="whitespace-pre-line text-sm leading-relaxed text-muted-foreground">
+                    {bodyParts.intro || "Este conteúdo está sendo preparado."}
+                  </p>
+                  {bodyParts.alertTitle && (
+                    <div
+                      role="alert"
+                      className="rounded-xl border-2 border-amber-500/50 bg-amber-500/10 px-3.5 py-3 shadow-sm"
+                    >
+                      <div className="flex gap-2.5">
+                        <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden />
+                        <div className="min-w-0 space-y-1.5">
+                          <p className="text-sm font-bold leading-snug text-amber-800 dark:text-amber-300">
+                            {bodyParts.alertTitle}
+                          </p>
+                          {bodyParts.alertBody && (
+                            <p className="whitespace-pre-line text-sm leading-relaxed text-amber-900/90 dark:text-amber-100/90">
+                              {bodyParts.alertBody}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 {current.selector && !targetRect && <p className="text-xs text-muted-foreground">O item ainda não apareceu nesta tela. Use o botão abaixo para abrir a área ou siga para o próximo passo.</p>}
                 {current.cta_href && (
                   <Button variant="outline" size="sm" onClick={() => current.cta_href?.startsWith("http") ? window.open(current.cta_href, "_blank", "noopener,noreferrer") : navigate(current.cta_href)}>

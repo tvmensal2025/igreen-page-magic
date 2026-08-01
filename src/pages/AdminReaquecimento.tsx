@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, ArrowLeft, Send, RefreshCw, Users, AlertCircle } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { ReaquecimentoLeadList } from "@/components/admin/reaquecimento/ReaquecimentoLeadList";
 import { ReaquecimentoTemplates } from "@/components/admin/reaquecimento/ReaquecimentoTemplates";
 import { ReaquecimentoSendDialog } from "@/components/admin/reaquecimento/ReaquecimentoSendDialog";

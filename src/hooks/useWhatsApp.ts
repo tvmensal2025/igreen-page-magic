@@ -28,6 +28,27 @@ import { useWhatsAppInstanceDb } from "./whatsapp/useWhatsAppInstanceDb";
 import { createHealthControls } from "./whatsapp/whatsappHealth";
 import { createStateChecks } from "./whatsapp/whatsappStateChecks";
 
+/** ID estável desta aba — evita o lock de QR se bloquear sozinho. */
+function getWhatsAppQrTabId(): string {
+  try {
+    const key = "igreen:wa-qr-tab-id";
+    let id = sessionStorage.getItem(key);
+    if (!id) {
+      id = typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `tab-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+      sessionStorage.setItem(key, id);
+    }
+    return id;
+  } catch {
+    return `tab-${Date.now()}`;
+  }
+}
+
+const QR_LOCK_STALE_MS = 8_000;
+/** Canal v2: ignora locks de abas com código antigo (sem tabId). */
+const QR_LOCK_CHANNEL = "whatsapp-qr-lock-v2";
+
 export type { OperationalHealth } from "./whatsapp/whatsappHelpers";
 
 interface UseWhatsAppReturn {
@@ -62,6 +83,18 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
   const [phoneNumber, setPhoneNumber] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const setSafeError = useCallback((msg: string | null) => {
+    if (!msg) {
+      setError(null);
+      return;
+    }
+    // Nunca expor ruído de lock entre abas / jargão técnico ao consultor.
+    if (/outra aba|broadcastchannel|fech[ea]-a antes|qr-lock/i.test(msg)) {
+      setError(null);
+      return;
+    }
+    setError(msg);
+  }, []);
   const [connectionLog, setConnectionLog] = useState<string[]>([]);
   const [operationalHealth, setOperationalHealth] = useState<OperationalHealth>("healthy");
   const [consecutiveTimeouts, setConsecutiveTimeouts] = useState(0);
@@ -339,32 +372,85 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
       return;
     }
 
+    const tabId = getWhatsAppQrTabId();
+    const lockKey = `consultant:${consultantId}`;
+    let qrLockChannel: BroadcastChannel | null = null;
+    let qrLockInterval: ReturnType<typeof setInterval> | null = null;
+    const releaseQrLock = () => {
+      if (qrLockInterval) {
+        clearInterval(qrLockInterval);
+        qrLockInterval = null;
+      }
+      try { qrLockChannel?.close(); } catch { /* ignore */ }
+      qrLockChannel = null;
+    };
+
+    // Lock entre abas: nunca bloqueia a própria aba; só respeita outra aba
+    // com heartbeat fresco. Lock velho (aba fechada) é assumido na hora.
     try {
-      const lockKey = `consultant:${consultantId}`;
-      const ch = new BroadcastChannel("whatsapp-qr-lock");
-      let blocked = false;
+      const ch = new BroadcastChannel(QR_LOCK_CHANNEL);
+      qrLockChannel = ch;
+      let otherFresh = false;
       const onMsg = (ev: MessageEvent) => {
-        if (ev.data?.instance === lockKey && ev.data?.type === "qr-lock-active") blocked = true;
+        const d = ev.data;
+        if (!d || d.instance !== lockKey || d.type !== "qr-lock-active") return;
+        if (d.tabId && d.tabId === tabId) return; // eco da própria aba
+        const age = Date.now() - Number(d.ts || 0);
+        if (age >= 0 && age < QR_LOCK_STALE_MS) otherFresh = true;
       };
       ch.addEventListener("message", onMsg);
-      ch.postMessage({ type: "qr-lock-query", instance: lockKey, ts: Date.now() });
-      await new Promise((r) => setTimeout(r, 250));
+      ch.postMessage({ type: "qr-lock-query", instance: lockKey, ts: Date.now(), tabId });
+      await new Promise((r) => setTimeout(r, 280));
       ch.removeEventListener("message", onMsg);
-      if (blocked) {
-        ch.close();
-        addLog("⚠️ Outra aba já está gerando QR. Use aquela aba.");
-        setError("Outra aba já está gerando QR. Feche-a antes de tentar aqui.");
-        return;
-      }
-      const lockInterval = setInterval(() => {
-        ch.postMessage({ type: "qr-lock-active", instance: lockKey, ts: Date.now() });
-      }, 2000);
-      ch.addEventListener("message", (ev) => {
-        if (ev.data?.type === "qr-lock-query" && ev.data?.instance === lockKey) {
-          ch.postMessage({ type: "qr-lock-active", instance: lockKey, ts: Date.now() });
+
+      if (otherFresh) {
+        // Outra aba viva: não trava o consultor — busca o QR da mesma sessão.
+        addLog("ℹ️ Outra aba já pediu o código — buscando o mesmo aqui…");
+        setError(null);
+        setIsLoading(true);
+        setStatus("connecting");
+        const joinName = getFixedInstanceName(consultantId);
+        setInstanceName(joinName);
+        try {
+          const qrAttempt = await checks.tryGetQr(joinName);
+          if (!mountedRef.current) {
+            releaseQrLock();
+            return;
+          }
+          if (qrAttempt.alreadyConnected) {
+            releaseQrLock();
+            await markConnected(joinName, "✅ WhatsApp já está conectado!");
+            startPolling(joinName);
+            setIsLoading(false);
+            return;
+          }
+          if (qrAttempt.qr) {
+            releaseQrLock();
+            health.resetRecoveryCounter();
+            setQrCode(qrAttempt.qr);
+            setQrGeneratedAt(Date.now());
+            setStatus("connecting");
+            setHealth("needs_qr");
+            addLog("📱 Código pronto — escaneie UMA vez");
+            startPolling(joinName);
+            setIsLoading(false);
+            return;
+          }
+          // Sem QR ainda: assume o lock e segue o fluxo normal abaixo.
+          addLog("⏳ Código ainda chegando — preparando aqui…");
+        } catch {
+          /* segue fluxo normal */
         }
+      }
+
+      const announce = () => {
+        ch.postMessage({ type: "qr-lock-active", instance: lockKey, ts: Date.now(), tabId });
+      };
+      announce();
+      qrLockInterval = setInterval(announce, 2000);
+      ch.addEventListener("message", (ev) => {
+        if (ev.data?.type === "qr-lock-query" && ev.data?.instance === lockKey) announce();
       });
-      setTimeout(() => { clearInterval(lockInterval); ch.close(); }, 5 * 60 * 1000);
     } catch { /* navegador sem BroadcastChannel */ }
 
     lockRef.current = true;
@@ -441,7 +527,7 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
             return;
           } else {
             setStatus("disconnected");
-            setError(msg);
+            setSafeError(msg);
             addLog("❌ " + msg);
             return;
           }
@@ -490,10 +576,11 @@ export function useWhatsApp(consultantId: string): UseWhatsAppReturn {
         startPolling(name);
       } else {
         setStatus("disconnected");
-        setError(msg);
+        setSafeError(msg);
         addLog("❌ " + msg);
       }
     } finally {
+      releaseQrLock();
       lockRef.current = false;
       setIsLoading(false);
     }

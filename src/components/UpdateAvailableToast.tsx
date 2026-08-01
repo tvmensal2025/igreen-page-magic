@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { hardReset } from "@/lib/hardReset";
 
 // Componente "headless" (não renderiza nada visível). Apenas escuta o evento

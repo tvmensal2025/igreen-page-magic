@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { AdsButton } from "./AdsButton";
 import { Loader2, Zap } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { smartPublish } from "@/services/smartPublish";
 import { AdTemplate } from "@/services/adTemplates";
 

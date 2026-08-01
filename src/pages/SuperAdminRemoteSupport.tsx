@@ -29,7 +29,7 @@ import {
   AlertTriangle,
   ScreenShare,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import type {
   SupportSession, RemoteCommand, CommandResult, RequesterViewport,
 } from "@/features/remote-support/types";

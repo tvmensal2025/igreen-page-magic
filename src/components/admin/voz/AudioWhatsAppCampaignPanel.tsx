@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Mic, Square, Upload, Send, Users, X } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { uploadMedia } from "@/services/minioUpload";
 import { createCampaign } from "@/components/whatsapp/bulk-pro/useCampaignPersistence";
 import type { CampaignTarget } from "@/components/whatsapp/bulk-pro/types";

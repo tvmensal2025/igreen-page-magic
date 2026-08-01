@@ -15,7 +15,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Sparkles, Check, X, Edit3, AlertTriangle, Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { Step } from "./flowTypes";
 import { supabase } from "@/integrations/supabase/client";
 

@@ -11,7 +11,7 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { MessageCircleHeart, Loader2, Save } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { DEFAULT_CLIENTE_CANAL_REPLY } from "@/lib/clienteCanalNovidades";
 
 type FlowOpt = { id: string; name: string; variant: string };

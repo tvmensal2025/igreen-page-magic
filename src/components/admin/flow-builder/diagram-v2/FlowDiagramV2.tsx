@@ -24,7 +24,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { ExpandableNode } from "./ExpandableNode";
 import { CanvasToolbar } from "./CanvasToolbar";
 import { useFlowGraphV2 } from "./useFlowGraphV2";

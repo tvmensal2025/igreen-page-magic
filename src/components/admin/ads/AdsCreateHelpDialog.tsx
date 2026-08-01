@@ -1,6 +1,6 @@
 /**
  * Explica em linguagem simples a diferença entre
- * Anunciar rápido × Montar completo.
+ * Anúncio inteligente × Anúncio completo.
  */
 import {
   Dialog,
@@ -39,12 +39,12 @@ export function AdsCreateHelpDialog({ open, onClose, onOpenSmart, onOpenWizard }
           <div className="rounded-xl border border-[hsl(var(--ads-emerald)/.35)] bg-[hsl(var(--ads-emerald)/.08)] p-3.5 space-y-2">
             <div className="flex items-center gap-2 font-semibold text-[hsl(var(--ads-emerald-2))]">
               <Brain className="h-4 w-4" />
-              Anunciar rápido
+              Anúncio inteligente
             </div>
             <p className="text-[12px] text-[hsl(var(--ads-text))] leading-relaxed">
-              É o caminho <strong>rápido e recomendado</strong>. Já vem no jeito que
+              É o caminho <strong>recomendado</strong>. Já vem no jeito que
               mais barateou contato (cidade da sua sede, mensagem pronta, quem já viu o anúncio).
-              Você só escolhe foto ou vídeo e pode mudar o título.
+              Você só escolhe foto ou vídeo (inclui oficiais) e pode mudar o título.
             </p>
             <ul className="space-y-1.5 text-[12px] text-[hsl(var(--ads-text))]">
               <li className="flex gap-2"><Check className="h-3.5 w-3.5 text-primary shrink-0 mt-0.5" /> Poucos cliques — não precisa montar cidade, DDD nem público</li>
@@ -55,7 +55,7 @@ export function AdsCreateHelpDialog({ open, onClose, onOpenSmart, onOpenWizard }
             </ul>
             {onOpenSmart && (
               <Button size="sm" className="mt-1 gap-1.5" onClick={() => { onClose(); onOpenSmart(); }}>
-                <Brain className="h-3.5 w-3.5" /> Usar Anunciar rápido
+                <Brain className="h-3.5 w-3.5" /> Usar Anúncio inteligente
               </Button>
             )}
           </div>
@@ -63,7 +63,7 @@ export function AdsCreateHelpDialog({ open, onClose, onOpenSmart, onOpenWizard }
           <div className="rounded-xl border border-[hsl(var(--ads-border))] bg-secondary/20 p-3.5 space-y-2">
             <div className="flex items-center gap-2 font-semibold text-[hsl(var(--ads-text))]">
               <Plus className="h-4 w-4 text-primary" />
-              Montar completo
+              Anúncio completo
             </div>
             <p className="text-[12px] text-[hsl(var(--ads-text))] leading-relaxed">
               É o caminho <strong>completo</strong>. Você monta tudo: cidade ou rua,
@@ -76,14 +76,14 @@ export function AdsCreateHelpDialog({ open, onClose, onOpenSmart, onOpenWizard }
             </ul>
             {onOpenWizard && (
               <Button size="sm" variant="outline" className="mt-1 gap-1.5" onClick={() => { onClose(); onOpenWizard(); }}>
-                <Plus className="h-3.5 w-3.5" /> Abrir montagem completa
+                <Plus className="h-3.5 w-3.5" /> Abrir anúncio completo
               </Button>
             )}
           </div>
 
           <p className="text-[11px] text-[hsl(var(--ads-muted))] leading-relaxed border-t border-[hsl(var(--ads-border))] pt-3">
             <strong className="text-[hsl(var(--ads-text))]">Dica:</strong> em dúvida, use
-            {" "}Anunciar rápido. Use Montar completo só quando quiser algo diferente
+            {" "}Anúncio inteligente. Use Anúncio completo só quando quiser algo diferente
             do padrão (outra cidade, outro ângulo, teste manual).
           </p>
         </div>

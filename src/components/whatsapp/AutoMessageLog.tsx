@@ -16,7 +16,7 @@ import { History, CheckCircle2, XCircle, AlertTriangle, RefreshCw, Users, Sparkl
 import { Button } from "@/components/ui/button";
 import { labelForStageKey } from "@/lib/posVendaSchedule";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 type LogSource = "pos_venda" | "crm";
 

@@ -26,7 +26,7 @@ import {
   revokeContactSuppression,
   type SuppressionReason,
 } from "@/services/contactSuppression";
-import { toast as sonnerToast } from "sonner";
+import { toast as sonnerToast } from "@/components/ui/sonner";
 
 interface SuppressProps {
   open: boolean;

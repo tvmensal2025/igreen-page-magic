@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from "react";
 import { uploadMedia, formatFileSize } from "@/services/minioUpload";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { createLogger } from "@/lib/logger";
 
 const logger = createLogger("useFileAttach");

@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CADENCE_CALENDAR } from "@/lib/cadenceCalendarMap";
 import { ExternalLink, Loader2, Megaphone, RefreshCw } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 const RECALL_TOGGLES = [
   { key: "facebook_retarget_sync", label: "Enviar para Meta (público)", hint: "Após dia 10 — hash telefone/e-mail" },

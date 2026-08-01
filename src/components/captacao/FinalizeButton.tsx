@@ -2,7 +2,7 @@ import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Trophy, Loader2, AlertCircle } from "lucide-react";
-import { toast as sonnerToast } from "sonner";
+import { toast as sonnerToast } from "@/components/ui/sonner";
 import { fireRandomCelebration } from "@/lib/captureGame";
 import {
   AlertDialog,

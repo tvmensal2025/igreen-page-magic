@@ -2,7 +2,7 @@ import { useRef, useState, useCallback } from "react";
 import { Image, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { uploadMedia } from "@/services/minioUpload";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 interface Props {
   templateId: string;

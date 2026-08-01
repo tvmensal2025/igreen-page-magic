@@ -16,7 +16,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { ExternalLink, Loader2, Play, RefreshCw, Zap, ZapOff } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 const GRUPO_B_TOGGLES = [
   ["cadence_cold_1", "COLD_1"],

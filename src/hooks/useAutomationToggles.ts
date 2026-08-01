@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 export type AutomationToggle = {
   id: string;

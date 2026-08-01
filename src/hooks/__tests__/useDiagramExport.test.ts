@@ -32,7 +32,7 @@ vi.mock("sonner", () => ({
 }));
 
 import { toPng, toSvg } from "html-to-image";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { useDiagramExport } from "../useDiagramExport";
 import type { ReactFlowInstance } from "@xyflow/react";
 

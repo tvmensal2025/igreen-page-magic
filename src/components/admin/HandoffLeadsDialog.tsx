@@ -43,7 +43,7 @@ import {
 import { HandoffLeadPreviewDialog } from "@/components/admin/HandoffLeadPreviewDialog";
 import { useConfirm } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 const SESSION_AUTO_KEY = "igreen-handoff-modal-auto";
 

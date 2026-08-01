@@ -22,7 +22,7 @@ import {
   CheckCircle2,
   Satellite,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { analyzeRoof, saveManualSketch, updateSnapshotPanels } from "../lib/api";
 import type { SolarAnalyzeResult } from "../lib/types";
 import { SolarAnalysisResults } from "./SolarAnalysisResults";

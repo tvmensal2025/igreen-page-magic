@@ -1,7 +1,8 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Sparkles, Save, AlertCircle } from "lucide-react";
 import type { ConsultantForm } from "@/hooks/useAdminAuth";
 import { validateBrazilPhone } from "@/lib/phone";
@@ -19,8 +20,8 @@ interface OnboardingGateProps {
 
 type FieldErrors = Partial<Record<"name" | "igreen_id" | "phone" | "notification_phone" | "assistant_name" | "gender", string>>;
 
-// Campos opcionais ficam apenas como avisos (não bloqueiam o painel).
-// O painel libera com: nome + ID iGreen + nome da IA (prefs de automação vêm depois).
+// Painel libera com: nome + ID iGreen + nome da IA + consultor/consultora.
+// Telefone/WhatsApp completam depois — não bloqueiam o gate nem a geração de áudios.
 function validate(form: ConsultantForm): FieldErrors {
   const errors: FieldErrors = {};
   if (!form.name?.trim() || form.name.trim().length < 3) errors.name = "Digite seu nome completo";
@@ -28,7 +29,9 @@ function validate(form: ConsultantForm): FieldErrors {
   if (!igreen || igreen.length < 4) errors.igreen_id = "ID iGreen inválido (mínimo 4 dígitos)";
   const ia = (form.assistant_name || "").trim();
   if (!ia || ia.length < 2) errors.assistant_name = "Digite o nome da sua IA (ex.: Yasmin, Sol)";
-  // Soft warnings (não bloqueiam) — telefone/gênero podem ser preenchidos depois na aba Dados.
+  if (form.gender !== "consultor" && form.gender !== "consultora") {
+    errors.gender = "Escolha Consultor ou Consultora";
+  }
   const phoneV = validateBrazilPhone(form.phone);
   if (form.phone && !phoneV.valid) errors.phone = phoneV.message || "Telefone inválido";
   const notifV = validateBrazilPhone(form.notification_phone);
@@ -43,6 +46,7 @@ function blockingErrors(form: ConsultantForm): FieldErrors {
   if (e.name) out.name = e.name;
   if (e.igreen_id) out.igreen_id = e.igreen_id;
   if (e.assistant_name) out.assistant_name = e.assistant_name;
+  if (e.gender) out.gender = e.gender;
   return out;
 }
 
@@ -56,35 +60,53 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
   // Só libera o painel depois de clicar em "Liberar painel" e o save gravar.
   // Sem auto-save: preencher os campos NÃO fecha o modal.
   const [releasedBySave, setReleasedBySave] = useState(false);
-  // Se o perfil já estava completo no banco ao abrir (sem editar), não mostra o gate de novo.
-  const [editedInSession, setEditedInSession] = useState(false);
+  // Snapshot no 1º render: se já vinha completo do banco, não reexibe o gate.
+  // NÃO reavalia quando o form muda depois (evita fechar no meio da digitação / loop).
+  const initiallyCompleteRef = useRef<boolean | null>(null);
+  if (initiallyCompleteRef.current === null) {
+    initiallyCompleteRef.current = isComplete(form);
+  }
+  // Travas anti-loop: submit em voo + save já concluído nesta sessão.
+  const saveInFlightRef = useRef(false);
 
   const errors = useMemo(() => validate(form), [form]);
   const blocking = useMemo(() => blockingErrors(form), [form]);
   const complete = Object.keys(blocking).length === 0;
+  // Botão só libera depois de digitar os 3 campos; `saving` trava clique duplo.
+  const canSubmit = complete && !saving;
 
   const applyChange = (updates: Record<string, string>) => {
-    setEditedInSession(true);
+    // Qualquer digitação invalida o “já completo no mount”: agora só libera com save.
+    initiallyCompleteRef.current = false;
     onFormChange(updates);
   };
 
   const doSave = async (e: React.FormEvent): Promise<boolean> => {
-    const ok = await onSave(e);
-    if (ok) setReleasedBySave(true);
-    return ok;
+    if (saveInFlightRef.current || releasedBySave) return releasedBySave;
+    saveInFlightRef.current = true;
+    try {
+      const ok = await onSave(e);
+      if (ok) setReleasedBySave(true);
+      return ok;
+    } finally {
+      saveInFlightRef.current = false;
+    }
   };
 
-  // Já completo no banco e usuário não mexeu → entra no painel.
-  // Se mexeu ou ainda incompleto → fica no modal até clicar em salvar com sucesso.
+  // Já completo no banco no 1º render e sem digitação → entra no painel.
+  // Se incompleto ou digitou → fica no modal até clicar em Liberar painel com sucesso.
   if (releasedBySave) return <>{children}</>;
-  if (complete && !editedInSession) return <>{children}</>;
+  if (initiallyCompleteRef.current) return <>{children}</>;
 
   const showErr = (key: keyof FieldErrors) => (submitAttempted || touched[key]) ? errors[key] : undefined;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setSubmitAttempted(true);
-    if (Object.keys(blocking).length > 0) return;
+    if (saving || saveInFlightRef.current || releasedBySave) return;
+    if (!complete) {
+      setSubmitAttempted(true);
+      return;
+    }
     await doSave(e);
   };
 
@@ -99,6 +121,7 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
         role="dialog"
         aria-modal="true"
         aria-labelledby="onboarding-gate-title"
+        data-tour-blocker="onboarding-gate"
         onKeyDown={(e) => {
           // Não fecha com Escape — só com salvar.
           if (e.key === "Escape") e.preventDefault();
@@ -117,9 +140,9 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
               Bem-vindo ao iGreen!
             </h2>
             <p className="text-sm text-muted-foreground">
-              Precisamos do seu nome, do ID iGreen e do nome da sua IA. Clique em{" "}
-              <strong>Liberar painel</strong> para continuar — o restante completa na aba{" "}
-              <strong>Dados</strong>.
+              Digite seu nome, o ID iGreen, o nome da sua IA e se você é{" "}
+              <strong>consultor ou consultora</strong>. Com isso os áudios já nascem certos — telefone e WhatsApp
+              você completa depois.
             </p>
           </div>
 
@@ -134,8 +157,38 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
                   applyChange({ name: newName, license: slug });
                 }}
                 placeholder="Seu nome"
+                autoComplete="name"
                 className="bg-secondary border-border"
               />
+            </Field>
+
+            <Field
+              label="Você é"
+              error={showErr("gender")}
+              hint='Define se o áudio diz "do Rafael" ou "da Sirlene".'
+            >
+              <ToggleGroup
+                type="single"
+                value={form.gender || ""}
+                onValueChange={(v) => {
+                  setTouched((t) => ({ ...t, gender: true }));
+                  if (v === "consultor" || v === "consultora") applyChange({ gender: v });
+                }}
+                className="grid w-full grid-cols-2 gap-2"
+              >
+                <ToggleGroupItem
+                  value="consultor"
+                  className="h-11 rounded-xl border border-border data-[state=on]:border-primary data-[state=on]:bg-primary/15 data-[state=on]:text-foreground"
+                >
+                  Consultor
+                </ToggleGroupItem>
+                <ToggleGroupItem
+                  value="consultora"
+                  className="h-11 rounded-xl border border-border data-[state=on]:border-primary data-[state=on]:bg-primary/15 data-[state=on]:text-foreground"
+                >
+                  Consultora
+                </ToggleGroupItem>
+              </ToggleGroup>
             </Field>
 
             <Field label="ID iGreen" error={showErr("igreen_id")} hint="Número do seu cadastro na iGreen (4 a 10 dígitos).">
@@ -153,6 +206,7 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
                 }}
                 placeholder="ex: 126928"
                 inputMode="numeric"
+                autoComplete="off"
                 className="bg-secondary border-border"
               />
             </Field>
@@ -160,7 +214,7 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
             <Field
               label="Nome da sua IA"
               error={showErr("assistant_name")}
-              hint="Como a assistente se apresenta no WhatsApp. É só sua — não é a IA de outro consultor."
+              hint="Como a assistente se apresenta no WhatsApp. Pode ser o mesmo nome de outra conta (reaproveita áudio)."
             >
               <Input
                 value={form.assistant_name}
@@ -168,21 +222,28 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
                 onChange={(e) => applyChange({ assistant_name: e.target.value.slice(0, 20) })}
                 placeholder="Ex.: Yasmin, Sol, Ana…"
                 maxLength={20}
+                autoComplete="off"
                 className="bg-secondary border-border"
               />
             </Field>
           </div>
 
-          {submitAttempted && Object.keys(blocking).length > 0 && (
+          {!complete && (
+            <p className="text-xs text-muted-foreground text-center">
+              Preencha nome, consultor/consultora, ID iGreen e o nome da IA para liberar o botão.
+            </p>
+          )}
+
+          {submitAttempted && !complete && (
             <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>Preencha nome, ID iGreen e o nome da sua IA. Depois clique em Liberar painel.</span>
+              <span>Ainda faltam dados. Digite nome, escolha consultor ou consultora, ID iGreen e o nome da sua IA.</span>
             </div>
           )}
 
           <Button
             type="submit"
-            disabled={saving}
+            disabled={!canSubmit}
             className="w-full h-12 text-base font-bold rounded-xl gap-2"
             style={{ background: "var(--gradient-green)" }}
           >
@@ -210,6 +271,3 @@ function Field({ label, error, hint, children }: { label: string; error?: string
     </div>
   );
 }
-
-// Mantido para compat externa (se algum lugar importava).
-export { isComplete };

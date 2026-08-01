@@ -22,7 +22,7 @@ import {
   Loader2, ArrowLeft, Save, Zap, ZapOff, Clock, Activity, AlertTriangle,
   Play, Pause, RefreshCw, FileText, ChevronDown, ChevronRight, Info, Megaphone,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import {
   CADENCE_CALENDAR,
   CADENCE_GROUP_LABEL,

@@ -3,7 +3,7 @@
 // client e o fluxo "name guard" (consultor é instruído a clicar em
 // "Pedir nome" antes de avançar quando o lead ainda não tem nome capturado).
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 export type SendStepPart = "text" | "audio" | "image" | "video" | "document" | "all";
 

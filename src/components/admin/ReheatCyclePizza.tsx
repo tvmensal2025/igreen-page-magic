@@ -46,7 +46,7 @@ import { CADENCE_CALENDAR, CHANNEL_LABEL, type CadenceChannelUi } from "@/lib/ca
 import { getTemplate } from "@/lib/multichannelCadenceTexts";
 import { isLegacyInteractiveCallScript } from "@/lib/cadencePreview";
 import { CadenceMissingAlert } from "@/components/admin/CadenceMissingAlert";
-import { ConsultantIdentityWizard } from "@/components/admin/ConsultantIdentityWizard";
+import ConsultantIdentityWizard from "@/components/admin/ConsultantIdentityWizard";
 import { SlaBacklogLeadsBanner } from "@/components/admin/SlaBacklogLeadsDialog";
 import { HandoffLeadsBanner } from "@/components/admin/HandoffLeadsDialog";
 import { isCycleLeadEligible, isPausedGroupA } from "@/lib/cycleEligibility";

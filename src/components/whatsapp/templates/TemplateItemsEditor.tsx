@@ -10,7 +10,7 @@ import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
 import type { TemplateMediaType, TemplateItem } from "@/types/whatsapp";
 import { uploadMedia, getAcceptString, formatFileSize } from "@/services/minioUpload";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { formatRecordingTime } from "./templateUtils";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

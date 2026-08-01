@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { useToast } from "@/components/ui/use-toast";
+import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import {
   loadConsultantIdentityStatus,
@@ -124,7 +124,13 @@ export function ConsultantIdentityWizard({ consultantId, className, hideWhenRead
           description:
             res.error === "ELEVENLABS_API_KEY_missing"
               ? "A voz da IA está indisponível no momento. Avise o suporte."
-              : res.reason || res.error || "Tente novamente em alguns minutos.",
+              : res.error === "gender_required"
+                ? "Escolha Consultor ou Consultora nos seus dados."
+                : res.error === "assistant_name_required"
+                  ? "Digite o nome da sua IA e salve."
+                  : res.error === "name_required"
+                    ? "Digite seu nome completo e salve."
+                    : res.reason || res.error || "Tente novamente em alguns minutos.",
           variant: "destructive",
         });
         await reload();
@@ -135,8 +141,8 @@ export function ConsultantIdentityWizard({ consultantId, className, hideWhenRead
           toast({
             title: "Nada a gerar",
             description:
-              res.reason === "whatsapp_not_connected"
-                ? "Conecte seu WhatsApp primeiro."
+              res.reason === "prerequisites_incomplete"
+                ? "Preencha nome, nome da IA e consultor/consultora."
                 : "Sua identidade já está atualizada.",
           });
         }
@@ -153,9 +159,9 @@ export function ConsultantIdentityWizard({ consultantId, className, hideWhenRead
   );
 
   /**
-   * Geração AUTOMÁTICA: assim que os pré-requisitos (nome, IA, telefone e
-   * WhatsApp) estiverem prontos, o sistema gera a mídia do consultor sozinho.
-   * O consultor não precisa clicar em nada. Roda 1x por sessão por consultor.
+   * Geração AUTOMÁTICA: assim que nome + IA + consultor/consultora estiverem
+   * prontos, o sistema gera a mídia do consultor sozinho (sem esperar WhatsApp).
+   * Roda 1x por sessão por consultor.
    */
   useEffect(() => {
     if (!status || generating) return;
@@ -242,7 +248,7 @@ export function ConsultantIdentityWizard({ consultantId, className, hideWhenRead
       <CardContent className="pt-0">
         {!status.canGenerate && (
           <p className="mb-2 rounded-md bg-amber-500/10 px-2.5 py-1.5 text-[11px] font-medium text-amber-800">
-            Antes de gerar os áudios: preencha seu nome, o nome da sua IA, seu telefone e conecte o WhatsApp.
+            Antes de gerar os áudios: preencha seu nome, o nome da sua IA e escolha consultor ou consultora.
           </p>
         )}
         <ul className="grid gap-2 sm:grid-cols-2">

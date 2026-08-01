@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, Phone, PhoneCall, RefreshCw, Zap, Megaphone, Activity, Download, Headphones, Send } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { normalizeBrazilPhone } from "@/lib/phone";
 import { uploadMedia } from "@/services/minioUpload";
 import { downloadBlob } from "@/lib/audioProcessing";
@@ -31,6 +31,7 @@ import { firstName, resolveCustomerByPhone, resolveNameByPhone } from "./voiceCo
 import { formatBrl, PLATFORM_VOICE_BLOCK_PRICE, PLATFORM_VOICE_BLOCK_SEC } from "@/lib/voiceCallCost";
 import { crmClosingSummary } from "./voiceCrmContext";
 import { isIgreenWalletOrigin } from "@/lib/customerOrigin";
+import { resolveAssistantDisplayName } from "@/lib/consultantPublicLabel";
 
 interface Props {
   consultantId: string;
@@ -144,6 +145,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
   const [sofiaAction, setSofiaAction] = useState<"prep" | "listen" | "download" | "wa" | "call" | null>(null);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [monitorId, setMonitorId] = useState<string | null>(null);
+  const [assistantName, setAssistantName] = useState("Assistente");
 
   const [sofiaText, setSofiaText] = useState(
     "Aqui é da iGreen Energia. Queria falar rapidinho sobre a economia na sua conta de luz. Pode me retornar no WhatsApp quando puder?",
@@ -227,6 +229,24 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
   useEffect(() => {
     void loadCampaigns();
   }, [loadCampaigns]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const { data } = await supabase
+        .from("consultants")
+        .select("assistant_name")
+        .eq("id", consultantId)
+        .maybeSingle();
+      if (cancelled) return;
+      setAssistantName(
+        resolveAssistantDisplayName((data as { assistant_name?: string | null } | null)?.assistant_name),
+      );
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [consultantId]);
 
   const invokeEnqueue = async (body: Record<string, unknown>) => {
     const { data, error } = await supabase.functions.invoke("voice-dialer-enqueue", { body });
@@ -504,7 +524,7 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
             <p className="flex items-center gap-1.5 text-sm" style={{ color: "var(--pe-text)" }}>
               <Zap className="h-4 w-4 shrink-0" style={{ color: "var(--pe-emerald)" }} />
               <span>
-                Liga no seu celular com áudio Sofia (voz profissional ElevenLabs). Nunca usa TTS genérico.
+                Liga no seu celular com áudio da {assistantName} (voz profissional ElevenLabs). Nunca usa TTS genérico.
               </span>
             </p>
             <div className="flex flex-col sm:flex-row gap-2">
@@ -547,18 +567,18 @@ export function VoiceDialerPanel({ consultantId, customers }: Props) {
           </div>
         </VozSection>
 
-        <VozSection title="Teste Sofia — igual à programação">
+        <VozSection title={`Teste ${assistantName} — igual à programação`}>
           <div
             className="rounded-[var(--pe-radius)] border p-3 space-y-3"
             style={{ borderColor: "var(--pe-border)", background: "var(--pe-surface)" }}
           >
             <p className="text-sm" style={{ color: "var(--pe-text-muted)" }}>
-              Corpo + nome (opcional) saem num <strong>único áudio Sofia</strong> — mesma voz do Estúdio.
+              Corpo + nome (opcional) saem num <strong>único áudio {assistantName}</strong> — mesma voz do Estúdio.
               Sem TTS genérico.
             </p>
 
             <div className="space-y-1.5">
-              <Label>Texto do corpo (Sofia)</Label>
+              <Label>Texto do corpo ({assistantName})</Label>
               <Textarea
                 rows={4}
                 value={sofiaText}

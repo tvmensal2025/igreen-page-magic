@@ -76,7 +76,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { AlertTriangle, Loader2, Plus, Sparkles, X } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 import { DiagramToolbar } from "@/components/admin/flow-builder/diagram/DiagramToolbar";
 import FlowDiagramEdge from "@/components/admin/flow-builder/diagram/FlowDiagramEdge";

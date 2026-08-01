@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
-import { toast as sonnerToast } from "sonner";
+import { toast as sonnerToast } from "@/components/ui/sonner";
 import {
   Search, Loader2, MapPin, Phone, Globe, Clock, Building2, Mail, CheckCheck, Download, Square, Play,
 } from "lucide-react";

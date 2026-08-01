@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Loader2, Send, Check, AlertCircle, Clock } from "lucide-react";
 import { sendStepWithFeedback } from "@/lib/whatsapp/send";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 export interface SequenceStep {
   step_key: string;

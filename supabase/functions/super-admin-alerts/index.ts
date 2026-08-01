@@ -16,6 +16,7 @@
  *  6) Portal 2: muitos leads em worker_offline
  *  7) Caps outreach no limite (automation_skip_log)
  *  7b) Falhas de envio 24h: identity_missing + send_failed (teto configurável)
+ *  7c) iGreen Fone: carteiras zeradas / dívida (digest diário com nome)
  *  8) Whapi health (AUTH) — NÃO alerta Evolution needs_reconnect
  *  9) Resumo diário “tudo ok” (1×/24h)
  */
@@ -613,6 +614,65 @@ Deno.serve(async (req) => {
 
 
 
+  // ── 7c) iGreen Fone — carteiras zeradas / em dívida (aviso diário) ──
+  // Complementa o aviso imediato no débito: lista quem já está sem saldo.
+  {
+    const { data: zeroWallets } = await supabase
+      .from("consultant_wallet")
+      .select("consultant_id, balance_cents, debt_cents")
+      .or("balance_cents.lte.0,debt_cents.gt.0")
+      .limit(40);
+
+    const rows = (zeroWallets as Array<{
+      consultant_id: string;
+      balance_cents: number;
+      debt_cents: number;
+    }> | null) || [];
+
+    if (rows.length > 0) {
+      const ids = rows.map((w) => w.consultant_id);
+      const { data: consRows } = await supabase
+        .from("consultants")
+        .select("id, name, display_name")
+        .in("id", ids);
+      const nameById = new Map<string, string>();
+      for (const c of (consRows as Array<{
+        id: string;
+        name?: string | null;
+        display_name?: string | null;
+      }> | null) || []) {
+        const nome = String(c.display_name || c.name || "").trim() || c.id.slice(0, 8);
+        nameById.set(c.id, nome);
+      }
+
+      const lines = rows.slice(0, 15).map((w) => {
+        const nome = nameById.get(w.consultant_id) || w.consultant_id.slice(0, 8);
+        const bal = (Number(w.balance_cents) / 100).toLocaleString("pt-BR", {
+          style: "currency",
+          currency: "BRL",
+        });
+        const debt = Number(w.debt_cents) || 0;
+        const debtPart = debt > 0
+          ? ` · dívida ${(debt / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}`
+          : "";
+        return `• ${nome} — saldo ${bal}${debtPart}`;
+      });
+      const extra = rows.length > 15 ? `\n… e mais ${rows.length - 15}` : "";
+      await fire(
+        "igreen_fone_wallets_zero",
+        "warn",
+        `iGreen Fone — consultores sem crédito\n\n` +
+          `${rows.length} carteira(s) zerada(s) ou com dívida:\n` +
+          `${lines.join("\n")}${extra}\n\n` +
+          `O consultor também recebe aviso no Zap quando usa SMS/ligação.\n` +
+          `Adicione crédito em Super Admin → consultor.`,
+        24 * 60,
+      );
+    } else {
+      results.push({ key: "igreen_fone_wallets_zero", fired: false, detail: "none" });
+    }
+  }
+
   // ── 8) Whapi health (AUTH) ────────────────────────────────────────
   const whapiToken = settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "";
   const whapiBase = (settings.whapi_api_url || "https://gate.whapi.cloud").replace(/\/+$/, "");
@@ -641,7 +701,7 @@ Deno.serve(async (req) => {
         await fire(
           "whapi_down",
           "critical",
-          `🚨 *WhatsApp (Whapi) desconectado*\n\n` +
+          `WhatsApp (Whapi) desconectado\n\n` +
             `Não consegui ler o perfil do canal (HTTP ${profile.status}).\n` +
             `Envios e alertas podem falhar — reconecte no painel Whapi.`,
           90,
@@ -660,7 +720,7 @@ Deno.serve(async (req) => {
       await fire(
         "whapi_down",
         "critical",
-        `🚨 *WhatsApp (Whapi) inacessível*\n\n${(e as Error).message}`,
+        `WhatsApp (Whapi) inacessível\n\n${(e as Error).message}`,
         90,
       );
       digestLines.push(`• WhatsApp (Whapi) — ❌ fora`);

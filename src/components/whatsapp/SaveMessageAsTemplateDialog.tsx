@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Loader2, Bookmark } from "lucide-react";
 import { uploadMedia } from "@/services/minioUpload";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import type { ChatMessage } from "@/hooks/useMessages";
 
 interface Props {

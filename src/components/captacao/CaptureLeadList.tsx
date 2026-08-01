@@ -24,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { CAPTURE_FIELDS } from "@/hooks/useCaptureSession";
 import { usePrompt } from "@/components/ui/prompt-dialog";
 import { useConfirm } from "@/components/ui/confirm-dialog";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { ScheduleCallButton } from "@/components/voz/ScheduleCallButton";
 import { VirtualList } from "@/components/ui/VirtualList";
 import { hasValidBatchPhone } from "@/components/captacao/runAttendanceBatch";

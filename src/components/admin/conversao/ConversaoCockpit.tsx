@@ -13,7 +13,7 @@ import {
   LifeBuoy, Search, Sparkles, Zap, Send, BellOff, Clock,
   CheckSquare, X,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import {
   priorityScore, formatStuck, type Temp,
 } from "./score";

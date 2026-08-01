@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { Copy, QrCode, FileText, LinkIcon, ExternalLink, ChevronDown, ChevronUp, BarChart3, Sparkles } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
 import { LinksDashboard } from "./LinksDashboard";
 import { useProducts } from "@/features/produtos/catalogo";

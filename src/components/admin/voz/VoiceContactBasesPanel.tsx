@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { Loader2, Plus, Trash2, Users } from "lucide-react";
 import { VozCampaignShell, VozSection } from "./VozCampaignShell";
 import { Badge } from "@/components/ui/badge";

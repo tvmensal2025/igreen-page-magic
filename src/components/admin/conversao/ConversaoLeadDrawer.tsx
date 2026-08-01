@@ -10,7 +10,7 @@ import {
   Loader2, RefreshCw, Sparkles, Send, MessageSquare, Copy, BellOff, Clock,
   ImagePlus, Film, X, LayoutTemplate, Trophy, XCircle, UserX,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import { formatStuck, priorityTier, TIER_META, type Temp } from "./score";
 import type { LeadRow } from "./ConversaoCockpit";

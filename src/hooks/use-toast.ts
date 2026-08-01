@@ -1,9 +1,14 @@
 import * as React from "react";
 
 import type { ToastActionElement, ToastProps } from "@/components/ui/toast";
+import { toUserFacingError } from "@/lib/userFacingError";
 
-const TOAST_LIMIT = 1;
+/** Até 2 toasts: erro não some só porque outro apareceu. */
+const TOAST_LIMIT = 2;
 const TOAST_REMOVE_DELAY = 1000000;
+/** Tempo padrão na tela (Radix); erros ficam mais. */
+export const TOAST_DURATION_MS = 8000;
+export const TOAST_ERROR_DURATION_MS = 14000;
 
 type ToasterToast = ToastProps & {
   id: string;
@@ -134,13 +139,32 @@ function dispatch(action: Action) {
 
 type Toast = Omit<ToasterToast, "id">;
 
+function localizeToastText(value: React.ReactNode): React.ReactNode {
+  if (typeof value === "string") {
+    return toUserFacingError(value, value);
+  }
+  return value;
+}
+
 function toast({ ...props }: Toast) {
   const id = genId();
+  const isDestructive = props.variant === "destructive";
+  const title =
+    typeof props.title === "string" && props.title.trim() === "Erro" && isDestructive
+      ? "Algo deu errado"
+      : localizeToastText(props.title);
+  const description = localizeToastText(props.description);
+  const duration =
+    typeof props.duration === "number"
+      ? props.duration
+      : isDestructive
+        ? TOAST_ERROR_DURATION_MS
+        : TOAST_DURATION_MS;
 
-  const update = (props: ToasterToast) =>
+  const update = (next: ToasterToast) =>
     dispatch({
       type: "UPDATE_TOAST",
-      toast: { ...props, id },
+      toast: { ...next, id },
     });
   const dismiss = () => dispatch({ type: "DISMISS_TOAST", toastId: id });
 
@@ -148,6 +172,10 @@ function toast({ ...props }: Toast) {
     type: "ADD_TOAST",
     toast: {
       ...props,
+      // title HTML do Root (string) ≠ título do toast (ReactNode) — cast seguro
+      title: title as ToasterToast["title"],
+      description: description as ToasterToast["description"],
+      duration,
       id,
       open: true,
       onOpenChange: (open) => {

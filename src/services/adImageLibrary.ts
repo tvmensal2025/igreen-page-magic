@@ -21,6 +21,28 @@ export interface AdImageLibraryItem {
   is_platform_shared?: boolean;
 }
 
+/** Basename sem query/hash — p/ dedupe quando a mesma foto foi reenviada com URL diferente. */
+function imageDedupeKey(it: AdImageLibraryItem): string {
+  const raw =
+    (it.filename || "").trim() ||
+    (it.url || "").split("?")[0].split("/").pop() ||
+    it.url ||
+    it.id;
+  // Remove prefixo de timestamp do upload (ex.: 1783509770991-1000668840.png → 1000668840.png)
+  const base = raw.toLowerCase().replace(/^\d{10,}-/, "");
+  return `${base}|${it.format || "unknown"}`;
+}
+
+function preferImage(a: AdImageLibraryItem, b: AdImageLibraryItem): AdImageLibraryItem {
+  const sa = a.is_platform_shared ? 1 : 0;
+  const sb = b.is_platform_shared ? 1 : 0;
+  if (sb !== sa) return sb > sa ? b : a;
+  if ((b.usage_count || 0) !== (a.usage_count || 0)) {
+    return (b.usage_count || 0) > (a.usage_count || 0) ? b : a;
+  }
+  return String(b.created_at || "") > String(a.created_at || "") ? b : a;
+}
+
 export async function listAdImageLibrary(consultantId: string): Promise<AdImageLibraryItem[]> {
   // Próprias + oficiais compartilhadas (is_platform_shared). RLS libera as shared.
   const { data: own, error: ownErr } = await supabase
@@ -44,12 +66,22 @@ export async function listAdImageLibrary(consultantId: string): Promise<AdImageL
     throw sharedErr;
   }
 
+  // 1) por URL  2) por nome+formato (mesma arte reenviada com timestamp diferente)
   const byUrl = new Map<string, AdImageLibraryItem>();
   for (const row of [...(shared || []), ...(own || [])]) {
     const it = row as unknown as AdImageLibraryItem;
-    byUrl.set(it.url, it);
+    if (!it.url) continue;
+    const prev = byUrl.get(it.url);
+    byUrl.set(it.url, prev ? preferImage(prev, it) : it);
   }
-  return Array.from(byUrl.values());
+
+  const byCreative = new Map<string, AdImageLibraryItem>();
+  for (const it of byUrl.values()) {
+    const key = imageDedupeKey(it);
+    const prev = byCreative.get(key);
+    byCreative.set(key, prev ? preferImage(prev, it) : it);
+  }
+  return Array.from(byCreative.values());
 }
 
 export async function addToAdImageLibrary(item: {

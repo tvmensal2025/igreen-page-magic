@@ -280,11 +280,10 @@ const AdminContent = () => {
     createAndConnect,
   } = useWhatsApp(userId || "");
 
-  // Ao entrar no painel com Zap já conectado: gera voz da IA (idempotente).
+  // Ao entrar no painel: gera voz da IA se nome + IA + gênero já estiverem prontos
+  // (não espera WhatsApp — telefone/Zap são só para envio).
   useEffect(() => {
     if (!userId) return;
-    const connected = !!isWhapi || connectionStatus === "connected";
-    if (!connected) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -711,6 +710,7 @@ const AdminContent = () => {
                 onSubTabConsumed={() => setPendingWhatsAppSub(null)}
                 autoConnectOnMount={pendingWhatsAppAutoConnect}
                 onAutoConnectConsumed={() => setPendingWhatsAppAutoConnect(false)}
+                onDismissConnectGate={() => setActiveTab("dashboard")}
               />
             </WhatsAppErrorBoundary>
           )}

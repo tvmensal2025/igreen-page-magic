@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Mic, Square, Loader2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { loadOpusRecorder } from "@/lib/opusRecorderLoader";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 type Props = {
   onRecorded: (blob: Blob, durationSec: number) => Promise<void> | void;

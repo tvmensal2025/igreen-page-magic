@@ -8,7 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Settings2, MessageSquare, Loader2 } from "lucide-react";
 import { StageAutoMessageConfig } from "./StageAutoMessageConfig";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 
 interface PvStage {

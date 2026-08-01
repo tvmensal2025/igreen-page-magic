@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
+import { toUserFacingError } from "@/lib/userFacingError";
 
 const AUTH_OPERATION_TIMEOUT_MS = 18000;
 
@@ -98,8 +99,8 @@ export function ChangePasswordCard() {
       reset();
     } catch (error: unknown) {
       toast({
-        title: "Erro ao alterar senha",
-        description: error instanceof Error ? error.message : "Tente novamente.",
+        title: "Não foi possível alterar a senha",
+        description: toUserFacingError(error, "Tente novamente."),
         variant: "destructive",
       });
     } finally {

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CheckCircle2, XCircle, Loader2, Headphones, AlertTriangle, MessageCircle } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { CATEGORY_EMOJI, parseIntentName } from "@/lib/objectionShortcuts";
 import {
   FAQ_AUDIO_PADROES,

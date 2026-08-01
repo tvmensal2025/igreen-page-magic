@@ -22,6 +22,13 @@ const FORMAT_LABEL: Record<AdImageFormat, string> = {
   story: "Story 9:16",
 };
 
+/** Proporção real do criativo — evita cortar vertical/story num quadrado. */
+const FORMAT_ASPECT: Record<AdImageFormat, string> = {
+  square: "aspect-square",
+  vertical: "aspect-[4/5]",
+  story: "aspect-[9/16]",
+};
+
 export function AdImageLibraryPanel({ consultantId, format, selectedUrls, onPick }: Props) {
   const { toast } = useToast();
   const confirm = useConfirm();
@@ -60,6 +67,12 @@ export function AdImageLibraryPanel({ consultantId, format, selectedUrls, onPick
   const counts: Record<string, number> = { all: items.length, square: 0, vertical: 0, story: 0 };
   items.forEach((it) => { counts[it.format]++; });
 
+  // Story/vertical: menos colunas pra a altura caber sem esmagar.
+  const gridCols =
+    filter === "story" || filter === "vertical"
+      ? "grid-cols-2 sm:grid-cols-3"
+      : "grid-cols-2 sm:grid-cols-3 md:grid-cols-4";
+
   if (loading) {
     return <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin" /></div>;
   }
@@ -81,17 +94,26 @@ export function AdImageLibraryPanel({ consultantId, format, selectedUrls, onPick
           </Button>
         ))}
       </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+      <div className={`grid ${gridCols} gap-2 items-start`}>
         {filtered.map((it) => {
           const picked = selectedUrls.has(it.url);
           const compatible = it.format === format;
+          const aspect = FORMAT_ASPECT[it.format] || FORMAT_ASPECT.square;
           return (
             <div key={it.id} className={`relative group rounded-lg overflow-hidden border ${picked ? "border-primary ring-2 ring-primary/40" : "border-border"} ${!compatible ? "opacity-50" : ""}`}>
-              <button type="button" onClick={() => compatible && onPick(it)} disabled={!compatible}
-                className="block w-full aspect-square bg-muted">
-                <img src={it.url} alt={it.filename || ""} className="w-full h-full object-cover" />
+              <button
+                type="button"
+                onClick={() => compatible && onPick(it)}
+                disabled={!compatible}
+                className={`block w-full ${aspect} bg-muted`}
+              >
+                <img
+                  src={it.url}
+                  alt={it.filename || ""}
+                  className="w-full h-full object-contain"
+                />
               </button>
-              <div className="absolute top-1 left-1 flex gap-1">
+              <div className="absolute top-1 left-1 flex gap-1 flex-wrap max-w-[85%]">
                 <Badge variant="secondary" className="text-[9px] px-1 py-0">{FORMAT_LABEL[it.format].split(" ")[0]}</Badge>
                 {it.is_platform_shared && (
                   <Badge className="text-[9px] px-1 py-0 bg-emerald-600 hover:bg-emerald-600">Oficial</Badge>

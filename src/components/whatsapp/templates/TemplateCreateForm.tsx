@@ -3,7 +3,7 @@ import { Plus, Globe2, Lock, MessageSquare, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type { TemplateItem } from "@/types/whatsapp";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { TemplateItemsEditor, emptyTemplateItem, templateItemsValid } from "./TemplateItemsEditor";
 
 interface Props {

@@ -17,6 +17,8 @@ export interface OpsAlertOpts {
   dedupMinutes?: number;
   /** metric_key em infra_metrics (default ops_alert). */
   metricKey?: string;
+  /** Campos extras gravados em meta (modal Super Admin). */
+  extraMeta?: Record<string, unknown>;
 }
 
 type SettingsRow = { key: string; value: string | null };
@@ -92,6 +94,10 @@ export async function notifySuperAdminOpsAlert(
     .limit(1);
   if (recent && recent.length > 0) return "skipped_dedup";
 
+  const extra = opts.extraMeta && typeof opts.extraMeta === "object"
+    ? opts.extraMeta
+    : {};
+
   const dest = await resolveWhapiAndPhone(supabase);
   if (!dest) {
     await supabase.from("infra_metrics").insert({
@@ -103,6 +109,7 @@ export async function notifySuperAdminOpsAlert(
         text: opts.text,
         sent: false,
         reason: "config_missing",
+        ...extra,
       },
     });
     return "skipped_config";
@@ -132,6 +139,7 @@ export async function notifySuperAdminOpsAlert(
         text: opts.text,
         sent: ok,
         status: res.status,
+        ...extra,
       },
     });
     return ok ? "sent" : "failed";
@@ -146,6 +154,7 @@ export async function notifySuperAdminOpsAlert(
         text: opts.text,
         sent: false,
         reason: (e as Error).message,
+        ...extra,
       },
     });
     return "failed";

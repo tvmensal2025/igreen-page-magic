@@ -7,7 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { ArrowLeft, Loader2, Download, Plus, RefreshCw, AlertCircle, TrendingUp } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { CampaignDetailDialog } from "@/components/admin/meta-ads/CampaignDetailDialog";
 import { CampaignFormDialog } from "@/components/admin/meta-ads/CampaignFormDialog";
 

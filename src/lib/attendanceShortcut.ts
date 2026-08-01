@@ -1,7 +1,7 @@
 // Mapa fixHint → CTA. Usado por useCustomerAttendance, runFastStartAttendance
 // e runAttendanceBatch para transformar falhas do envio automático em toasts
 // acionáveis (sem mais "envie manualmente" genérico).
-import { toast as sonnerToast } from "sonner";
+import { toast as sonnerToast } from "@/components/ui/sonner";
 
 export type AttendanceFixHint =
   | "toggle"

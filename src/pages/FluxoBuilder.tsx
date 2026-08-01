@@ -30,7 +30,7 @@ import GuidedStepDialog from "@/components/admin/flow-builder/GuidedStepDialog";
 import { useFlowValidation } from "@/components/admin/flow-builder/useFlowValidation";
 import { useFlowStepsCrud } from "@/components/admin/flow-builder/useFlowStepsCrud";
 import { useFlowConflicts, detectConflicts } from "@/components/admin/flow-builder/useFlowConflicts";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 import {
   Step, Variant, VARIANT_LABEL,

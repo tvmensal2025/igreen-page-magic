@@ -81,7 +81,7 @@ import {
   publishCadenceLibrary,
 } from "@/lib/syncCadenceToBotFlow";
 import { CadenceMissingAlert } from "@/components/admin/CadenceMissingAlert";
-import { ConsultantIdentityWizard } from "@/components/admin/ConsultantIdentityWizard";
+import ConsultantIdentityWizard from "@/components/admin/ConsultantIdentityWizard";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
@@ -1510,7 +1510,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
           />
         </div>
         <div className="flex h-8 items-center gap-1.5 rounded-md border border-border/50 bg-muted/25 px-2.5 text-[11px] text-muted-foreground">
-          Sofia · profissional
+          {consultantAssistantName || "Assistente"} · profissional
         </div>
         <Button onClick={handleSave} disabled={saving} size="sm" className="h-8 gap-1.5">
           {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
@@ -1721,7 +1721,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                     text={preview}
                     buttons={previewButtons}
                     channel={selected.channel}
-                    contactName="Sofia · iGreen"
+                    contactName={`${consultantAssistantName || "Assistente"} · iGreen`}
                     audioUrl={previewAudioUrl}
                     showAudio={showAudioAboveButtons}
                     audioPlacement={audioPlacement}
@@ -1746,7 +1746,7 @@ export function MultichannelTextsPanel({ consultantId }: Props) {
                     text={preview}
                     buttons={previewButtons}
                     channel={selected.channel}
-                    contactName="Sofia · iGreen"
+                    contactName={`${consultantAssistantName || "Assistente"} · iGreen`}
                     audioUrl={previewAudioUrl}
                     showAudio={showAudioAboveButtons}
                     audioPlacement={audioPlacement}

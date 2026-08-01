@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Activity, Brain, RefreshCw, Eye, Zap, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 interface CronStatus {
   key: string;

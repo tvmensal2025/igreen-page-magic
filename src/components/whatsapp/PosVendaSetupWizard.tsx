@@ -11,7 +11,7 @@ import {
   Check, Sparkles, Upload, FileAudio, Image as ImageIcon, Video, Type,
   Loader2, ChevronUp, ChevronDown, GripVertical, FileText, HelpCircle,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { POS_VENDA_STAGES, type PosVendaStage } from "@/lib/posVenda/format";
 import { uploadMedia, getAcceptString } from "@/services/minioUpload";
 import { sha256File, findExistingByHash } from "@/lib/mediaHash";

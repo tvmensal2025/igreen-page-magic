@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Loader2, QrCode, RefreshCw, Smartphone, Shield, WifiOff } from "lucide-react";
+import { Loader2, QrCode, RefreshCw, Smartphone, Shield, WifiOff, X } from "lucide-react";
 import type { ConnectionStatus } from "@/types/whatsapp";
 
 interface Props {
@@ -19,11 +19,19 @@ interface Props {
   onConnect: () => Promise<void> | void;
   onRefreshQr?: () => Promise<void> | void;
   onWhapiReauth?: () => Promise<void> | void;
+  /** Fecha o modal e volta ao painel (Dashboard). */
+  onDismiss?: () => void;
+}
+
+/** Erros técnicos que nunca devem aparecer pro consultor. */
+function isTechnicalNoise(msg: string | null | undefined): boolean {
+  if (!msg) return true;
+  return /outra aba|broadcastchannel|fech[ea]-a antes|qr-lock|evolution|baileys|instance/i.test(msg);
 }
 
 /**
  * Tela única antes do chat: só QR / conectar.
- * Linguagem para leigo — sem “Evolution”, sem jargão técnico.
+ * Conta nova: abre o código sozinho. Sempre dá pra fechar e voltar depois.
  */
 export function WhatsAppConnectGate({
   open,
@@ -34,26 +42,74 @@ export function WhatsAppConnectGate({
   error,
   fatalLocked = false,
   phoneNumber,
-  whapiStatusLabel,
+  whapiStatusLabel: _whapiStatusLabel,
   whapiQrImage,
   onConnect,
   onRefreshQr,
   onWhapiReauth,
+  onDismiss,
 }: Props) {
   const startedRef = useRef(false);
+  const retryCountRef = useRef(0);
   const [refreshCooldown, setRefreshCooldown] = useState(0);
+  const [phase, setPhase] = useState<"idle" | "working" | "failed">("idle");
 
+  const displayQr = isWhapi ? whapiQrImage : qrCode;
+  const hasQr = !!displayQr;
+  const userError = error && !isTechnicalNoise(error) ? error : null;
+
+  const startPairing = () => {
+    setPhase("working");
+    if (isWhapi) return onWhapiReauth?.();
+    return onConnect();
+  };
+
+  // Conta nova / gate aberto → pede o código sozinho.
   useEffect(() => {
-    if (!open || fatalLocked || isWhapi) return;
-    if (startedRef.current) return;
+    if (!open || fatalLocked) return;
     if (connectionStatus === "connected") return;
-    if (qrCode) return;
+    if (hasQr || isLoading) return;
+    if (startedRef.current) return;
     startedRef.current = true;
-    void onConnect();
-  }, [open, fatalLocked, isWhapi, connectionStatus, qrCode, onConnect]);
+    void startPairing();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, fatalLocked, isWhapi, connectionStatus, hasQr, isLoading]);
+
+  // Ruído técnico ("outra aba") ou falha → retry automático (máx 3).
+  useEffect(() => {
+    if (!open || fatalLocked || hasQr || isLoading) return;
+    if (!startedRef.current) return;
+    if (retryCountRef.current >= 3) {
+      setPhase("failed");
+      return;
+    }
+    // Só retenta quando houve tentativa e parou sem QR (erro ou fim do loading).
+    if (!error && phase !== "working") return;
+    const t = setTimeout(() => {
+      retryCountRef.current += 1;
+      void startPairing();
+    }, 1100);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, fatalLocked, hasQr, isLoading, error]);
+
+  // Se loading terminou sem QR e sem mais retries → falhou.
+  useEffect(() => {
+    if (!open || fatalLocked || hasQr || isLoading) return;
+    if (!startedRef.current) return;
+    if (retryCountRef.current >= 3) setPhase("failed");
+  }, [open, fatalLocked, hasQr, isLoading]);
 
   useEffect(() => {
-    if (!open) startedRef.current = false;
+    if (hasQr) setPhase("idle");
+  }, [hasQr]);
+
+  useEffect(() => {
+    if (!open) {
+      startedRef.current = false;
+      retryCountRef.current = 0;
+      setPhase("idle");
+    }
   }, [open]);
 
   useEffect(() => {
@@ -62,29 +118,56 @@ export function WhatsAppConnectGate({
     return () => clearInterval(t);
   }, [refreshCooldown]);
 
-  const displayQr = isWhapi ? whapiQrImage : qrCode;
-  const showingQr = !!displayQr && !fatalLocked;
-  const connecting = !fatalLocked && !showingQr && (isLoading || connectionStatus === "connecting");
+  const showingQr = hasQr && !fatalLocked;
+  const connecting =
+    !fatalLocked &&
+    !showingQr &&
+    (isLoading || phase === "working" || (startedRef.current && retryCountRef.current < 3 && phase !== "failed"));
 
   const handleRefresh = async () => {
     if (refreshCooldown > 0 || fatalLocked) return;
     setRefreshCooldown(30);
+    setPhase("working");
     if (isWhapi) await onWhapiReauth?.();
     else await onRefreshQr?.();
   };
 
+  const handleManualStart = () => {
+    retryCountRef.current = 0;
+    startedRef.current = true;
+    setPhase("working");
+    void startPairing();
+  };
+
   return (
     <div
-      className={`absolute inset-0 z-40 flex items-center justify-center bg-background p-4 sm:p-6 ${
+      className={`absolute inset-0 z-40 flex items-center justify-center bg-background/95 backdrop-blur-sm p-4 sm:p-6 ${
         open ? "" : "hidden"
       }`}
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="wa-connect-gate-title"
     >
-      <div className="w-full max-w-md rounded-2xl border border-border bg-card shadow-xl overflow-hidden">
+      <div className="relative w-full max-w-md rounded-2xl border border-border bg-card shadow-xl overflow-hidden">
+        {onDismiss && (
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="absolute top-3 right-3 z-10 inline-flex h-9 w-9 items-center justify-center rounded-full border border-border bg-background/90 text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            aria-label="Fechar e voltar ao painel"
+            title="Fechar"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
+
         <div className="px-5 pt-6 pb-4 text-center space-y-2 border-b border-border/60 bg-gradient-to-b from-primary/5 to-transparent">
           <div className="mx-auto w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center">
             <Smartphone className="w-6 h-6 text-primary" />
           </div>
-          <h2 className="font-heading text-lg font-bold text-foreground">Conectar WhatsApp</h2>
+          <h2 id="wa-connect-gate-title" className="font-heading text-lg font-bold text-foreground pr-8">
+            Conectar WhatsApp
+          </h2>
           <p className="text-sm text-muted-foreground leading-relaxed">
             Escaneie o código com o celular. Depois disso, conversas e envios liberam sozinhos.
           </p>
@@ -100,6 +183,11 @@ export function WhatsAppConnectGate({
                 Por enquanto <strong>não escaneie</strong> o código. Peça ao suporte para liberar,
                 ou use <strong>Trocar número</strong> se for outro chip.
               </p>
+              {onDismiss && (
+                <Button type="button" variant="outline" className="mt-1" onClick={onDismiss}>
+                  Voltar ao painel
+                </Button>
+              )}
             </div>
           ) : showingQr ? (
             <div className="flex flex-col items-center gap-4">
@@ -136,36 +224,54 @@ export function WhatsAppConnectGate({
               <Loader2 className="w-8 h-8 text-primary animate-spin" />
               <p className="text-sm font-medium text-foreground">Preparando o código…</p>
               <p className="text-xs text-muted-foreground text-center max-w-xs">
-                Isso leva só alguns segundos. Fique nesta tela.
+                Isso leva só alguns segundos. O código aparece sozinho — não precisa clicar.
               </p>
+              {onDismiss && (
+                <button
+                  type="button"
+                  onClick={onDismiss}
+                  className="text-xs text-muted-foreground hover:text-foreground underline-offset-2 hover:underline mt-2"
+                >
+                  Agora não — voltar ao painel
+                </button>
+              )}
             </div>
           ) : (
             <div className="flex flex-col items-center gap-4 py-6">
               <WifiOff className="w-10 h-10 text-muted-foreground/70" />
               <p className="text-sm text-muted-foreground text-center">
-                {error
-                  ? "Não deu certo agora. Tente de novo — é seguro."
+                {userError
+                  ? "Ainda não deu. Pode tentar de novo — é seguro."
                   : isWhapi
                     ? "Seu WhatsApp ainda não está ligado nesta conta."
                     : "Pronto para conectar seu WhatsApp."}
               </p>
-              {error && (
-                <p className="text-xs text-destructive/90 text-center max-w-sm">{error}</p>
-              )}
-              <Button
-                type="button"
-                className="gap-2 rounded-xl px-6 h-11 font-semibold"
-                style={{ background: "var(--gradient-green)" }}
-                disabled={isLoading}
-                onClick={() => void (isWhapi ? onWhapiReauth?.() : onConnect())}
-              >
-                {isLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                ) : (
-                  <QrCode className="w-4 h-4" />
+              <div className="flex flex-col sm:flex-row gap-2 w-full max-w-xs">
+                <Button
+                  type="button"
+                  className="flex-1 gap-2 rounded-xl h-11 font-semibold"
+                  style={{ background: "var(--gradient-green)" }}
+                  disabled={isLoading}
+                  onClick={handleManualStart}
+                >
+                  {isLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <QrCode className="w-4 h-4" />
+                  )}
+                  Mostrar código
+                </Button>
+                {onDismiss && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="flex-1 rounded-xl h-11"
+                    onClick={onDismiss}
+                  >
+                    Fechar
+                  </Button>
                 )}
-                Mostrar código
-              </Button>
+              </div>
             </div>
           )}
 

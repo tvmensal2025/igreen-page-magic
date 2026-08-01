@@ -4,7 +4,7 @@ import { Check, CheckCheck, Clock, FileText, Image, Mic, Video, Play, Download, 
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { SaveMessageAsTemplateDialog } from "./SaveMessageAsTemplateDialog";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import type { ChatMessage } from "@/hooks/useMessages";
 import type { CaptureDocKey } from "@/hooks/useCaptureAttach";
 import { WhatsAppFormattedText } from "@/lib/whatsapp/formatWhatsAppText";

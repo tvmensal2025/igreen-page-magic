@@ -3,7 +3,7 @@ import { Download, Loader2, Play } from "lucide-react";
 import { WhatsAppFormattedText } from "@/lib/whatsapp/formatWhatsAppText";
 import { CaptureAttachActions } from "@/components/captacao/CaptureAttachActions";
 import type { CaptureDocKey } from "@/hooks/useCaptureAttach";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import {
   resolveConversationMediaDataUrl,
   CONVERSATION_MESSAGE_SELECT,

@@ -13,7 +13,7 @@ import {
   Search, Sparkles, AlertTriangle, CheckCircle2, Mic, Loader2, Globe2, Lock, Headphones,
 } from "lucide-react";
 import { useUserRole } from "@/hooks/useUserRole";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { AudioRecorderInline } from "@/components/admin/AIAgentTab/AudioRecorderInline";
 import { FaqAudioReviewDialog } from "@/components/admin/fluxo/FaqAudioReviewDialog";
 import {

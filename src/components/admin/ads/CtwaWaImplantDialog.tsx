@@ -19,6 +19,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Loader2, Smartphone, CheckCircle2, RefreshCw, AlertTriangle } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { toUserFacingError } from "@/lib/userFacingError";
 
 type Step = "number" | "sms" | "done";
 
@@ -58,13 +59,55 @@ type Props = {
   onDone?: () => void;
 };
 
+const WA_REGISTER_FALLBACK =
+  "Não foi possível concluir o cadastro do WhatsApp. Tente de novo.";
+
+/**
+ * Fetch direto (não `functions.invoke`): em non-2xx o invoke some com o body
+ * e o toast vira genérico. Aqui sempre lemos o JSON da edge.
+ */
 async function invokeWa(body: Record<string, unknown>) {
-  const { data, error } = await supabase.functions.invoke("facebook-platform-wa-register", {
-    body,
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new Error("Faça login de novo para cadastrar o WhatsApp.");
+  }
+
+  const base = import.meta.env.DEV
+    ? "/functions-proxy"
+    : `${import.meta.env.VITE_SUPABASE_URL || "https://zlzasfhcxcznaprrragl.supabase.co"}/functions/v1`;
+  const res = await fetch(`${base}/facebook-platform-wa-register`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${session.access_token}`,
+      apikey: String(
+        import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+          "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InpsemFzZmhjeGN6bmFwcnJyYWdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEyNzQ1NzAsImV4cCI6MjA4Njg1MDU3MH0.OJzRdi_Z_1TFZjQXmK8rJofBeHVZc27VSo2vMMw9Spo",
+      ),
+    },
+    body: JSON.stringify(body),
   });
-  if (error) throw new Error(error.message || "Falha na edge");
-  if ((data as any)?.error) throw new Error(String((data as any).error));
-  return data as Record<string, unknown>;
+
+  const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  const rawErr =
+    (typeof payload.error === "string" && payload.error.trim()) ||
+    (typeof payload.message === "string" && payload.message.trim()) ||
+    "";
+
+  if (!res.ok || rawErr) {
+    // Edge já devolve PT; não deixar toUserFacingError trocar por fallback genérico.
+    const alreadyPt =
+      Boolean(rawErr) &&
+      (/[áàâãéêíóôõúç]/i.test(rawErr) ||
+        /^(A Meta|Este número|Token sem|Limite|Código|PIN |Use |Informe |Faça |Número)/i.test(rawErr));
+    const msg = alreadyPt
+      ? rawErr
+      : toUserFacingError(rawErr || WA_REGISTER_FALLBACK, WA_REGISTER_FALLBACK);
+    throw new Error(msg);
+  }
+  return payload;
 }
 
 export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
@@ -85,6 +128,7 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
   const [twoStepPin, setTwoStepPin] = useState("");
   const [ackBusiness, setAckBusiness] = useState(false);
   const [ackOnce, setAckOnce] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
 
   const loadStatus = useCallback(async (opts?: { preferOwnForm?: boolean }) => {
     setStatusLoading(true);
@@ -121,7 +165,9 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
         }
       }
     } catch (e) {
-      setStatus({ error: (e as Error).message });
+      setStatus({
+        error: toUserFacingError(e, "Não foi possível carregar o status do WhatsApp dos anúncios."),
+      });
     } finally {
       setStatusLoading(false);
     }
@@ -137,6 +183,7 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
     setPhone("");
     setAckBusiness(false);
     setAckOnce(false);
+    setLastError(null);
     void loadStatus();
   }, [open, loadStatus]);
 
@@ -150,6 +197,7 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
       return;
     }
     setLoading(true);
+    setLastError(null);
     try {
       const data = await invokeWa({
         action: "create",
@@ -178,10 +226,16 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
         description: String(data.message || "Digite o código recebido no chip."),
       });
     } catch (e) {
+      const msg = toUserFacingError(
+        e,
+        "A Meta não aceitou o número ainda — por isso o SMS não foi enviado. Confira o número e tente de novo.",
+      );
+      setLastError(msg);
       toast({
         title: "Não foi possível cadastrar",
-        description: (e as Error).message,
+        description: msg,
         variant: "destructive",
+        duration: 14000,
       });
     } finally {
       setLoading(false);
@@ -204,8 +258,9 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
     } catch (e) {
       toast({
         title: "Falha ao reenviar",
-        description: (e as Error).message,
+        description: toUserFacingError(e, "Não deu para reenviar o código. Aguarde e tente de novo."),
         variant: "destructive",
+        duration: 12000,
       });
     } finally {
       setLoading(false);
@@ -236,8 +291,9 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
     } catch (e) {
       toast({
         title: "Código inválido ou falha no registro",
-        description: (e as Error).message,
+        description: toUserFacingError(e, "Confira o código SMS e tente de novo."),
         variant: "destructive",
+        duration: 12000,
       });
     } finally {
       setLoading(false);
@@ -282,8 +338,9 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
     } catch (e) {
       toast({
         title: "Falha ao vincular",
-        description: (e as Error).message,
+        description: toUserFacingError(e, "Não foi possível vincular este número."),
         variant: "destructive",
+        duration: 12000,
       });
     } finally {
       setLoading(false);
@@ -311,7 +368,7 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
           </DialogTitle>
           <DialogDescription>
             Cadastre <strong>o seu</strong> número (Business) que vai receber os clientes do anúncio.
-            Use SMS uma vez por conta.
+            O SMS só chega depois que a Meta aceitar o número na Página.
           </DialogDescription>
         </DialogHeader>
 
@@ -324,6 +381,11 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
               pessoal costuma ser rejeitado pela Meta no anúncio.
             </p>
             <p>
+              <strong>SMS:</strong> a Meta só envia o código se o número for aceito na WABA da
+              Página. Se der erro no cadastro, o SMS <strong>não</strong> chega — não é falha do
+              chip.
+            </p>
+            <p>
               Cada consultor cadastra <strong>o próprio número</strong> (não o da plataforma).
               Depois disso, troca só com suporte.
             </p>
@@ -333,6 +395,14 @@ export function CtwaWaImplantDialog({ open, onOpenChange, onDone }: Props) {
             </p>
           </AlertDescription>
         </Alert>
+
+        {lastError && (
+          <Alert className="border-destructive/40 bg-destructive/5">
+            <AlertTriangle className="h-4 w-4 text-destructive" />
+            <AlertTitle className="text-sm">Por que não cadastrou</AlertTitle>
+            <AlertDescription className="text-xs">{lastError}</AlertDescription>
+          </Alert>
+        )}
 
         <div className="rounded-lg border border-border/60 bg-muted/20 p-3 text-xs space-y-1">
           {statusLoading ? (

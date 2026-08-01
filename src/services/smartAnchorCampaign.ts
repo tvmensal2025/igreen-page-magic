@@ -14,6 +14,8 @@ import {
   type CityHit,
   type CreateCampaignResult,
 } from "@/services/facebookAds";
+import { listAdImageLibrary } from "@/services/adImageLibrary";
+import { listAdVideoLibrary } from "@/services/adVideoLibrary";
 import { dddsFromCampaignGeo } from "@/lib/cityToDdd";
 
 export const SMART_ANCHOR_MIN_BUDGET_CENTS = 3000; // R$ 30 — início recomendado
@@ -39,6 +41,10 @@ export type SmartLibraryItem = {
   thumbUrl?: string | null;
   label: string;
   kind: SmartCreativeMode;
+  /** Foto/vídeo oficial da plataforma (compartilhado). */
+  isPlatformShared?: boolean;
+  /** Formato da foto na biblioteca (inteligente usa só square). */
+  format?: "square" | "vertical" | "story";
 };
 
 export type SmartAnchorPreview = {
@@ -82,45 +88,47 @@ async function resolveSedeCity(bc: Record<string, unknown>): Promise<CityHit> {
   return { key: "273173", name: "Uberlândia", region: "Minas Gerais", country_code: "BR" };
 }
 
+/** Próprias + oficiais — só square (o inteligente publica 1 foto 1:1, sem 3 formatos). */
 async function loadPhotoLibrary(consultantId: string): Promise<SmartLibraryItem[]> {
-  const { data } = await supabase
-    .from("ad_image_library")
-    .select("id, url, usage_count")
-    .eq("consultant_id", consultantId)
-    .order("usage_count", { ascending: false })
-    .limit(12);
-  return ((data || []) as Array<{ id: string; url: string; usage_count: number }>)
-    .filter((r) => /^https:\/\//i.test(r.url))
-    .map((r) => ({
-      id: r.id,
-      url: r.url,
-      thumbUrl: r.url,
-      label: "Foto",
-      kind: "photo" as const,
-    }));
+  const items = await listAdImageLibrary(consultantId);
+  const squares = items.filter((r) => r.format === "square" && /^https:\/\//i.test(r.url));
+  const sorted = [...squares].sort((a, b) => {
+    const sa = a.is_platform_shared ? 1 : 0;
+    const sb = b.is_platform_shared ? 1 : 0;
+    if (sb !== sa) return sb - sa;
+    return (b.usage_count || 0) - (a.usage_count || 0);
+  });
+  return sorted.slice(0, 24).map((r) => ({
+    id: r.id,
+    url: r.url,
+    thumbUrl: r.url,
+    label: r.is_platform_shared ? "Oficial" : r.filename || "Foto",
+    kind: "photo" as const,
+    isPlatformShared: !!r.is_platform_shared,
+    format: "square" as const,
+  }));
 }
 
 async function loadVideoLibrary(consultantId: string): Promise<SmartLibraryItem[]> {
-  const { data } = await supabase
-    .from("ad_video_library")
-    .select("id, url, thumb_url, filename, usage_count")
-    .eq("consultant_id", consultantId)
-    .order("usage_count", { ascending: false })
-    .limit(12);
-  return ((data || []) as Array<{
-    id: string;
-    url: string;
-    thumb_url: string | null;
-    filename: string | null;
-    usage_count: number;
-  }>)
+  const items = await listAdVideoLibrary(consultantId);
+  const sorted = [...items].sort((a, b) => {
+    const sa = a.is_platform_shared ? 1 : 0;
+    const sb = b.is_platform_shared ? 1 : 0;
+    if (sb !== sa) return sb - sa;
+    return (b.usage_count || 0) - (a.usage_count || 0);
+  });
+  return sorted
     .filter((r) => /^https:\/\//i.test(r.url))
+    .slice(0, 12)
     .map((r) => ({
       id: r.id,
       url: r.url,
       thumbUrl: r.thumb_url,
-      label: r.filename || "Vídeo",
+      label: r.is_platform_shared
+        ? r.filename?.replace(/\.(mp4|mov)$/i, "") || "Oficial"
+        : r.filename || "Vídeo",
       kind: "video" as const,
+      isPlatformShared: !!r.is_platform_shared,
     }));
 }
 

@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { Loader2, Send, Users, X, RefreshCw, Save, Trash2, Plus } from "lucide-react";
 import { normalizeBrazilPhone } from "@/lib/phone";
 import { VozCampaignShell, VozSection } from "./VozCampaignShell";

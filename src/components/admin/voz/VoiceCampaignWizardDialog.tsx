@@ -40,7 +40,7 @@ import {
   CircleDot,
   Wallet,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { uploadMedia } from "@/services/minioUpload";
 import { loadOpusRecorder } from "@/lib/opusRecorderLoader";

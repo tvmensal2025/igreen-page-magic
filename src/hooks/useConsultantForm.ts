@@ -5,21 +5,23 @@ import type { Database } from "@/integrations/supabase/types";
 import type { ConsultantForm } from "./useAdminAuth";
 import { validateBrazilPhone } from "@/lib/phone";
 import { buildClubCadastroUrl } from "@/lib/clubCadastroUrl";
+import { toUserFacingError } from "@/lib/userFacingError";
 
 function describeSupabaseError(error: unknown): string {
-  if (!error || typeof error !== "object") return String(error || "Erro desconhecido");
+  if (!error || typeof error !== "object") {
+    return toUserFacingError(error, "Erro desconhecido");
+  }
   const err = error as { code?: string; message?: string; details?: string; hint?: string };
   const msg = err.message || "";
   if (err.code === "23505") {
-    if (msg.includes("consultants_license_key")) return "Esse nome de licença já está em uso. Vamos ajustar automaticamente, tente salvar novamente.";
+    if (msg.includes("consultants_license_key")) {
+      return "Esse nome de licença já está em uso. Vamos ajustar automaticamente, tente salvar novamente.";
+    }
     if (msg.includes("igreen_id")) return "Esse ID iGreen já está cadastrado em outra conta.";
-    return "Já existe um registro com esses dados (chave duplicada).";
+    return toUserFacingError(error, "Já existe um registro com esses dados (chave duplicada).");
   }
   if (err.code === "23502") return `Campo obrigatório faltando: ${msg}`;
-  if (/reservado ao consultor dono/i.test(msg)) return "Esse nome de IA já pertence a outro consultor. Escolha um nome só seu (ex.: Bia, Lara, Nina).";
-  if (err.code === "42501" || msg.toLowerCase().includes("row-level security")) return "Sessão expirou ou sem permissão. Faça login novamente.";
-  if (err.code === "PGRST301" || msg.toLowerCase().includes("jwt")) return "Sessão expirou. Faça login novamente.";
-  return msg || "Erro desconhecido ao salvar";
+  return toUserFacingError(error, "Erro desconhecido ao salvar");
 }
 
 
@@ -179,19 +181,19 @@ export function useConsultantForm(
       if (verifyErr) console.warn("[useConsultantForm] check_consultant_phone_match falhou", verifyErr);
 
 
-      // Áudios só se Zap já estiver conectado (não gera no cadastro seco).
+      // Áudios com nome + IA + gênero (WhatsApp não bloqueia a geração).
       try {
         const { maybeBootstrapConsultantIdentity } = await import(
           "@/lib/consultantIdentityBootstrap"
         );
-        void maybeBootstrapConsultantIdentity({ consultantId: userId }).then((r) => {
+        void maybeBootstrapConsultantIdentity({ consultantId: userId, force: true }).then((r) => {
           if (r.ok && !r.skipped) {
             toast({
               title: "Voz da sua IA em preparação",
               description: "Áudios e ligações serão personalizados com o nome da sua assistente.",
               duration: 3500,
             });
-          } else if (!r.ok && r.error && !/assistant_name|phone_required|name_required/.test(r.error)) {
+          } else if (!r.ok && r.error && !/assistant_name|gender_required|name_required/.test(r.error)) {
             console.warn("[identity-bootstrap]", r.error);
           }
         });
@@ -203,12 +205,12 @@ export function useConsultantForm(
       return true;
     } catch (error: unknown) {
       console.error("[onboarding-save] failed:", error);
-      const raw = describeSupabaseError(error);
-      // Trigger enforce_reserved_assistant_names → mensagem clara e com o campo.
-      const friendly = /reservad/i.test(raw)
-        ? `O nome de IA "${form.assistant_name?.trim() || ""}" já pertence a outro consultor. Escolha um nome só seu no campo "Nome da IA" (ex.: Bia, Lara, Nina).`
-        : raw;
-      toast({ title: "Erro ao salvar", description: friendly, variant: "destructive", duration: 8000 });
+      toast({
+        title: "Erro ao salvar",
+        description: describeSupabaseError(error),
+        variant: "destructive",
+        duration: 8000,
+      });
       return false;
     } finally { setSaving(false); }
   };

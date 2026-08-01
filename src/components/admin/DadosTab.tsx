@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -14,6 +15,7 @@ import {
 import { useGreenSettings, useSaveGreenProfile } from "@/features/produtos/acompanhamento/greenHooks";
 import { SyncAllPanel } from "@/components/admin/SyncAllPanel";
 import { buildClubCadastroUrl } from "@/lib/clubCadastroUrl";
+import { toUserFacingError } from "@/lib/userFacingError";
 
 interface DadosTabProps {
   form: {
@@ -29,6 +31,8 @@ interface DadosTabProps {
     facebook_pixel_id: string;
     google_analytics_id: string;
     portal_kind: "digital" | "autoconexao";
+    gender?: "" | "consultor" | "consultora";
+    assistant_name?: string;
   };
   photoPreview: string | null;
   saving: boolean;
@@ -154,7 +158,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
       onFormChange({ assistant_name: trimmed });
       window.dispatchEvent(new CustomEvent("igreen:assistant-name-saved", { detail: trimmed }));
       toast({ title: "✅ Nome da IA salvo", description: `Sua IA agora se chama "${trimmed}".`, duration: 1800 });
-      // Só regenera se Zap já estiver conectado.
+      // Regenera áudios com a nova identidade (não depende de Zap).
       try {
         const { maybeBootstrapConsultantIdentity } = await import(
           "@/lib/consultantIdentityBootstrap"
@@ -163,12 +167,13 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
       } catch (bootErr) {
         console.warn("[identity-bootstrap] após nome IA:", bootErr);
       }
-    } catch (e: any) {
-      const raw = e?.message || String(e);
-      const friendly = /reservado/i.test(raw)
-        ? `O nome "${trimmed}" já é a IA de outro consultor. Escolha um nome só seu (ex.: Bia, Lara, Nina).`
-        : raw;
-      toast({ title: "Erro ao salvar nome da IA", description: friendly, variant: "destructive", duration: 8000 });
+    } catch (e: unknown) {
+      toast({
+        title: "Erro ao salvar nome da IA",
+        description: toUserFacingError(e, "Não foi possível salvar o nome da IA."),
+        variant: "destructive",
+        duration: 8000,
+      });
     } finally {
       setPersonaSaving(false);
     }
@@ -255,11 +260,38 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
               className="bg-secondary border-border"
             />
             <p className="text-xs text-muted-foreground">
-              Aparece nas mensagens automáticas (ex.: &quot;Já avisei a Maria Silva&quot;). Use o seu próprio nome — nunca o de outro consultor. Se deixar em branco, usamos o nome completo acima.
+              Aparece nas mensagens automáticas (ex.: &quot;Já avisei a Maria Silva&quot;). Pode repetir nome de outra conta se quiser. Se deixar em branco, usamos o nome completo acima.
+            </p>
+          </div>
+          <div className="space-y-2 sm:col-span-2">
+            <Label className="text-sm text-muted-foreground">Você é</Label>
+            <ToggleGroup
+              type="single"
+              value={form.gender || ""}
+              onValueChange={(v) => {
+                if (v === "consultor" || v === "consultora") onFormChange({ gender: v });
+              }}
+              className="grid w-full max-w-md grid-cols-2 gap-2"
+            >
+              <ToggleGroupItem
+                value="consultor"
+                className="h-10 rounded-xl border border-border data-[state=on]:border-primary data-[state=on]:bg-primary/15"
+              >
+                Consultor
+              </ToggleGroupItem>
+              <ToggleGroupItem
+                value="consultora"
+                className="h-10 rounded-xl border border-border data-[state=on]:border-primary data-[state=on]:bg-primary/15"
+              >
+                Consultora
+              </ToggleGroupItem>
+            </ToggleGroup>
+            <p className="text-xs text-muted-foreground">
+              Define se o áudio e as mensagens usam &quot;do&quot; ou &quot;da&quot; (ex.: assistente do Rafael / da Sirlene).
             </p>
           </div>
           <div className="space-y-2">
-            <Label htmlFor="phone" className="text-sm text-muted-foreground">WhatsApp principal (IA + divulgação)</Label>
+            <Label htmlFor="phone" className="text-sm text-muted-foreground">Telefone principal (IA + divulgação)</Label>
             <div className="flex">
               <span className="inline-flex items-center px-3 rounded-l-md border border-r-0 border-border bg-muted text-muted-foreground text-sm">+55</span>
               <Input
@@ -385,7 +417,7 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
             </Button>
           </div>
           <p className="text-[11px] text-muted-foreground">
-            Digite à vontade — só é salvo quando você clicar em <strong>Salvar</strong>. Esse nome aparece em todas as conversas com seus leads.
+            Digite à vontade — só é salvo quando você clicar em <strong>Salvar</strong>. Pode usar o mesmo nome de outra conta (ex.: Sofia) para reaproveitar áudio.
           </p>
 
           <Button
@@ -398,18 +430,10 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
               const { maybeBootstrapConsultantIdentity } = await import("@/lib/consultantIdentityBootstrap");
               toast({ title: "Gerando voz…", description: "Áudios e ligações com o nome da sua IA.", duration: 2500 });
               const r = await maybeBootstrapConsultantIdentity({ consultantId: userId, force: true });
-              if (r.reason === "whatsapp_not_connected") {
+              if (r.reason === "prerequisites_incomplete" || r.error === "gender_required") {
                 toast({
-                  title: "Conecte o WhatsApp primeiro",
-                  description: "A voz personalizada só é gerada com o Zap conectado.",
-                  variant: "destructive",
-                });
-                return;
-              }
-              if (r.reason === "identity_incomplete") {
-                toast({
-                  title: "Complete nome, IA e telefone",
-                  description: "Salve seus dados antes de gerar a voz.",
+                  title: "Complete nome, IA e consultor/consultora",
+                  description: "Salve seus dados (incluindo Consultor ou Consultora) antes de gerar a voz.",
                   variant: "destructive",
                 });
                 return;
@@ -424,7 +448,9 @@ export function DadosTab({ form, photoPreview, saving, onFormChange, onPhotoChan
               } else {
                 toast({
                   title: "Não foi possível gerar a voz",
-                  description: r.error || "Tente de novo em instantes.",
+                  description: r.error === "gender_required"
+                    ? "Escolha Consultor ou Consultora e salve."
+                    : r.error || "Tente de novo em instantes.",
                   variant: "destructive",
                 });
               }

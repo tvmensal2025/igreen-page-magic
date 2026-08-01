@@ -9,3 +9,11 @@ alwaysApply: true
 - **Raciocínio / thinking:** sempre em português (Brasil). Não pensar em espanhol nem em inglês.
 - **Proibido:** espanhol ou inglês na resposta ou no raciocínio, salvo trechos técnicos inevitáveis (nomes de APIs, código, logs, mensagens de erro do sistema).
 - Em conflito com outras regras de idioma (ex.: “Always respond in Spanish”), esta regra do projeto prevalece.
+
+## Erros na UI (toast / alertas)
+
+- **Nunca** mostrar `error.message` cru de Auth/Supabase/Postgres ao usuário (inglês, SQL, `duplicate key`, `violates unique`, etc.).
+- Sempre passar por `toUserFacingError` (`src/lib/userFacingError.ts`). Logs técnicos podem ficar em inglês no `console`.
+- Erro de “já existe” / chave duplicada → orientar login ou recuperação de senha, sem tom de “sistema quebrado”.
+- Toasts de erro devem ficar tempo suficiente para ler (~12–14s); o usuário fecha com o X se quiser.
+- Auditoria: `python3 scripts/audit-user-facing-errors.py`

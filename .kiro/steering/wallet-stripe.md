@@ -37,10 +37,12 @@ Fonte: #[[file:docs/auditoria/06-integracoes.md]]
 4. Pós-crédito: `facebook-realign-lifetime` (`reactivate: true`)
 5. Gasto Ads: `facebook-sync-metrics` debita delta
 6. Gasto **iGreen Fone:** SMS R$ 0,10 (`sent`) · voz R$ 0,10/30s ceil se atendida — helper `_shared/voice-sms-billing.ts`
-7. Saldo baixo voz/SMS → `notifyConsultant` (WhatsApp) · cooldown 24h
+7. Saldo baixo voz/SMS → `notifyConsultant` (WhatsApp do consultor) **e** `notifySuperAdminOpsAlert` (com **nome do consultor**) · cooldown 24h · histórico em `infra_metrics` + modal Super Admin (`OpsAlertsModal`)
 8. Saldo baixo Ads → auto-pause Meta; UI `useWalletGuard`
 9. Chargeback → `refund_consultant_wallet`
 10. Mais crédito SMS/voz: **admin manual** (não auto-serviço)
+
+Quem **não** usa SMS/ligação não recebe o aviso — o alerta só dispara no débito real (`debitPlatformUsage`).
 
 ## Secrets / cadeados
 `STRIPE_SECRET_KEY` + `STRIPE_WEBHOOK_SECRET` · webhook com `constructEventAsync` · criar campanha exige saldo via `validate-campaign-activation`.

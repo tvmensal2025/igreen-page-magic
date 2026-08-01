@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 import { Step } from "./flowTypes";
 import { supabase } from "@/integrations/supabase/client";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 interface Props {
   open: boolean;

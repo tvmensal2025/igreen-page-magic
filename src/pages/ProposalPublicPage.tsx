@@ -19,7 +19,7 @@ import { Textarea } from "@/components/ui/textarea";
 import PageStatus from "@/components/common/PageStatus";
 import SEOHead from "@/components/SEOHead";
 import { uploadMedia } from "@/services/minioUpload";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import {
   CheckCircle2,
   XCircle,

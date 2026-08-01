@@ -50,11 +50,42 @@ export function translateMetaWaError(body: unknown, fallback: string): string {
   if (lower.includes("permission") || code === 200 || code === 10) {
     return "Token sem permissão WhatsApp Business Management. Reconecte a conta Facebook da plataforma aceitando essa permissão.";
   }
+  // Erro genérico da Meta ao POST /{waba}/phone_numbers — SMS não sai.
+  if (
+    lower.includes("cannot add phone") ||
+    lower.includes("cannot add phone number") ||
+    code === 200000 ||
+    sub === 2388002 ||
+    sub === 2388107 ||
+    sub === 3095008
+  ) {
+    if (sub === 2388107 || lower.includes("restriction") || lower.includes("address any restriction")) {
+      return "A Meta bloqueou esta WABA/número (restrição na conta). Abra o Business Support Home da Meta, resolva o alerta e tente de novo — sem isso o SMS não é enviado.";
+    }
+    return "A Meta recusou incluir este número na conta WhatsApp da Página (código 200000). Causas típicas: número ainda no WhatsApp pessoal, restrição na WABA, ou a Página sem WABA Cloud vinculada. Abra o WhatsApp Manager / Business Support Home. SMS só sai depois que ela aceitar.";
+  }
   if (lower.includes("already") && (lower.includes("phone") || lower.includes("number") || lower.includes("exist"))) {
     return "Este número já está em uma conta WhatsApp. Desconecte do app pessoal/Business ou use migração na Meta antes de cadastrar.";
   }
-  if (lower.includes("rate") || code === 4 || code === 17 || code === 80007 || sub === 133016) {
-    return "Limite de tentativas OTP da Meta. Aguarde alguns minutos e tente reenviar o SMS.";
+  if (
+    lower.includes("(#100)") ||
+    lower.includes("invalid parameter") ||
+    lower.includes("unsupported post request") ||
+    code === 100
+  ) {
+    return "A Meta rejeitou este número (parâmetro inválido). Confira se é WhatsApp Business e se o DDD/número estão certos.";
+  }
+  if (lower.includes("certificate") || lower.includes("display name") || lower.includes("verified_name")) {
+    return "Nome verificado rejeitado pela Meta. Use um nome simples (ex.: iGreen Energy) e tente de novo.";
+  }
+  if (lower.includes("blocked") || lower.includes("restricted")) {
+    return "Este número está bloqueado ou restrito na Meta. Use outro chip Business.";
+  }
+  if (lower.includes("rate") || code === 4 || code === 17 || code === 80007 || code === 80008 || sub === 133016) {
+    return "A Meta limitou as chamadas desta conta WhatsApp (rate limit). Aguarde 10–30 minutos e tente de novo — sem isso o SMS não sai. Evite clicar várias vezes seguidas.";
+  }
+  if (lower.includes("limit") || lower.includes("maximum") || sub === 2388103) {
+    return "Limite de números na WABA da Página atingido (Meta). Peça ao Rafael/suporte para liberar mais slots — sem isso o SMS não sai.";
   }
   if (lower.includes("invalid code") || lower.includes("verification") || code === 136025 || sub === 133005) {
     return "Código SMS inválido ou expirado. Peça um novo código e tente de novo.";
@@ -64,6 +95,13 @@ export function translateMetaWaError(body: unknown, fallback: string): string {
   }
   if (lower.includes("page") && lower.includes("whatsapp")) {
     return "A Página não tem WABA Cloud API vinculada. Vincule uma WABA Cloud à Página uma vez no Business Suite.";
+  }
+  if (lower.includes("limit") && (lower.includes("phone") || lower.includes("number"))) {
+    return "Limite de números na WABA atingido (Meta). Peça ao suporte para liberar mais slots ou use um número já cadastrado.";
+  }
+  // Meta às vezes devolve inglês cru — não vaza pro consultor.
+  if (/\b(the|and|please|unable|failed|invalid|permission|error)\b/i.test(msg) && !/[áàâãéêíóôõúç]/i.test(msg)) {
+    return fallback;
   }
   return msg.slice(0, 400) || fallback;
 }
@@ -115,7 +153,15 @@ async function graphPostJson(
 export async function discoverPlatformWabaId(
   pageId: string,
   token: string,
-): Promise<{ id: string; via: string } | null> {
+  opts?: { preferredWabaId?: string | null; knownPhoneNumberId?: string | null },
+): Promise<{ id: string; via: string; probe_error?: string } | null> {
+  const preferred = String(opts?.preferredWabaId || "").replace(/\D/g, "");
+  if (preferred) {
+    // NÃO probe Graph aqui: cada status/create do modal estourava #80008.
+    // A WABA gravada no banco (SuperAdmin) é a fonte da verdade.
+    return { id: preferred, via: "platform.waba_id" };
+  }
+
   const tries: Array<{ label: string; field: string }> = [
     { label: "page.whatsapp_business_account", field: "whatsapp_business_account" },
     { label: "page.connected_whatsapp_business_account", field: "connected_whatsapp_business_account" },
@@ -128,20 +174,61 @@ export async function discoverPlatformWabaId(
       if (id) return { id: String(id), via: t.label };
     }
   }
-  // Fallback: owned WABAs do business
+
+  // Fallback: owned/client WABAs do Business (modelo SuperAdmin: uma WABA pra todas as campanhas).
   const me = await graphGet(`/me/businesses?fields=id,name`, token);
+  if (!me.ok) {
+    console.warn("[platform-wa] me/businesses failed", me.status, me.body?.error?.message);
+  }
   const businesses = Array.isArray(me.body?.data) ? me.body.data : [];
+  const candidates: Array<{ id: string; via: string; phoneCount: number }> = [];
   for (const b of businesses) {
     const bid = String(b?.id || "");
     if (!bid) continue;
     for (const kind of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
       const wr = await graphGet(`/${bid}/${kind}?fields=id,name`, token);
       const rows = Array.isArray(wr.body?.data) ? wr.body.data : [];
-      if (rows[0]?.id) {
-        return { id: String(rows[0].id), via: `business.${kind}` };
+      for (const row of rows) {
+        const wid = String(row?.id || "");
+        if (!wid) continue;
+        const phones = await graphGet(`/${wid}/phone_numbers?fields=id&limit=5`, token);
+        const phoneCount = Array.isArray(phones.body?.data) ? phones.body.data.length : 0;
+        if (phones.ok) {
+          candidates.push({ id: wid, via: `business.${kind}`, phoneCount });
+        }
       }
     }
   }
+  // Prefere WABA que já tem número (a da plataforma em uso).
+  candidates.sort((a, b) => b.phoneCount - a.phoneCount);
+  if (candidates[0]?.id) {
+    return { id: candidates[0].id, via: candidates[0].via };
+  }
+
+  // Último recurso: achar WABA a partir de um phone_number_id já salvo (probe nas WABAs).
+  const knownPhone = String(opts?.knownPhoneNumberId || "").replace(/\D/g, "");
+  if (knownPhone && businesses.length) {
+    for (const b of businesses) {
+      const bid = String(b?.id || "");
+      if (!bid) continue;
+      for (const kind of ["owned_whatsapp_business_accounts", "client_whatsapp_business_accounts"]) {
+        const wr = await graphGet(`/${bid}/${kind}?fields=id`, token);
+        for (const row of (Array.isArray(wr.body?.data) ? wr.body.data : [])) {
+          const wid = String(row?.id || "");
+          if (!wid) continue;
+          const phones = await graphGet(
+            `/${wid}/phone_numbers?fields=id&limit=50`,
+            token,
+          );
+          const hit = (Array.isArray(phones.body?.data) ? phones.body.data : []).some(
+            (p: { id?: string }) => String(p?.id || "") === knownPhone,
+          );
+          if (hit) return { id: wid, via: "phone_number_id_probe" };
+        }
+      }
+    }
+  }
+
   return null;
 }
 
@@ -150,7 +237,13 @@ export async function listWabaPhones(wabaId: string, token: string): Promise<Pla
     `/${wabaId}/phone_numbers?fields=display_phone_number,verified_name,quality_rating,code_verification_status`,
     token,
   );
-  if (!r.ok) return [];
+  if (!r.ok) {
+    const msg = String(r.body?.error?.message || "");
+    if (/80008|too many calls|request limit/i.test(msg)) {
+      console.warn("[platform-wa] list phones rate-limited", wabaId, msg);
+    }
+    return [];
+  }
   return (r.body?.data || []).map((n: any) => ({
     id: String(n.id),
     display: String(n.display_phone_number || ""),
@@ -198,14 +291,26 @@ export async function createWabaPhoneNumber(opts: {
   token: string;
   national: string;
   verifiedName: string;
-}): Promise<{ ok: true; phone_number_id: string } | { ok: false; error: string }> {
+}): Promise<{ ok: true; phone_number_id: string } | { ok: false; error: string; meta?: unknown }> {
   const r = await graphPostForm(`/${opts.wabaId}/phone_numbers`, opts.token, {
     cc: "55",
     phone_number: opts.national,
     verified_name: opts.verifiedName.slice(0, 100),
   });
   if (!r.ok || !r.body?.id) {
-    return { ok: false, error: translateMetaWaError(r.body, "Falha ao criar número na WABA.") };
+    console.error("[platform-wa] create phone failed", JSON.stringify({
+      status: r.status,
+      code: r.body?.error?.code,
+      subcode: r.body?.error?.error_subcode,
+      message: r.body?.error?.message,
+      user_msg: r.body?.error?.error_user_msg,
+      user_title: r.body?.error?.error_user_title,
+    })?.slice(0, 800));
+    return {
+      ok: false,
+      error: translateMetaWaError(r.body, "A Meta recusou cadastrar este número na Página. O SMS só é enviado depois que o número for aceito."),
+      meta: r.body,
+    };
   }
   return { ok: true, phone_number_id: String(r.body.id) };
 }

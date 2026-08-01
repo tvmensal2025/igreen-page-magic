@@ -215,7 +215,7 @@ export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreat
     try {
       await publishSmartAnchorCampaign(consultantId, preview);
       toast({
-        title: "Anúncio rápido publicado",
+        title: "Anúncio inteligente publicado",
         description: "Campanha criada. O sistema sobe ou desce o valor sozinho conforme o custo do contato.",
       });
       onCreated?.();
@@ -235,13 +235,13 @@ export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreat
 
   return (
     <Dialog open={open} onOpenChange={(v) => !v && !publishing && onClose()}>
-      <DialogContent className="ads-central-2026 max-w-lg max-h-[92vh] overflow-y-auto border-[hsl(var(--ads-border))]">
+      <DialogContent className="ads-central-2026 max-w-2xl max-h-[92vh] overflow-y-auto border-[hsl(var(--ads-border))]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-[hsl(var(--ads-emerald-2))]">
             <span className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-[var(--ads-gradient-emerald)] text-[hsl(45_60%_95%)]">
               <Brain className="h-4 w-4" />
             </span>
-            Anunciar rápido
+            Anúncio inteligente
           </DialogTitle>
         </DialogHeader>
 
@@ -423,13 +423,18 @@ export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreat
 
             <div className="space-y-2">
               <Label className="text-xs">Criativo</Label>
+              <p className="text-[11px] text-muted-foreground">
+                Aqui é simples: <strong className="text-foreground">1 foto (feed 1:1)</strong> ou{" "}
+                <strong className="text-foreground">1 vídeo</strong>. Os 3 formatos (quadrado / vertical / story)
+                existem só no Anúncio completo.
+              </p>
               <Tabs
                 value={preview.creativeMode}
                 onValueChange={(v) => setMode(v as SmartCreativeMode)}
               >
                 <TabsList className="h-8">
                   <TabsTrigger value="photo" className="text-xs h-7 gap-1">
-                    <ImageIcon className="h-3.5 w-3.5" /> Foto
+                    <ImageIcon className="h-3.5 w-3.5" /> Foto 1:1
                   </TabsTrigger>
                   <TabsTrigger value="video" className="text-xs h-7 gap-1">
                     <Film className="h-3.5 w-3.5" /> Vídeo
@@ -439,22 +444,34 @@ export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreat
 
               {preview.creativeMode === "photo" ? (
                 <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    {preview.libraryPhotos.slice(0, 8).map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => patchPreview({ photoUrl: item.url, creativeMode: "photo" })}
-                        className={`relative h-16 w-16 rounded-md overflow-hidden border-2 ${
-                          preview.photoUrl === item.url
-                            ? "border-primary"
-                            : "border-transparent opacity-80 hover:opacity-100"
-                        }`}
-                      >
-                        <img src={item.url} alt="" className="h-full w-full object-cover" />
-                      </button>
-                    ))}
-                  </div>
+                  {preview.libraryPhotos.length === 0 ? (
+                    <div className="text-[11px] text-muted-foreground border border-dashed rounded-lg p-3 text-center">
+                      Nenhuma foto 1:1 na biblioteca. Envie uma abaixo (quadrado).
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                      {preview.libraryPhotos.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          title={item.label}
+                          onClick={() => patchPreview({ photoUrl: item.url, creativeMode: "photo" })}
+                          className={`relative aspect-square rounded-md overflow-hidden border-2 ${
+                            preview.photoUrl === item.url
+                              ? "border-primary ring-2 ring-primary/30"
+                              : "border-transparent opacity-85 hover:opacity-100"
+                          }`}
+                        >
+                          <img src={item.url} alt="" className="h-full w-full object-cover" />
+                          {item.isPlatformShared && (
+                            <span className="absolute top-0.5 left-0.5 text-[8px] leading-none bg-emerald-600 text-white px-1 py-0.5 rounded">
+                              Oficial
+                            </span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <input
                     ref={photoRef}
                     type="file"
@@ -475,37 +492,52 @@ export function SmartAnchorCampaignDialog({ open, onClose, consultantId, onCreat
                     className="gap-1.5"
                   >
                     {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                    Enviar foto
+                    Enviar foto 1:1
                   </Button>
                 </div>
               ) : (
                 <div className="space-y-2">
-                  <div className="flex flex-wrap gap-2">
-                    {preview.libraryVideos.slice(0, 8).map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() =>
-                          patchPreview({
-                            videoUrl: item.url,
-                            videoThumbUrl: item.thumbUrl || null,
-                            creativeMode: "video",
-                          })
-                        }
-                        className={`relative h-16 w-16 rounded-md overflow-hidden border-2 flex items-center justify-center bg-black/40 ${
-                          preview.videoUrl === item.url
-                            ? "border-primary"
-                            : "border-transparent opacity-80 hover:opacity-100"
-                        }`}
-                      >
-                        {item.thumbUrl ? (
-                          <img src={item.thumbUrl} alt="" className="h-full w-full object-cover" />
-                        ) : (
-                          <Film className="h-5 w-5 text-white" />
-                        )}
-                      </button>
-                    ))}
-                  </div>
+                  {preview.libraryVideos.length === 0 ? (
+                    <div className="text-[11px] text-muted-foreground border border-dashed rounded-lg p-3 text-center">
+                      Nenhum vídeo na biblioteca ainda. Envie um abaixo.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+                      {preview.libraryVideos.map((item) => (
+                        <button
+                          key={item.id}
+                          type="button"
+                          title={item.label}
+                          onClick={() =>
+                            patchPreview({
+                              videoUrl: item.url,
+                              videoThumbUrl: item.thumbUrl || null,
+                              creativeMode: "video",
+                            })
+                          }
+                          className={`relative aspect-[9/16] rounded-md overflow-hidden border-2 flex items-center justify-center bg-black/40 ${
+                            preview.videoUrl === item.url
+                              ? "border-primary ring-2 ring-primary/30"
+                              : "border-transparent opacity-85 hover:opacity-100"
+                          }`}
+                        >
+                          {item.thumbUrl ? (
+                            <img src={item.thumbUrl} alt="" className="h-full w-full object-cover" />
+                          ) : (
+                            <Film className="h-5 w-5 text-white" />
+                          )}
+                          {item.isPlatformShared && (
+                            <span className="absolute top-0.5 left-0.5 text-[8px] leading-none bg-emerald-600 text-white px-1 py-0.5 rounded">
+                              Oficial
+                            </span>
+                          )}
+                          <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[9px] text-white truncate px-1 py-0.5 text-left">
+                            {item.label}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                   <input
                     ref={videoRef}
                     type="file"

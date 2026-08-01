@@ -26,7 +26,7 @@ import {
   Ban, CheckCircle2, ChevronRight, ExternalLink, Loader2, Maximize2, MessageSquare, Minimize2, Pause, Play, RefreshCw,
   Receipt, ShieldAlert, Snowflake, Trophy, UserX, Users, X, Zap, ZapOff,
 } from "lucide-react";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 import { cn } from "@/lib/utils";
 import { suppressContact } from "@/services/contactSuppression";
 import {

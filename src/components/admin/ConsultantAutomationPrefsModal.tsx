@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { useConsultantAutomationPrefs } from "@/hooks/useConsultantAutomationPrefs";
-import { toast } from "sonner";
+import { toast } from "@/components/ui/sonner";
 
 type Props = {
   consultantId: string;
@@ -43,6 +43,8 @@ export function ConsultantAutomationPrefsModal({
 
   const autoOpen = autoPrompt && !loading && needsAck;
   const open = controlledOpen ?? autoOpen;
+  // Bloqueia o tour enquanto o 1º ack estiver pendente (mesmo antes do autoPrompt ligar).
+  const blockTour = controlledOpen === undefined && !!consultantId && (loading || needsAck);
 
   const handleOpenChange = (next: boolean) => {
     onOpenChange?.(next);
@@ -69,8 +71,13 @@ export function ConsultantAutomationPrefsModal({
   };
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+    <>
+      {blockTour && <div hidden data-tour-blocker="automation-prefs-pending" aria-hidden="true" />}
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="sm:max-w-lg max-h-[90vh] overflow-y-auto"
+        data-tour-blocker="automation-prefs"
+      >
         <DialogHeader>
           <DialogTitle>Mensagens automáticas</DialogTitle>
           <DialogDescription>
@@ -158,5 +165,6 @@ export function ConsultantAutomationPrefsModal({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    </>
   );
 }
