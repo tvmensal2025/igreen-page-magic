@@ -89,7 +89,7 @@ export function CampaignDetailDialog({ open, onOpenChange, campaignId, consultan
           </div>
         ) : (
           <>
-            <div className="max-h-[400px] overflow-y-auto">
+            <div className="max-h-[400px] overflow-y-auto overflow-x-auto">
               <table className="w-full text-xs">
                 <thead className="sticky top-0 bg-muted/30">
                   <tr>
