@@ -3,7 +3,19 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 
 const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn("rounded-lg border bg-card text-card-foreground shadow-sm", className)} {...props} />
+  <div
+    ref={ref}
+    className={cn(
+      "rounded-lg border bg-card text-card-foreground shadow-sm",
+      // Polimento visual global: entrada suave + elevação sutil no hover.
+      // Só box-shadow/border-color transicionam (não `all`) para não animar
+      // layout em telas densas do admin. Respeita prefers-reduced-motion via
+      // .ui-card-enter em index.css.
+      "ui-card-enter transition-[box-shadow,border-color] duration-200 ease-out hover:shadow-md hover:border-border/80",
+      className,
+    )}
+    {...props}
+  />
 ));
 Card.displayName = "Card";
 
