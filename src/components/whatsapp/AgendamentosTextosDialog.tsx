@@ -23,6 +23,7 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import {
   CATEGORIA_LABEL,
@@ -200,6 +201,7 @@ const GRUPO_ORDER = [
 ];
 
 export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: Props) {
+  const confirm = useConfirm();
   const [loading, setLoading] = useState(false);
   const [q, setQ] = useState("");
   const [grupo, setGrupo] = useState<string>("all");
@@ -712,7 +714,13 @@ export function AgendamentosTextosDialog({ open, onOpenChange, consultantId }: P
   }
 
   async function removeHoliday(id: string) {
-    if (!confirm("Remover este feriado?")) return;
+    const ok = await confirm({
+      title: "Remover este feriado?",
+      confirmText: "Remover",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
     const { error } = await supabase.from("holidays").delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
     toast.success("Feriado removido");

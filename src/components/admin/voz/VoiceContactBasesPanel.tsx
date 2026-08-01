@@ -8,12 +8,14 @@ import { toast } from "sonner";
 import { Loader2, Plus, Trash2, Users } from "lucide-react";
 import { VozCampaignShell, VozSection } from "./VozCampaignShell";
 import { Badge } from "@/components/ui/badge";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 interface Base { id: string; name: string; total: number; created_at: string; }
 
 interface Props { consultantId: string; }
 
 export function VoiceContactBasesPanel({ consultantId }: Props) {
+  const confirm = useConfirm();
   const [bases, setBases] = useState<Base[]>([]);
   const [name, setName] = useState("");
   const [phones, setPhones] = useState("");
@@ -48,7 +50,14 @@ export function VoiceContactBasesPanel({ consultantId }: Props) {
   };
 
   const remove = async (id: string) => {
-    if (!confirm("Excluir base?")) return;
+    const ok = await confirm({
+      title: "Excluir base de contatos?",
+      description: "A lista salva será removida. Campanhas já criadas não são afetadas.",
+      confirmText: "Excluir base",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
     await (supabase as any).from("voice_contact_bases").delete().eq("id", id);
     await load();
   };

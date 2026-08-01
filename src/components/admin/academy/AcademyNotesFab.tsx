@@ -20,6 +20,7 @@ import {
   useAcademyNotes, type SaveStatus, type AcademyNote,
 } from "@/hooks/useAcademyNotes";
 import { useAC, AC_FONT_DISPLAY, AC_FONT_BODY } from "./theme";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const SAVE_DEBOUNCE_MS = 800;
 
@@ -70,6 +71,7 @@ function NoteEditor({
   removeMaterial: ReturnType<typeof useAcademyNotes>["removeMaterial"];
 }) {
   const AC = useAC();
+  const confirm = useConfirm();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const firstRender = useRef(true);
 
@@ -93,7 +95,19 @@ function NoteEditor({
           <ArrowLeft className="w-4 h-4" /> Voltar
         </button>
         <button
-          onClick={() => { if (confirm("Excluir esta anotação?")) { void deleteNote(note.id); onBack(); } }}
+          onClick={() => {
+            void (async () => {
+              const ok = await confirm({
+                title: "Excluir esta anotação?",
+                confirmText: "Excluir",
+                cancelText: "Cancelar",
+                tone: "danger",
+              });
+              if (!ok) return;
+              void deleteNote(note.id);
+              onBack();
+            })();
+          }}
           className="inline-flex items-center gap-1.5 text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors hover:bg-white/10"
           style={{ color: AC.danger }}
         >

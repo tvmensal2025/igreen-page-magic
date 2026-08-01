@@ -25,6 +25,7 @@ import {
   type ChecklistGroup,
   type ChecklistItem,
 } from "@/lib/zeroLeadChecklist";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 function renderRich(text: string) {
   const parts = text.split(/(\*\*[^*]+\*\*)/g);
@@ -51,6 +52,7 @@ const GROUP_ORDER: ChecklistGroup[] = [
 ];
 
 export default function AdminChecklist() {
+  const confirm = useConfirm();
   const [done, setDone] = useState<Set<string>>(new Set());
   const [showDone, setShowDone] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -151,7 +153,14 @@ export default function AdminChecklist() {
   }, [visible]);
 
   const reset = async () => {
-    if (!confirm("Reabrir todos os itens do checklist?")) return;
+    const ok = await confirm({
+      title: "Reabrir todos os itens do checklist?",
+      description: "Todos os itens marcados voltam a aparecer como pendentes.",
+      confirmText: "Reabrir checklist",
+      cancelText: "Cancelar",
+      tone: "info",
+    });
+    if (!ok) return;
     const { data: u } = await supabase.auth.getUser();
     if (!u.user) return;
     await supabase.from("admin_setup_checklist").delete().eq("user_id", u.user.id);

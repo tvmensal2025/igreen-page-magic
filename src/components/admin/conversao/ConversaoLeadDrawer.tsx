@@ -16,6 +16,7 @@ import { formatStuck, priorityTier, TIER_META, type Temp } from "./score";
 import type { LeadRow } from "./ConversaoCockpit";
 import { CloseCaptureDialog } from "@/components/captacao/CloseCaptureDialog";
 import { formatPhoneBR } from "@/lib/posVenda/format";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const TEMP_META_LABEL: Record<Temp, string> = {
   hot: "Pronto pra fechar",
@@ -59,6 +60,7 @@ interface Props {
 }
 
 export function ConversaoLeadDrawer({ lead, consultantId, onClose, onClassify, onReload, navigate }: Props) {
+  const confirm = useConfirm();
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [loadingMsgs, setLoadingMsgs] = useState(false);
   const [draft, setDraft] = useState("");
@@ -90,9 +92,14 @@ export function ConversaoLeadDrawer({ lead, consultantId, onClose, onClassify, o
 
   async function markNotLead() {
     if (!lead || quickClosing) return;
-    const ok = window.confirm(
-      `Tirar "${lead.name || "esta pessoa"}" da fila?\n\nUse quando não for cliente de verdade (teste, consultor, número errado).\nO chat no WhatsApp continua — só some da Conversão.`,
-    );
+    const ok = await confirm({
+      title: `Tirar "${lead.name || "esta pessoa"}" da fila?`,
+      description:
+        "Use quando não for cliente de verdade (teste, consultor, número errado).\nO chat no WhatsApp continua — só some da Conversão.",
+      confirmText: "Tirar da fila",
+      cancelText: "Cancelar",
+      tone: "info",
+    });
     if (!ok) return;
     setQuickClosing(true);
     try {

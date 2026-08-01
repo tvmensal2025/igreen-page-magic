@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { toast } from "sonner";
 
 export type AutomationToggle = {
@@ -13,6 +14,7 @@ export type AutomationToggle = {
 };
 
 export function useAutomationToggles() {
+  const confirm = useConfirm();
   const [items, setItems] = useState<AutomationToggle[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -49,9 +51,13 @@ export function useAutomationToggles() {
       return false;
     }
     if (next && opts?.confirmOn !== false) {
-      const ok = window.confirm(
-        `Ligar “${row.label}”?\n\nIsso pode enviar mensagem automática para clientes.`,
-      );
+      const ok = await confirm({
+        title: `Ligar “${row.label}”?`,
+        description: "Isso pode enviar mensagem automática para clientes.",
+        confirmText: "Ligar",
+        cancelText: "Cancelar",
+        tone: "info",
+      });
       if (!ok) return false;
     }
 
@@ -86,15 +92,16 @@ export function useAutomationToggles() {
 
 
   async function bulkSet(next: boolean) {
-    if (
-      !confirm(
-        next
-          ? "Ligar TODAS as automações? Risco alto de envio em massa."
-          : "Desligar TODAS as automações? Nenhum envio automático sairá.",
-      )
-    ) {
-      return;
-    }
+    const ok = await confirm({
+      title: next ? "Ligar TODAS as automações?" : "Desligar TODAS as automações?",
+      description: next
+        ? "Risco alto de envio em massa."
+        : "Nenhum envio automático sairá.",
+      confirmText: next ? "Ligar todas" : "Desligar todas",
+      cancelText: "Cancelar",
+      tone: next ? "danger" : "info",
+    });
+    if (!ok) return;
     setBusyKey("__all__");
     // Mesmo caso: RLS admin-only. 0 linhas = nada mudou, não pode dizer
     // "todas desligadas — modo seguro" com os motores ainda ligados.

@@ -43,11 +43,13 @@ import { AppSidebar, type AdminTabId } from "@/components/layout/AppSidebar";
 import { AppTopbar } from "@/components/layout/AppTopbar";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useUserRole } from "@/hooks/useUserRole";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const FlowDiagramV2 = React.lazy(() => import("@/components/admin/flow-builder/diagram-v2/FlowDiagramV2"));
 
 export default function FluxoBuilder() {
   const navigate = useNavigate();
+  const confirm = useConfirm();
   
   const [userId, setUserId] = useState<string | null>(null);
   const [consultantName, setConsultantName] = useState("");
@@ -436,10 +438,18 @@ export default function FluxoBuilder() {
                             className={`h-8 ml-1 ${isPublicTemplate ? "border-emerald-500/50 text-emerald-600 dark:text-emerald-400" : ""}`}
                             onClick={async () => {
                               if (!flowId) return;
-                              const msg = isPublicTemplate
-                                ? `Republicar o Fluxo ${editingVariant} como MODELO PÚBLICO (sobrescreve a versão oficial atual com o estado atual)?`
-                                : `Publicar o Fluxo ${editingVariant} atual como MODELO PÚBLICO para todos os consultores? A versão atual (com todas as alterações) passa a ser a oficial.`;
-                              if (!window.confirm(msg)) return;
+                              const ok = await confirm({
+                                title: isPublicTemplate
+                                  ? `Republicar Fluxo ${editingVariant} como modelo público?`
+                                  : `Publicar Fluxo ${editingVariant} como modelo público?`,
+                                description: isPublicTemplate
+                                  ? "Sobrescreve a versão oficial atual com o estado atual."
+                                  : "A versão atual (com todas as alterações) passa a ser a oficial para todos os consultores.",
+                                confirmText: isPublicTemplate ? "Republicar" : "Publicar para todos",
+                                cancelText: "Cancelar",
+                                tone: "info",
+                              });
+                              if (!ok) return;
                               const { error } = await supabase.rpc("publish_flow_as_public", { _flow_id: flowId });
                               if (error) {
                                 toast.error("Não consegui publicar: " + error.message);
@@ -507,9 +517,15 @@ export default function FluxoBuilder() {
                         disabled={crud.saving}
                         onClick={async () => {
                           if (!userId) return;
-                          if (!window.confirm(
-                            "Voltar ao modelo público vai SUBSTITUIR seus passos personalizados pela versão oficial atual. Suas edições serão perdidas. Continuar?"
-                          )) return;
+                          const ok = await confirm({
+                            title: "Voltar ao modelo público?",
+                            description:
+                              "Isso SUBSTITUI seus passos personalizados pela versão oficial atual. Suas edições serão perdidas.",
+                            confirmText: "Voltar ao modelo público",
+                            cancelText: "Cancelar",
+                            tone: "danger",
+                          });
+                          if (!ok) return;
                           const { error } = await supabase.rpc("sync_flow_from_public", {
                             _consultant_id: userId,
                             _variant: editingVariant,

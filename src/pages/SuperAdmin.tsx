@@ -46,6 +46,7 @@ const FlowTemplateApprovalPanel = lazy(() => import("@/components/superadmin/Flo
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { logAdminAction } from "@/hooks/useAdminAudit";
 import { SuperAdminCashCreditDialog } from "@/components/admin/super/SuperAdminCashCreditDialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 interface WhatsAppMetrics {
   hasInstance: boolean;
@@ -85,6 +86,7 @@ const SuperAdmin = () => {
   const { isSuperAdmin, loading: roleLoading } = useUserRole(userId);
   const navigate = useNavigate();
   const { toast } = useToast();
+  const confirm = useConfirm();
 
   useEffect(() => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
@@ -218,9 +220,14 @@ const SuperAdmin = () => {
   };
 
   const handleResetPassword = async (consultantId: string, consultantName: string) => {
-    if (!window.confirm(`Gerar uma NOVA SENHA aleatória para ${consultantName}?\n\nA senha atual deixará de funcionar imediatamente.`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Gerar nova senha para ${consultantName}?`,
+      description: "A senha atual deixará de funcionar imediatamente.",
+      confirmText: "Gerar nova senha",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
     setResettingId(consultantId);
     try {
       const { data, error } = await supabase.functions.invoke("admin-reset-password", {

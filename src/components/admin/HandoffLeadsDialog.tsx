@@ -41,6 +41,7 @@ import {
   type HandoffLead,
 } from "@/lib/handoffReturnToPizza";
 import { HandoffLeadPreviewDialog } from "@/components/admin/HandoffLeadPreviewDialog";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 
@@ -72,6 +73,7 @@ export function HandoffLeadsDialog({
   onOpenChat,
   onChanged,
 }: DialogProps) {
+  const confirm = useConfirm();
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [rows, setRows] = useState<HandoffLead[]>([]);
@@ -138,9 +140,17 @@ export function HandoffLeadsDialog({
 
   async function forgetSelected(ids: string[]) {
     if (!ids.length) return;
-    const ok = window.confirm(
-      `Esquecer acompanhamento de ${ids.length} lead(s)?\n\nEles saem do ciclo automático (como “já cliente”). Você ainda pode falar no WhatsApp à mão. Não é bloqueio.`,
-    );
+    const ok = await confirm({
+      title:
+        ids.length === 1
+          ? "Esquecer acompanhamento deste contato?"
+          : `Esquecer acompanhamento de ${ids.length} contatos?`,
+      description:
+        "Eles saem do ciclo automático (como “já cliente”). Você ainda pode falar no WhatsApp à mão. Isso não é bloqueio.",
+      confirmText: "Esquecer acompanhamento",
+      cancelText: "Voltar",
+      tone: "info",
+    });
     if (!ok) return;
     setBusy(true);
     const byId = new Map(rows.map((r) => [r.cadenceId, r]));
@@ -173,9 +183,14 @@ export function HandoffLeadsDialog({
   };
 
   async function blockContact(row: HandoffLead) {
-    const ok = window.confirm(
-      `Bloquear ${row.displayName}?\n\nO contato sai desta lista e nunca mais recebe mensagem automática (WhatsApp, SMS ou ligação). Não volta para o acompanhamento automático.`,
-    );
+    const ok = await confirm({
+      title: `Bloquear ${row.displayName}?`,
+      description:
+        "O contato sai desta lista e nunca mais recebe mensagem automática (WhatsApp, SMS ou ligação). Não volta para o acompanhamento automático.",
+      confirmText: "Bloquear contato",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
     if (!ok) return;
     setBusy(true);
     const res = await suppressContact({
@@ -200,13 +215,29 @@ export function HandoffLeadsDialog({
 
   function renderLeadActions(row: HandoffLead, compact?: boolean) {
     return (
-      <div className={cn("flex gap-1.5", compact ? "flex-col w-full" : "justify-end flex-wrap")}>
+      <div
+        className={cn(
+          "gap-1.5",
+          compact ? "grid grid-cols-2 w-full" : "flex justify-end flex-wrap",
+        )}
+      >
+        <Button
+          type="button"
+          size="sm"
+          className={cn("h-8 text-xs", compact && "col-span-2 justify-center")}
+          disabled={busy}
+          onClick={() => void returnSelected([row.cadenceId])}
+          title="Devolve o lead ao acompanhamento automático"
+        >
+          <RotateCcw className="h-3.5 w-3.5 mr-1.5 shrink-0" />
+          {compact ? "Voltar ao ciclo" : "Voltar ao acompanhamento"}
+        </Button>
         {onOpenChat && (
           <Button
             type="button"
             size="sm"
             variant="outline"
-            className={cn("h-8", compact && "w-full justify-start")}
+            className="h-8 text-xs"
             onClick={() => openConversation(row)}
             title="Abrir no WhatsApp"
           >
@@ -217,31 +248,26 @@ export function HandoffLeadsDialog({
         <Button
           type="button"
           size="sm"
-          className={cn("h-8 text-xs", compact && "w-full justify-start")}
-          disabled={busy}
-          onClick={() => void returnSelected([row.cadenceId])}
-          title="Devolve o lead ao acompanhamento automático"
-        >
-          <RotateCcw className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-          Voltar ao acompanhamento
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          className={cn("h-8 text-xs", compact && "w-full justify-start")}
+          variant="outline"
+          className={cn(
+            "h-8 text-xs text-muted-foreground hover:text-foreground",
+            !onOpenChat && compact && "col-span-2",
+          )}
           disabled={busy}
           onClick={() => void forgetSelected([row.cadenceId])}
           title="Sai do ciclo automático — use se já é cliente. WhatsApp manual continua ok"
         >
           <UserMinus className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-          Esquecer acompanhamento
+          Esquecer
         </Button>
         <Button
           type="button"
           size="sm"
-          variant="destructive"
-          className={cn("h-8 text-xs", compact && "w-full justify-start")}
+          variant="outline"
+          className={cn(
+            "h-8 text-xs border-destructive/40 text-destructive hover:bg-destructive/10 hover:text-destructive",
+            !onOpenChat && compact && "col-span-2",
+          )}
           disabled={busy}
           onClick={() => void blockContact(row)}
           title="Bloqueia contato e remove sem voltar ao acompanhamento automático"
@@ -479,8 +505,8 @@ export function HandoffLeadsDialog({
               </Button>
               <Button
                 type="button"
-                variant="secondary"
-                className="w-full sm:w-auto"
+                variant="outline"
+                className="w-full sm:w-auto text-muted-foreground"
                 disabled={busy || selectedIds.length === 0}
                 onClick={() => void forgetSelected(selectedIds)}
               >

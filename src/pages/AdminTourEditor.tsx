@@ -11,8 +11,10 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { useTour } from "@/features/onboarding/useTour";
 import { ARTICLE_CATEGORIES, type TourStep, type TourArticle } from "@/features/onboarding/types";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 export default function AdminTourEditor() {
+  const confirm = useConfirm();
   const [steps, setSteps] = useState<TourStep[]>([]);
   const [articles, setArticles] = useState<TourArticle[]>([]);
   const [saving, setSaving] = useState<string | null>(null);
@@ -96,7 +98,13 @@ export default function AdminTourEditor() {
   };
 
   const deleteArticle = async (id: string) => {
-    if (!confirm("Remover este artigo?")) return;
+    const ok = await confirm({
+      title: "Remover este artigo?",
+      confirmText: "Remover",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
     const { error } = await supabase.from("tour_articles" as never).delete().eq("id", id);
     if (error) { toast.error(error.message); return; }
     await load();

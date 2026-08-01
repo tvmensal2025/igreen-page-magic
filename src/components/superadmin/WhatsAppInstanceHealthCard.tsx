@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { AlertTriangle, ShieldCheck, RefreshCw, Ban, RotateCcw } from "lucide-react";
 
 interface InstanceRow {
@@ -17,6 +18,7 @@ interface InstanceRow {
 }
 
 export function WhatsAppInstanceHealthCard() {
+  const confirm = useConfirm();
   const [rows, setRows] = useState<InstanceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -39,7 +41,14 @@ export function WhatsAppInstanceHealthCard() {
   useEffect(() => { load(); }, []);
 
   const markBanned = async (instance: string) => {
-    if (!confirm(`Marcar ${instance} como banida? Envios serão pausados até você destravar manualmente.`)) return;
+    const ok = await confirm({
+      title: `Marcar ${instance} como banida?`,
+      description: "Envios serão pausados até você destravar manualmente.",
+      confirmText: "Marcar como banida",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
     setBusy(instance);
     const { data, error } = await supabase.rpc("admin_mark_instance_banned", { p_instance: instance });
     setBusy(null);
@@ -78,10 +87,15 @@ export function WhatsAppInstanceHealthCard() {
   };
 
   const recreate = async (instance: string) => {
-    if (!confirm(
-      `Recriar ${instance} com o MESMO nome (apaga sessão no Evolution e gera QR novo)? ` +
-      `Use só se o chip estiver saudável no app oficial. Após ban/403, NÃO reconecte — aguarde e peça admin_clear_fatal_lock.`,
-    )) return;
+    const ok = await confirm({
+      title: `Recriar ${instance}?`,
+      description:
+        "Apaga a sessão no Evolution e gera QR novo (mesmo nome). Use só se o chip estiver saudável no app oficial. Após ban/403, NÃO reconecte — aguarde e peça liberação do hard-lock.",
+      confirmText: "Recriar instância",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
     setBusy(instance);
     const { data, error } = await supabase.functions.invoke("evolution-instance-reconnect", {
       body: { instanceName: instance, recreate: true },

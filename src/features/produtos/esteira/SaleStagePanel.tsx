@@ -8,6 +8,7 @@ import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   useRemoveAttachment,
   useSaleStages,
@@ -181,6 +182,7 @@ function AttachmentsBlock({ saleId, stageId }: { saleId: string; stageId: string
   const upload = useUploadAttachment(stageId);
   const remove = useRemoveAttachment(stageId);
   const { toast } = useToast();
+  const confirm = useConfirm();
 
   const onPick = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -217,7 +219,13 @@ function AttachmentsBlock({ saleId, stageId }: { saleId: string; stageId: string
   };
 
   const onRemove = async (att: StageAttachment) => {
-    if (!window.confirm(`Remover "${att.fileName}"?`)) return;
+    const ok = await confirm({
+      title: `Remover "${att.fileName}"?`,
+      confirmText: "Remover",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
     try {
       await remove.mutateAsync(att);
     } catch (err) {

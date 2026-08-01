@@ -32,6 +32,7 @@ import { suppressContact } from "@/services/contactSuppression";
 import { NeverContactConfirmDialog } from "@/components/leads/NeverContactDialogs";
 import { BusinessResearchDialog } from "@/components/captacao/BusinessResearchDialog";
 import { AlreadyContactedList } from "@/components/captacao/AlreadyContactedList";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 interface Props {
   consultantId: string;
@@ -64,6 +65,7 @@ const normalizePhone = (p: string | null | undefined): string => {
 };
 
 export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props) {
+  const confirm = useConfirm();
   const [leads, setLeads] = useState<CapturedLead[]>([]);
   const [totalFiltered, setTotalFiltered] = useState(0);
   const [page, setPage] = useState(0);
@@ -218,9 +220,15 @@ export function CapturedLeadsPanel({ consultantId, instanceName = null }: Props)
       sonnerToast.warning("Selecione ao menos um lead.");
       return;
     }
-    if (!confirm(`Descartar ${ids.length} lead(s)? Eles não entram em disparos. Se já forem customers, marque “Nunca mais” um a um.`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Descartar ${ids.length} lead(s)?`,
+      description:
+        "Eles não entram em disparos. Se já forem customers, marque “Nunca mais” um a um.",
+      confirmText: "Descartar",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
     setDiscarding(true);
     try {
       for (const id of ids) {

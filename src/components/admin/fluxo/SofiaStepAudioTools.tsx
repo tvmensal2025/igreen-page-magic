@@ -29,6 +29,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import AudioPlayer from "@/components/admin/media/AudioPlayer";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   A2_BODY_EXPLAIN,
   AFTER_CLUB_BUTTONS,
@@ -217,6 +218,7 @@ export default function SofiaStepAudioTools({
   onSyncBodies,
   syncingBodies,
 }: Props) {
+  const confirm = useConfirm();
   const cfg = useMemo(
     () => buildProfile(slotKey, stepKey, messageText, mediaOrder),
     [slotKey, stepKey, messageText, mediaOrder],
@@ -370,11 +372,17 @@ export default function SofiaStepAudioTools({
     toast.message("Roteiro restaurado na tela — clique Salvar para gravar.");
   }, [defaultAudio]);
 
-  const clearWa = useCallback(() => {
-    if (!window.confirm("Limpar o texto WhatsApp deste passo?")) return;
+  const clearWa = useCallback(async () => {
+    const ok = await confirm({
+      title: "Limpar o texto WhatsApp deste passo?",
+      confirmText: "Limpar texto",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
     setDraftText("");
     onMessageTextChange?.("");
-  }, [onMessageTextChange]);
+  }, [confirm, onMessageTextChange]);
 
   const applyDefaultOrder = useCallback(() => {
     if (!cfg || !onSetMediaOrder) return;

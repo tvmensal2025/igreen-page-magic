@@ -14,6 +14,7 @@ import { VozCampaignShell, VozSection } from "./VozCampaignShell";
 import type { VozCustomer } from "./VozContactPickerDialog";
 import { resolveNameByPhone } from "./voiceContactResolve";
 import { dncSourceLabel } from "./voiceOutcomeLabels";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   crmClosingSummary,
   resolveCrmByPhoneOrId,
@@ -68,6 +69,7 @@ function reasonLabel(reason: string | null | undefined): string {
 }
 
 export function VoiceDncPanel({ consultantId, customers = [], onOpenChat }: Props) {
+  const confirm = useConfirm();
   const [rows, setRows] = useState<DncRow[]>([]);
   const [phone, setPhone] = useState("");
   const [reason, setReason] = useState("");
@@ -147,7 +149,14 @@ export function VoiceDncPanel({ consultantId, customers = [], onOpenChat }: Prop
   };
 
   const remove = async (id: string) => {
-    if (!confirm("Remover este número da lista Não Perturbe?")) return;
+    const ok = await confirm({
+      title: "Remover este número da lista Não Perturbe?",
+      description: "O número volta a poder receber ligação e SMS.",
+      confirmText: "Remover",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
     const { error } = await supabase.from("voice_dnc_list").delete().eq("id", id);
     if (error) return toast.error(error.message);
     toast.success("Removido");

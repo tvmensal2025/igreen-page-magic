@@ -9,6 +9,7 @@ import { Loader2, Sparkles } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { FLOW_TEMPLATES, FlowTemplate, TemplateStepSeed } from "./flowTemplates";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 interface Props {
   open: boolean;
@@ -74,6 +75,7 @@ export default function FlowTemplatesDialog({
   onApplied,
   preferTemplateId = null,
 }: Props) {
+  const confirm = useConfirm();
   const [picked, setPicked] = useState<string | null>(preferTemplateId);
   const [applying, setApplying] = useState(false);
   const [replaceExisting, setReplaceExisting] = useState(
@@ -86,9 +88,13 @@ export default function FlowTemplatesDialog({
     try {
       let basePosition = currentMaxPosition;
       if (replaceExisting) {
-        const ok = window.confirm(
-          `Substituir TODOS os passos atuais pelo template "${tpl.name}"?\n\nIsso apaga os passos deste fluxo e grava os ${tpl.steps.length} oficiais.`,
-        );
+        const ok = await confirm({
+          title: `Substituir pelos passos de "${tpl.name}"?`,
+          description: `Isso apaga os passos deste fluxo e grava os ${tpl.steps.length} oficiais.`,
+          confirmText: "Substituir passos",
+          cancelText: "Cancelar",
+          tone: "danger",
+        });
         if (!ok) {
           setApplying(false);
           return;

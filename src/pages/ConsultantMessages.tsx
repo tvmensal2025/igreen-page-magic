@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import { ArrowLeft, Save, RotateCcw, Sparkles } from "lucide-react";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 type Template = {
   id: string;
@@ -33,6 +34,7 @@ type Draft = {
 };
 
 export default function ConsultantMessages() {
+  const confirm = useConfirm();
   const [userId, setUserId] = useState<string | null>(null);
   const [rows, setRows] = useState<Template[]>([]);
   const [drafts, setDrafts] = useState<Record<string, Draft>>({});
@@ -107,7 +109,14 @@ export default function ConsultantMessages() {
 
   async function resetToDefault(t: Template) {
     if (!userId) return;
-    if (!confirm("Voltar ao padrão da plataforma para esta mensagem?")) return;
+    const ok = await confirm({
+      title: "Voltar ao padrão da plataforma?",
+      description: "Esta mensagem volta ao texto oficial da plataforma.",
+      confirmText: "Restaurar padrão",
+      cancelText: "Cancelar",
+      tone: "info",
+    });
+    if (!ok) return;
     if (t.consultant_id === userId) {
       const { error } = await supabase.from("consultant_message_templates").delete().eq("id", t.id);
       if (error) { toast.error(error.message); return; }

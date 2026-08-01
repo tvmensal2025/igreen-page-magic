@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import {
   useAddStage,
   useRemoveStage,
@@ -189,6 +190,7 @@ function TemplateRowItem({
   const rename = useRenameStage();
   const remove = useRemoveStage();
   const { toast } = useToast();
+  const confirm = useConfirm();
 
   const dirty = name !== stage.name;
 
@@ -209,7 +211,13 @@ function TemplateRowItem({
   };
 
   const onDelete = async () => {
-    if (!window.confirm(`Remover etapa "${stage.name}"?`)) return;
+    const ok = await confirm({
+      title: `Remover etapa "${stage.name}"?`,
+      confirmText: "Remover etapa",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
     try {
       await remove.mutateAsync(stage.id);
     } catch (err) {

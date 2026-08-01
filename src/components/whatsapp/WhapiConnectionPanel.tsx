@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { RefreshCcw, KeyRound, QrCode, LogOut, AlertTriangle, CheckCircle2, CreditCard, ExternalLink, History, Download, Smartphone, SmartphoneNfc } from "lucide-react";
 
 interface Props {
@@ -21,6 +22,7 @@ const statusMeta: Record<WhapiHealthStatus, { label: string; tone: "default" | "
 };
 
 export function WhapiConnectionPanel({ visible }: Props) {
+  const confirm = useConfirm();
   const health = useWhapiHealth(visible);
   const [tokenInput, setTokenInput] = useState("");
   const [busy, setBusy] = useState<null | "save" | "qr" | "logout" | "backfill" | "reauth" | "webhook">(null);
@@ -71,13 +73,15 @@ export function WhapiConnectionPanel({ visible }: Props) {
   }, [health.status, visible]);
 
   const handleBackfill = async () => {
-    if (!confirm(
-      "Importar TODO o histórico do WhatsApp deste canal?\n\n" +
-      "• Pode demorar de 30 a 90 minutos.\n" +
-      "• Leads novos entram com o bot PAUSADO.\n" +
-      "• Clientes já importados do iGreen são ignorados.\n" +
-      "• Rodar 2× não duplica.\n\nContinuar?"
-    )) return;
+    const ok = await confirm({
+      title: "Importar todo o histórico deste canal?",
+      description:
+        "• Pode demorar de 30 a 90 minutos.\n• Leads novos entram com o bot PAUSADO.\n• Clientes já importados do iGreen são ignorados.\n• Rodar 2× não duplica.",
+      confirmText: "Importar histórico",
+      cancelText: "Cancelar",
+      tone: "info",
+    });
+    if (!ok) return;
     setBusy("backfill");
     try {
       const { data, error } = await supabase.functions.invoke("whapi-history-backfill", {
@@ -149,7 +153,14 @@ export function WhapiConnectionPanel({ visible }: Props) {
   };
 
   const handleLogout = async () => {
-    if (!confirm("Desconectar canal WhatsApp? Você precisará escanear o QR de novo.")) return;
+    const ok = await confirm({
+      title: "Desconectar canal WhatsApp?",
+      description: "Você precisará escanear o QR de novo.",
+      confirmText: "Desconectar",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
     setBusy("logout");
     try {
       const { data, error } = await supabase.functions.invoke("whapi-proxy", {

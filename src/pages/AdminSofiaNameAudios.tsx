@@ -26,6 +26,7 @@ import {
   storagePathFromUrl,
   type MediaRow,
 } from "@/lib/sofiaNameAudioAudit";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 
 const PAGE_SIZE = 40;
 
@@ -131,6 +132,7 @@ function AudioCell({
 
 export default function AdminSofiaNameAudios() {
   const navigate = useNavigate();
+  const confirm = useConfirm();
   const [consultantId, setConsultantId] = useState<string | null>(null);
   const [rows, setRows] = useState<MediaRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -224,7 +226,14 @@ export default function AdminSofiaNameAudios() {
   const deletePermanent = async (nameNorm: string, kind: "ola" | "nome" | "both") => {
     if (!consultantId) return;
     const label = kind === "both" ? "TODOS os intros" : kind === "ola" ? "Olá+nome" : "só nome";
-    if (!window.confirm(`Excluir permanentemente ${label} de "${displaySofiaName(nameNorm)}"?`)) return;
+    const ok = await confirm({
+      title: `Excluir ${label} de "${displaySofiaName(nameNorm)}"?`,
+      description: "Exclusão permanente do áudio e dos arquivos associados.",
+      confirmText: "Excluir permanentemente",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
 
     setBusyKey(`${nameNorm}:${kind}:del`);
     try {

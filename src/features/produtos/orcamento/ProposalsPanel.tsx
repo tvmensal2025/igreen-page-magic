@@ -19,6 +19,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import { useToast } from "@/hooks/use-toast";
+import { useConfirm } from "@/components/ui/confirm-dialog";
 import { sendWhatsAppMessage } from "@/services/messageSender";
 import { useProducts } from "../catalogo/hooks";
 import {
@@ -69,6 +70,7 @@ interface ProposalsPanelProps {
 }
 
 export function ProposalsPanel({ consultantId, instanceName, isWhapi }: ProposalsPanelProps) {
+  const confirm = useConfirm();
   const { toast } = useToast();
   const { data: proposals = [], isLoading } = useProposals(consultantId);
   const { data: products = [] } = useProducts();
@@ -116,9 +118,14 @@ export function ProposalsPanel({ consultantId, instanceName, isWhapi }: Proposal
   }, [proposals, filter]);
 
   const handleDelete = async (proposal: Proposal) => {
-    if (!window.confirm(`Excluir o orçamento de ${proposal.recipientName || "destinatário"}?\n\nEssa ação não pode ser desfeita.`)) {
-      return;
-    }
+    const ok = await confirm({
+      title: `Excluir o orçamento de ${proposal.recipientName || "destinatário"}?`,
+      description: "Essa ação não pode ser desfeita.",
+      confirmText: "Excluir orçamento",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
     try {
       await deleteProposal.mutateAsync(proposal.id);
       toast({ title: "Orçamento removido" });
