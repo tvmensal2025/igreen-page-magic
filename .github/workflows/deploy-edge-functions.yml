@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       expected_sha:
-        description: "Opcional. Deixe vazio ou 'auto' = usa o commit da main selecionada. Só preencha SHA (40 chars) se quiser travar uma versão específica."
+        description: "Opcional. auto/vazio = commit da main. Aceita SHA curto (7+) ou completo (40). Tem que bater com o commit selecionado."
         required: false
         default: "auto"
         type: string
@@ -69,21 +69,60 @@ jobs:
             exit 1
           fi
 
-          # SHA opcional: vazio / auto / HEAD / main → commit da branch selecionada no Run workflow.
+          # SHA flexível (maior/menor), mas 100% amarrado ao commit do dispatch.
+          # Aceita: vazio|auto|head|main | prefixo 7–39 | completo 40 | >40 se começar com GITHUB_SHA.
+          # NUNCA resolve outro commit: curto só vale se for prefixo EXATO de GITHUB_SHA.
+          TARGET_SHA="$(printf '%s' "$GITHUB_SHA" | tr '[:upper:]' '[:lower:]')"
           RAW_SHA="$(printf '%s' "${EXPECTED_SHA:-}" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+          RAW_SHA="${RAW_SHA#commit/}"
+          RAW_SHA="${RAW_SHA#sha-}"
+
           if [[ -z "$RAW_SHA" || "$RAW_SHA" == "auto" || "$RAW_SHA" == "head" || "$RAW_SHA" == "main" ]]; then
-            RAW_SHA="$GITHUB_SHA"
-            echo "expected_sha automático → $RAW_SHA"
+            RESOLVED_SHA="$TARGET_SHA"
+            echo "expected_sha automático → $RESOLVED_SHA"
+          else
+            if [[ ! "$RAW_SHA" =~ ^[0-9a-f]+$ ]]; then
+              echo "expected_sha inválido (só hex / auto). Recebido: $RAW_SHA" >&2
+              exit 1
+            fi
+            LEN=${#RAW_SHA}
+            if (( LEN < 7 )); then
+              echo "SHA curto demais ($LEN). Use pelo menos 7 caracteres, auto, ou o SHA completo." >&2
+              exit 1
+            fi
+            if (( LEN == 40 )); then
+              if [[ "$RAW_SHA" != "$TARGET_SHA" ]]; then
+                echo "SHA completo não bate com o commit do dispatch." >&2
+                echo "informado=$RAW_SHA" >&2
+                echo "selecionado=$TARGET_SHA" >&2
+                exit 1
+              fi
+              RESOLVED_SHA="$TARGET_SHA"
+            elif (( LEN < 40 )); then
+              # Prefixo curto: tem que ser o início do commit selecionado (sem ambiguidade com outro ref).
+              if [[ "$TARGET_SHA" != "$RAW_SHA"* ]]; then
+                echo "SHA curto ($RAW_SHA) não corresponde ao commit selecionado ($TARGET_SHA)." >&2
+                echo "Dica: use auto, ou cole os primeiros 7+ chars do commit da main atual." >&2
+                exit 1
+              fi
+              RESOLVED_SHA="$TARGET_SHA"
+              echo "expected_sha curto OK ($RAW_SHA…) → $RESOLVED_SHA"
+            else
+              # Maior que 40 (ex.: colou SHA-256 ou texto a mais): só ok se começar com o commit certo.
+              if [[ "$RAW_SHA" != "$TARGET_SHA"* ]]; then
+                echo "SHA longo ($LEN chars) não começa com o commit selecionado ($TARGET_SHA)." >&2
+                exit 1
+              fi
+              RESOLVED_SHA="$TARGET_SHA"
+              echo "expected_sha longo normalizado → $RESOLVED_SHA"
+            fi
           fi
-          if [[ ! "$RAW_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "expected_sha inválido. Use vazio/auto ou um SHA completo (40 hex)." >&2
+
+          if [[ "$RESOLVED_SHA" != "$TARGET_SHA" ]]; then
+            echo "Falha interna: SHA resolvido ≠ GITHUB_SHA." >&2
             exit 1
           fi
-          if [[ "$RAW_SHA" != "$GITHUB_SHA" ]]; then
-            echo "SHA informado ($RAW_SHA) não corresponde ao commit selecionado no dispatch ($GITHUB_SHA)." >&2
-            echo "Dica: deixe expected_sha = auto (ou vazio) e escolha a branch main no Run workflow." >&2
-            exit 1
-          fi
+          echo "Deploy travado no commit $RESOLVED_SHA"
           if [[ "$CONFIRM_PRODUCTION" != "true" ]]; then
             echo "Produção não foi confirmada explicitamente." >&2
             exit 1

@@ -60,7 +60,7 @@ Voltar ao caminho Actions assim que a cota liberar.
 
 | Input | Regra |
 |---|---|
-| `expected_sha` | **Opcional.** Vazio / `auto` / `HEAD` / `main` = usa o commit da branch selecionada no Run workflow. Ou SHA completo 40 hex (= `GITHUB_SHA`). |
+| `expected_sha` | **Opcional e flexível**, sempre 100% amarrado ao commit do dispatch: `auto`/vazio/`HEAD`/`main`; **curto** (≥7 hex, prefixo do commit); **40** (completo); **>40** só se começar com o commit selecionado. Nunca resolve outro commit. |
 | `function_names` | Slugs separados por vírgula **ou** `all` |
 | `confirm_production` | deve ser `true` |
 | `confirm_all` | se `function_names=all`, digite exatamente `DEPLOY_ALL` |
@@ -80,7 +80,7 @@ allowlist de slugs no workflow.
 
 1. Commit + push em `origin main` (rebase se o remoto avançou).
 2. Dispare o workflow (UI): `expected_sha=auto` (ou deixe o default) + funções + confirmar produção.
-3. (Opcional / API) trave um SHA: `git rev-parse HEAD` e passe em `expected_sha`.
+3. (Opcional / API) trave um SHA: completo (`git rev-parse HEAD`), curto (`git rev-parse --short=12 HEAD`) ou `auto`.
 
 ### Disparo via API (token git credential)
 
