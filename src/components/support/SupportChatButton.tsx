@@ -1,5 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import ReactMarkdown from "react-markdown";
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,7 +7,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { toUserFacingError } from "@/lib/userFacingError";
 
+// react-markdown (+ micromark/mdast) pesa ~50 kB gzip e este botão fica montado
+// no shell do app em TODAS as rotas (inclusive /auth). Carregar o renderizador
+// só quando uma resposta do assistente precisa ser exibida tira esse peso do
+// carregamento inicial sem mudar o comportamento do chat.
+const ReactMarkdown = lazy(() => import("react-markdown"));
+
 interface Msg { role: "user" | "assistant"; content: string }
+
 
 const WELCOME: Msg = {
   role: "assistant",
@@ -221,18 +227,23 @@ export function SupportChatButton({ className }: SupportChatButtonProps = {}) {
               >
                 {m.role === "assistant" ? (
                   <div className="prose prose-sm dark:prose-invert max-w-none [&>*:first-child]:mt-0 [&>*:last-child]:mb-0 prose-p:my-1.5 prose-ul:my-1.5 prose-ol:my-1.5 prose-li:my-0.5 prose-strong:text-foreground">
-                    <ReactMarkdown
-                      components={{
-                        a: ({ href, children }) => (
-                          <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
-                            {children}
-                          </a>
-                        ),
-                      }}
-                    >
-                      {m.content}
-                    </ReactMarkdown>
+                    {/* Enquanto o renderizador carrega (ms), mostra o texto cru:
+                        o conteúdo nunca some da tela. */}
+                    <Suspense fallback={<div className="whitespace-pre-line">{m.content}</div>}>
+                      <ReactMarkdown
+                        components={{
+                          a: ({ href, children }) => (
+                            <a href={href} target="_blank" rel="noopener noreferrer" className="text-primary underline underline-offset-2">
+                              {children}
+                            </a>
+                          ),
+                        }}
+                      >
+                        {m.content}
+                      </ReactMarkdown>
+                    </Suspense>
                   </div>
+
                 ) : (
                   m.content
                 )}
