@@ -1,5 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
-import ReactMarkdown from "react-markdown";
+import { useState, useRef, useEffect, useCallback, lazy, Suspense } from "react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Textarea } from "@/components/ui/textarea";
@@ -8,7 +7,14 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { toUserFacingError } from "@/lib/userFacingError";
 
+// react-markdown (+ micromark/mdast) pesa ~50 kB gzip e este botão fica montado
+// no shell do app em TODAS as rotas (inclusive /auth). Carregar o renderizador
+// só quando uma resposta do assistente precisa ser exibida tira esse peso do
+// carregamento inicial sem mudar o comportamento do chat.
+const ReactMarkdown = lazy(() => import("react-markdown"));
+
 interface Msg { role: "user" | "assistant"; content: string }
+
 
 const WELCOME: Msg = {
   role: "assistant",
