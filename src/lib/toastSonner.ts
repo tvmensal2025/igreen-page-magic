@@ -62,9 +62,15 @@ toast.message = (message: Parameters<typeof rawToast.message>[0], opts?: ErrorOp
     withDuration(opts, DEFAULT_MS) as ErrorOpts,
   );
 
-toast.promise = rawToast.promise.bind(rawToast);
-toast.dismiss = rawToast.dismiss.bind(rawToast);
-toast.loading = rawToast.loading.bind(rawToast);
-toast.custom = rawToast.custom.bind(rawToast);
+/** Em testes o `sonner` pode vir mock incompleto — nunca quebrar no bind. */
+function bindMethod<T extends (...args: never[]) => unknown>(fn: T | undefined): T {
+  if (typeof fn === "function") return fn.bind(rawToast) as T;
+  return ((() => undefined) as unknown) as T;
+}
+
+toast.promise = bindMethod(rawToast.promise);
+toast.dismiss = bindMethod(rawToast.dismiss);
+toast.loading = bindMethod(rawToast.loading);
+toast.custom = bindMethod(rawToast.custom);
 
 export { toast };

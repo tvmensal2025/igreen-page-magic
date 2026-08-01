@@ -23,12 +23,13 @@ vi.mock("html-to-image", () => ({
 }));
 
 // Mock do toast — evita que o toast real apareça em testes.
-vi.mock("sonner", () => ({
+vi.mock("@/components/ui/sonner", () => ({
   toast: {
     error: vi.fn(),
     warning: vi.fn(),
     success: vi.fn(),
   },
+  Toaster: () => null,
 }));
 
 import { toPng, toSvg } from "html-to-image";
