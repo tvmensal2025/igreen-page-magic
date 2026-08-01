@@ -4130,6 +4130,7 @@ export type Database = {
           delivery_status: string | null
           external_message_id: string | null
           id: string
+          media_duration_sec: number | null
           media_id: string | null
           message_direction: string
           message_text: string | null
@@ -4148,6 +4149,7 @@ export type Database = {
           delivery_status?: string | null
           external_message_id?: string | null
           id?: string
+          media_duration_sec?: number | null
           media_id?: string | null
           message_direction: string
           message_text?: string | null
@@ -4166,6 +4168,7 @@ export type Database = {
           delivery_status?: string | null
           external_message_id?: string | null
           id?: string
+          media_duration_sec?: number | null
           media_id?: string | null
           message_direction?: string
           message_text?: string | null
@@ -9581,7 +9584,36 @@ export type Database = {
           last_notified_at?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "platform_low_balance_alerts_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "cerebro_monitor_canario"
+            referencedColumns: ["consultant_id"]
+          },
+          {
+            foreignKeyName: "platform_low_balance_alerts_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "consultants"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_low_balance_alerts_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "consultants_public"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "platform_low_balance_alerts_consultant_id_fkey"
+            columns: ["consultant_id"]
+            isOneToOne: true
+            referencedRelation: "v_flow_engine_health"
+            referencedColumns: ["consultant_id"]
+          },
+        ]
       }
       platform_sales_campaigns: {
         Row: {
