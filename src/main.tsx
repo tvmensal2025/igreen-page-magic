@@ -54,7 +54,7 @@ if (SENTRY_DSN) {
     .catch((e) => console.warn("Sentry init failed:", e));
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+// createRoot(document.getElementById("root")!).render(<App />);
 
 // ─── Auto-recuperação: chunk hash obsoleto / SW servindo build antigo ──────
 // Quando o navegador tenta importar um chunk hashed que já não existe
