@@ -92,8 +92,9 @@ Outcomes normalizados (em `_shared/rodizio-assign.ts`):
 ## 5. Riscos abertos
 
 - `notifyPartnerNewLead` não checa DNC do lead (mesmo risco listado em `#parceiros-referral`).
-- Pool vazio + `partner_required=false` → lead pode ficar sem dono silenciosamente. Considerar alerta em `automation_skip_log` quando `pool_empty` para uma campanha ativa.
+- Pool vazia / rodízio OFF → lead fica **automaticamente com o consultor dono** (`referral_partner_id` null). Não entra em fila (`OWNER_ONLY_NO_REVIEW_REASONS`). Opcional: telemetria em `automation_skip_log` / `campaign_match_log` quando `pool_empty` em campanha ativa (já logado via `logRodizioOutcome`).
 - Confusão de nomenclatura: usuários chamam "rodízio de anúncios" esperando rotação de CRIATIVO. Nunca prometer isso — só rotação de PARCEIRO por campanha e (separadamente) de PRAÇA MG-ROT.
+- UX: “sem parceiro” ≠ pendência — significa lead do dono. Textos alinhados em `ManualReviewQueueCard`, `CampaignRodizioLeadsDialog`, `RodizioBlock` e `notifyOwnerManualReview`.
 
 ---
 
@@ -104,5 +105,6 @@ Outcomes normalizados (em `_shared/rodizio-assign.ts`):
 | Adicionar/remover parceiro da pool | RPC `configure_rodizio_pool` via wizard — nunca INSERT direto em `rodizio_pool_members` |
 | Investigar "por que este lead foi para o parceiro X" | `rodizio_assignments` (ledger) + `campaign_match_log` |
 | Pool não gira | Confirmar `rodizio_pools.enabled=true`, membros com `is_active=true` em `referral_partners`, e campanha ativa |
+| Lead “sem parceiro” na UI | Esperado se rodízio OFF / pool vazia — é do consultor dono, sem seleção manual |
 | Lead ficou sem parceiro apesar de campanha com pool | Ver outcome da RPC nos logs da edge que chamou `assignRodizioLead`; provavelmente `tenant_mismatch` ou `pool_empty` |
 | Métricas/avisos horários | edges `facebook-update-campaign-rodizio` + `rodizio-metrics-broadcast` (quiet 21–09, ver `#cerebro-mg-e-rodizio`) |

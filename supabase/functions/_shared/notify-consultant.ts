@@ -883,10 +883,10 @@ export async function notifySuperAdminUnmatchedLead(
 }
 
 // ─── Aviso ao dono quando lead vai para a FILA DE REVISÃO MANUAL ───────────
-// Usado quando o rodízio não pôde ser aplicado com segurança (sem campanha
-// identificada, pool vazia, erro na RPC). O lead **não** é distribuído — fica
-// esperando o dono revisar e atribuir manualmente pelo /admin. Dedup por lead
-// via `outbound_message_log.idempotency_key` (nunca avisa 2x o mesmo lead).
+// Usado só quando a atribuição a parceiro falhou de forma ambígua
+// (ex.: rodizio_rpc_error). Motivos "owner-only" (pool vazia, sem campanha,
+// Meta sem pool) NÃO entram na fila — o lead já fica com o consultor dono.
+// Dedup por lead via `outbound_message_log.idempotency_key`.
 export async function notifyOwnerManualReview(
   ownerConsultantId: string,
   lead: { id?: string; name?: string | null; name_source?: string | null; phone_whatsapp?: string | null; is_sandbox?: boolean | null },
@@ -919,24 +919,27 @@ export async function notifyOwnerManualReview(
 
     const reasonText: Record<string, string> = {
       no_campaign_ctwa_phrase:
-        "Lead do anúncio sem AD ID/ctwa_clid no webhook (mesmo após retry Whapi). Atribua a campanha manualmente no painel. Confira no WhatsApp Business se 'Atribuição de anúncios' está ligada.",
+        "Lead do anúncio sem AD ID/ctwa_clid no webhook. O lead já é seu (dono da página) — sem escolher parceiro. Se quiser vincular campanha depois, use o painel.",
       rodizio_pool_empty:
-        "Campanha sem parceiros na pool — o lead fica com você (consultor dono). Confirme em “Ficar comigo” na fila, se ainda aparecer.",
+        "Campanha sem parceiros na pool — o lead já é seu automaticamente (sem fila, sem ação).",
       rodizio_rpc_error:
-        "Erro técnico ao consultar o próximo parceiro da fila (o lead não foi distribuído).",
-      no_campaign_generic: "Sinal genérico de anúncio detectado, mas sem campanha vinculada.",
+        "Erro técnico ao consultar o próximo parceiro da fila (o lead não foi distribuído). Revise em Meus Parceiros.",
+      no_campaign_generic:
+        "Sinal de anúncio sem campanha vinculada — o lead já é seu automaticamente.",
     };
 
+    const needsQueueAction = reason === "rodizio_rpc_error";
     const text =
-      `🟡 *Lead para revisão manual*\n` +
+      (needsQueueAction
+        ? `🟡 *Lead para revisão manual*\n`
+        : `🟢 *Lead seu (automático)*\n`) +
       `\n` +
       `👤 ${lead.name?.trim() || "(sem nome)"}\n` +
       `📱 ${formatPhoneBR(lead.phone_whatsapp)}\n\n` +
       `❗ ${reasonText[reason] || reason}\n\n` +
-      `✅ Para o rodízio rodar sozinho:\n` +
-      `• Mensagem do anúncio com *Protocolo FB-xxxxx*\n` +
-      `• Ou 1 única campanha com pool ativa\n\n` +
-      `➡️ Painel Admin → Meus Parceiros → Fila de revisão.`;
+      (needsQueueAction
+        ? `➡️ Painel Admin → Meus Parceiros → Fila de revisão.`
+        : `✅ Nada a selecionar: sem parceiro = lead do dono da página.`);
 
     return sendRawToAlertNumber(ownerConsultantId, text);
   } catch (e) {

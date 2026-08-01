@@ -120,6 +120,13 @@ export function RodizioBlock({ open, state, patch, patchFn }: Props) {
         />
       </div>
 
+      {!rodizioEnabled && (
+        <p className="px-3 pb-2.5 text-[11px] text-[hsl(var(--ads-muted))] border-t border-[hsl(var(--ads-border))] pt-2">
+          Desligado: todos os leads deste anúncio ficam automaticamente com você
+          (dono da página). Não precisa escolher parceiro.
+        </p>
+      )}
+
       {/* Bloco de participantes (só quando ligado) */}
       {rodizioEnabled && (
         <div className="px-3 pb-3 space-y-3 border-t border-[hsl(var(--ads-border))] pt-3">

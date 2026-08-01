@@ -6,7 +6,10 @@ description: Histórico de rounds do pack steering.
 
 # Auditoria do pack steering
 
-Última atualização: **2026-07-28** (abertura welcome sem Gestor/consultora).
+Última atualização: **2026-08-01** (UX rodízio: sem parceiro = lead do dono).
+
+## 2026-08-01 — UX: lead sem parceiro = automático do consultor
+Textos alinhados ao comportamento canônico (`OWNER_ONLY_NO_REVIEW_REASONS`): rodízio OFF / pool vazia / Meta sem pool → lead do dono da página, sem fila. UI: `ManualReviewQueueCard`, `CampaignRodizioLeadsDialog`, `RodizioBlock`; aviso WA `notifyOwnerManualReview`; steering `#rodizio-parceiros-campanha`.
 
 ## 2026-07-28 — Abertura “Gestor” / “consultora” no protocolo (Leandro)
 Msg real: `Aqui é *Rafael Ferreira*, *Gestor* da *iGreen*` + `IGR-IGR-4900`. Causa: `buildWelcomeHeaderProtocol` legado com `, *Gestor*` hardcoded (removido em 26/07 mas edge antiga ainda rodou); fallback sem nome virava literal `*consultora*`. Fix: `scrubLegacyWelcomeRoleLeak` + sem nome → “atendimento da iGreen”; presentation label só nome humano; strip cargo no nome. Armadilha #41. Deploy: whapi/evolution/start-customer-attendance.

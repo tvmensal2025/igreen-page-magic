@@ -30,17 +30,20 @@ interface Partner {
 
 /** Textos claros para o consultor — sem jargão técnico. */
 const REASON_LABEL: Record<string, string> = {
+  // Motivos legados: o sistema novo NÃO coloca esses na fila (já ficam com o dono).
   no_campaign_ctwa_phrase:
-    "Veio do anúncio, mas sem campanha identificada (faltou o protocolo FB-xxxxx na mensagem)",
+    "Veio do anúncio sem campanha identificada — o lead já é seu (dono da página)",
   rodizio_pool_empty:
-    "Campanha sem parceiros na pool — lead é 100% seu (consultor dono). Use “Ficar comigo”.",
-  rodizio_rpc_error: "Falha técnica ao escolher o próximo parceiro da fila",
-  no_campaign_generic: "Sinal de anúncio detectado, sem campanha vinculada",
+    "Campanha sem parceiros na pool — o lead já é 100% seu (automático)",
+  no_campaign_generic: "Sinal de anúncio sem campanha vinculada — o lead já é seu",
   meta_lead_no_campaign_or_pool:
-    "Veio de anúncio Meta, mas a campanha/pool de rodízio não estava pronta — escolha o parceiro da pool",
+    "Anúncio Meta sem pool de rodízio — o lead já é seu (sem escolher parceiro)",
+  strong_meta_unmapped:
+    "Anúncio Meta sem mapeamento de campanha — o lead já é seu",
+  // Motivos reais da fila (atribuição ambígua com pool de parceiros).
+  rodizio_rpc_error: "Falha técnica ao escolher o próximo parceiro da fila",
   campaign_ad_id_mismatch:
     "O parceiro precisa ser da pool da campanha deste anúncio Meta",
-  strong_meta_unmapped: "Anúncio Meta identificado, mas sem mapeamento de campanha",
 };
 
 const ERROR_LABEL: Record<string, string> = {
@@ -258,8 +261,8 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
         .eq("id", lead.id);
       if (error) throw error;
       toast({
-        title: "Lead saiu da fila",
-        description: "Ele continua 100% com você — dono da campanha na plataforma.",
+        title: "Fila limpa",
+        description: "O lead já era seu automaticamente — só saiu da lista de revisão.",
       });
       qc.invalidateQueries({ queryKey: ["manual-review-leads", consultantId] });
     } catch (e: any) {
@@ -282,9 +285,9 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
               Fila de revisão · {leads.length} lead{leads.length > 1 ? "s" : ""}
             </h3>
             <p className="text-xs text-muted-foreground">
-              Campanha com parceiros na pool, mas o sistema não conseguiu
-              escolher com segurança. Sem campanha/parceiro/keyword o lead
-              já fica com você — sem passar por esta fila.
+              Só entra aqui quando a campanha tem parceiros na pool e a
+              atribuição falhou. Sem parceiro / rodízio desligado: o lead
+              já fica automaticamente com você — sem esta fila.
             </p>
           </div>
         </div>
@@ -329,8 +332,8 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
                 </p>
                 {poolEmptyOwnerLead && (
                   <p className="text-[11px] text-muted-foreground mt-0.5">
-                    Sem parceiros nesta campanha: o lead fica 100% com você (dono da plataforma).
-                    Clique em “Ficar comigo”. Se quiser distribuir depois, adicione o parceiro na pool em Anúncios.
+                    Sem parceiros nesta campanha: o lead já é seu automaticamente.
+                    Só tire da fila (legado). Para distribuir depois, adicione parceiros no rodízio em Anúncios.
                   </p>
                 )}
                 {poolIds && poolIds.length > 0 && (
@@ -378,11 +381,17 @@ export function ManualReviewQueueCard({ consultantId }: { consultantId: string }
                 variant={poolEmptyOwnerLead ? "default" : "ghost"}
                 onClick={() => handleDismiss(lead)}
                 disabled={assigningId === lead.id}
-                title="Mantém o lead comigo, sem distribuir"
+                title={
+                  poolEmptyOwnerLead
+                    ? "Já é seu — só remove da fila de revisão"
+                    : "Mantém o lead comigo, sem distribuir a parceiro"
+                }
               >
                 {assigningId === lead.id && poolEmptyOwnerLead
-                  ? "Confirmando…"
-                  : "Ficar comigo"}
+                  ? "Removendo…"
+                  : poolEmptyOwnerLead
+                    ? "Já é meu — tirar da fila"
+                    : "Ficar comigo"}
               </Button>
             </div>
           );
