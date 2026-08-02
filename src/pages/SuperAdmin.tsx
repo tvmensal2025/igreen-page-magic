@@ -332,10 +332,11 @@ const SuperAdmin = () => {
       title: `Excluir permanentemente ${consultantName}?`,
       description:
         `Isso apaga o login e o perfil do consultor.\n` +
-        (totalCustomers > 0
-          ? `Há ${totalCustomers} cliente(s) ligados — o vínculo com este consultor será removido, mas os registros de clientes não somem automaticamente.\n`
-          : "") +
-        `Esta ação não tem volta.`,
+        `Antes de apagar, TODO o histórico é transferido para a SUA conta: ` +
+        (totalCustomers > 0 ? `${totalCustomers} cliente(s), ` : "") +
+        `leads captados, vendas, propostas e dados iGreen.\n` +
+        `Nada de histórico é perdido, mas a exclusão do usuário não tem volta.`,
+
       confirmText: "Excluir usuário",
       cancelText: "Cancelar",
       tone: "danger",
