@@ -846,21 +846,20 @@ Deno.serve(async (req) => {
       phone,
     );
 
-    const statusFinalizados = [
-      'data_complete', 'portal_submitting', 'awaiting_otp', 'validating_otp',
-      'awaiting_manual_submit', 'portal_submitted', 'registered_igreen',
-      'awaiting_signature', 'complete',
-    ];
-    const stepsFinalizados = ['complete', 'portal_submitting'];
+    const POST_CADASTRO_STATUSES = new Set([
+      "data_complete", "portal_submitting", "awaiting_otp", "validating_otp",
+      "awaiting_manual_submit", "portal_submitted", "registered_igreen",
+      "awaiting_signature", "awaiting_facial", "complete",
+      "cadastro_concluido", "active", "approved",
+    ]);
 
-    // Fallback legado: se helper não achou, tenta exact sem status finalizado.
+    // Fallback legado: se helper não achou, tenta exact (inclui pós-cadastro).
     if (!customer) {
       const { data: activeRecords } = await supabase
         .from("customers")
         .select("*")
         .eq("phone_whatsapp", phone)
         .eq("consultant_id", instanceData.consultant_id)
-        .not("status", "in", `(${statusFinalizados.join(",")})`)
         .order("created_at", { ascending: false })
         .limit(1);
       customer = activeRecords?.[0] || null;
@@ -886,11 +885,30 @@ Deno.serve(async (req) => {
       customer.status = "pending";
       customer.error_message = null;
       customer.rescue_attempts = 0;
-    }
-
-    if (customer && stepsFinalizados.includes(customer.conversation_step || "")) {
-      console.log(`📱 Telefone ${phone}: cliente com step="${customer.conversation_step}" (finalizado). Criando novo.`);
-      customer = null;
+    } else if (customer && POST_CADASTRO_STATUSES.has(customer.status)) {
+      // Paridade whapi 2026-08-02: NÃO recriar lead pós-cadastro — mantém o registro
+      // e alinha step para handler educado (OTP/facial/análise/complete).
+      const curStep = stripPrefix(customer.conversation_step || "");
+      const safeSteps = new Set([
+        "aguardando_otp", "validando_otp", "aguardando_assinatura",
+        "aguardando_facial", "cadastro_em_analise", "complete",
+        "portal_submitting",
+      ]);
+      if (!safeSteps.has(curStep)) {
+        const st = String(customer.status || "");
+        const fixStep =
+          (st === "awaiting_otp" || st === "validating_otp" || st === "portal_submitting")
+            ? "aguardando_otp"
+            : (st === "awaiting_signature" || st === "awaiting_facial")
+              ? "aguardando_facial"
+              : "cadastro_em_analise";
+        await supabase
+          .from("customers")
+          .update({ conversation_step: fixStep })
+          .eq("id", customer.id);
+        customer.conversation_step = fixStep;
+      }
+      console.log(`[find-customer] customer ${customer.id} pós-cadastro (status=${customer.status}, step=${customer.conversation_step}) — mantendo, sem reset`);
     }
 
     if (!customer) {
@@ -932,11 +950,7 @@ Deno.serve(async (req) => {
           .maybeSingle();
         if (fallback) {
           console.log(`♻️ Reusing existing record for ${phone} (step: ${fallback.conversation_step})`);
-          if (stepsFinalizados.includes(fallback.conversation_step || "") || statusFinalizados.includes(fallback.status)) {
-            await supabase.from("customers").update({ conversation_step: "welcome", status: "pending" }).eq("id", fallback.id);
-            fallback.conversation_step = "welcome";
-            fallback.status = "pending";
-          }
+          // Mesma regra do bloco principal: NÃO resetar leads pós-cadastro para welcome.
           customer = fallback;
         } else {
           return new Response(JSON.stringify({ error: "Failed to create customer" }), {
