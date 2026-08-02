@@ -257,7 +257,63 @@ const SuperAdmin = () => {
     setResettingId(null);
   };
 
+  const handleResetConsultant = async (
+    consultantId: string,
+    consultantName: string,
+    totalCustomers = 0,
+  ) => {
+    if (userId && consultantId === userId) {
+      toast({
+        title: "Não permitido",
+        description: "Você não pode resetar a própria conta por aqui.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const ok = await confirm({
+      title: `Resetar ${consultantName} para o zero?`,
+      description:
+        `O consultor recomeça do zero: nome da IA, persona, foto, textos de voz/SMS, ` +
+        `automações, temas de cadência e base de conhecimento são apagados, e a instância ` +
+        `de WhatsApp é desconectada (novo QR).\n` +
+        `NADA é perdido: ${totalCustomers} cliente(s), leads captados, vendas e histórico continuam com ele.\n` +
+        `O login e a senha continuam funcionando.`,
+      confirmText: "Resetar consultor",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
+
+    setResettingConsultantId(consultantId);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-reset-consultant", {
+        body: { consultant_id: consultantId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({
+        title: "Consultor resetado",
+        description:
+          `${consultantName} vai refazer o onboarding. Mantidos: ` +
+          `${data?.summary?.kept_customers ?? 0} cliente(s) e ` +
+          `${data?.summary?.kept_captured_leads ?? 0} lead(s).`,
+      });
+      logAdminAction("reset_consultant", "consultant", consultantId, { name: consultantName });
+      void loadData();
+    } catch (err: unknown) {
+      toast({
+        title: "Erro ao resetar consultor",
+        description: toUserFacingError(err),
+        variant: "destructive",
+      });
+    }
+    setResettingConsultantId(null);
+  };
+
   const handleDeleteConsultant = async (
+
     consultantId: string,
     consultantName: string,
     totalCustomers = 0,
