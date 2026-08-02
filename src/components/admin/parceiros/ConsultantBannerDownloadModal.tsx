@@ -919,6 +919,20 @@ export function ConsultantBannerDownloadModal({
             Fechar
           </Button>
           <Button
+            variant="secondary"
+            onClick={downloadQrOnly}
+            disabled={rendering || !canDownload}
+            className="gap-2"
+          >
+            {rendering ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <QrCode className="h-4 w-4" />
+            )}
+            Baixar só o QR Code
+          </Button>
+
+          <Button
             variant="outline"
             onClick={downloadPNG}
             disabled={rendering || !canDownload}
