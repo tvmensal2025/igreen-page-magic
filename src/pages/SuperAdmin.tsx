@@ -11,7 +11,7 @@ import {
   Shield, Users, CheckCircle, XCircle, LogOut, Loader2, UserCheck, UserX,
   KeyRound, Brain, MessageSquare, Wifi, WifiOff, AlertTriangle, Send,
   Search, Eye, TrendingUp, Phone, Calendar, RefreshCw, Sparkles, Activity,
-  ChevronRight, BarChart3, Megaphone, Target, Sun, Link2, ArrowLeft, Trash2,
+  ChevronRight, BarChart3, Megaphone, Target, Sun, Link2, ArrowLeft, Trash2, RotateCcw,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toUserFacingError } from "@/lib/userFacingError";
