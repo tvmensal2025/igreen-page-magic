@@ -13873,6 +13873,15 @@ export type Database = {
         Args: { _id: string }
         Returns: undefined
       }
+      audit_duplicate_leads_in_cadence: {
+        Args: never
+        Returns: {
+          consultant_id: string
+          customer_ids: string[]
+          name: string
+          occurrences: number
+        }[]
+      }
       audit_flow_activate_rules: {
         Args: { _flow_id?: string }
         Returns: {
