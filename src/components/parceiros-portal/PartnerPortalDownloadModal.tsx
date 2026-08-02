@@ -10,7 +10,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Download, FileText, Loader2, QrCode } from "lucide-react";
+import { downloadQrOnlyPng } from "@/components/admin/qrOnlyDownload";
 import { FlyerStaticPreview } from "@/components/admin/FlyerStaticPreview";
+
 import {
   drawImageCover,
   drawQrWithThinFrame,
