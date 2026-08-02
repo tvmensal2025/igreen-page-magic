@@ -34,10 +34,11 @@ import { useUserRole } from "@/hooks/useUserRole";
 
 // Heavy panels — lazy load on demand
 const QRCodeSVG = lazy(() => import("qrcode.react").then(m => ({ default: m.QRCodeSVG })));
-const DashboardTab = lazy(() => import("@/components/admin/DashboardTab").then(m => {
-  if (!m.DashboardTab) throw new Error("DashboardTab export missing");
-  return { default: m.DashboardTab };
-}));
+const DashboardTab = lazyNamed<React.ComponentProps<typeof import("@/components/admin/DashboardTab")["DashboardTab"]>>(
+  () => import("@/components/admin/DashboardTab"),
+  "DashboardTab",
+);
+
 const DadosTab = lazy(() => import("@/components/admin/DadosTab").then(m => ({ default: m.DadosTab })));
 const WhatsAppConnectionSettingsCard = lazy(() =>
   import("@/components/admin/WhatsAppConnectionSettingsCard").then((m) => ({
