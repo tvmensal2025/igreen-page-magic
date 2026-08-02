@@ -11,7 +11,7 @@ import {
   Shield, Users, CheckCircle, XCircle, LogOut, Loader2, UserCheck, UserX,
   KeyRound, Brain, MessageSquare, Wifi, WifiOff, AlertTriangle, Send,
   Search, Eye, TrendingUp, Phone, Calendar, RefreshCw, Sparkles, Activity,
-  ChevronRight, BarChart3, Megaphone, Target, Sun, Link2, ArrowLeft, Trash2,
+  ChevronRight, BarChart3, Megaphone, Target, Sun, Link2, ArrowLeft, Trash2, RotateCcw,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { toUserFacingError } from "@/lib/userFacingError";
@@ -79,6 +79,7 @@ const SuperAdmin = () => {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [resettingConsultantId, setResettingConsultantId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"consultores" | "captacao" | "gestores_ads" | "ia" | "ia_aprendendo" | "crm" | "auditoria" | "funil" | "worker" | "plataforma_fb" | "templates_ads" | "templates_fluxo" | "saude_rede" | "rollout" | "solar">("consultores");
   const [searchTerm, setSearchTerm] = useState("");
   const accessDeniedToastShownRef = useRef(false);
@@ -257,7 +258,63 @@ const SuperAdmin = () => {
     setResettingId(null);
   };
 
+  const handleResetConsultant = async (
+    consultantId: string,
+    consultantName: string,
+    totalCustomers = 0,
+  ) => {
+    if (userId && consultantId === userId) {
+      toast({
+        title: "Não permitido",
+        description: "Você não pode resetar a própria conta por aqui.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const ok = await confirm({
+      title: `Resetar ${consultantName} para o zero?`,
+      description:
+        `O consultor recomeça do zero: nome da IA, persona, foto, textos de voz/SMS, ` +
+        `automações, temas de cadência e base de conhecimento são apagados, e a instância ` +
+        `de WhatsApp é desconectada (novo QR).\n` +
+        `NADA é perdido: ${totalCustomers} cliente(s), leads captados, vendas e histórico continuam com ele.\n` +
+        `O login e a senha continuam funcionando.`,
+      confirmText: "Resetar consultor",
+      cancelText: "Cancelar",
+      tone: "danger",
+    });
+    if (!ok) return;
+
+    setResettingConsultantId(consultantId);
+    try {
+      const { data, error } = await supabase.functions.invoke("admin-reset-consultant", {
+        body: { consultant_id: consultantId },
+      });
+      if (error) throw error;
+      if (data?.error) throw new Error(data.error);
+
+      toast({
+        title: "Consultor resetado",
+        description:
+          `${consultantName} vai refazer o onboarding. Mantidos: ` +
+          `${data?.summary?.kept_customers ?? 0} cliente(s) e ` +
+          `${data?.summary?.kept_captured_leads ?? 0} lead(s).`,
+      });
+      logAdminAction("reset_consultant", "consultant", consultantId, { name: consultantName });
+      void loadConsultants();
+    } catch (err: unknown) {
+      toast({
+        title: "Erro ao resetar consultor",
+        description: toUserFacingError(err),
+        variant: "destructive",
+      });
+    }
+    setResettingConsultantId(null);
+  };
+
   const handleDeleteConsultant = async (
+
     consultantId: string,
     consultantName: string,
     totalCustomers = 0,
@@ -275,10 +332,11 @@ const SuperAdmin = () => {
       title: `Excluir permanentemente ${consultantName}?`,
       description:
         `Isso apaga o login e o perfil do consultor.\n` +
-        (totalCustomers > 0
-          ? `Há ${totalCustomers} cliente(s) ligados — o vínculo com este consultor será removido, mas os registros de clientes não somem automaticamente.\n`
-          : "") +
-        `Esta ação não tem volta.`,
+        `Antes de apagar, TODO o histórico é transferido para a SUA conta: ` +
+        (totalCustomers > 0 ? `${totalCustomers} cliente(s), ` : "") +
+        `leads captados, vendas, propostas e dados iGreen.\n` +
+        `Nada de histórico é perdido, mas a exclusão do usuário não tem volta.`,
+
       confirmText: "Excluir usuário",
       cancelText: "Cancelar",
       tone: "danger",
@@ -587,6 +645,26 @@ const SuperAdmin = () => {
                                 {c.approved ? "Revogar" : "Aprovar"}
                               </Button>
                               <SuperAdminCashCreditDialog consultantId={c.id} consultantName={c.name} />
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 rounded-lg text-amber-600 hover:text-amber-600 hover:bg-amber-500/10"
+                                    onClick={() => handleResetConsultant(c.id, c.name, c.total_customers || 0)}
+                                    disabled={resettingConsultantId === c.id || Boolean(userId && c.id === userId)}
+                                    aria-label={`Resetar ${c.name}`}
+                                  >
+                                    {resettingConsultantId === c.id ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <RotateCcw className="w-3.5 h-3.5" />
+                                    )}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Resetar (recomeçar do zero, mantém os dados)</TooltipContent>
+                              </Tooltip>
+
                               <Tooltip>
                                 <TooltipTrigger asChild>
                                   <Button

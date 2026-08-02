@@ -24,7 +24,12 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const adminClient = createClient(supabaseUrl, supabaseServiceKey);
-    const anonClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!);
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const anonClient = createClient(supabaseUrl, anonKey);
+    // Cliente com o JWT do chamador — a RPC de transferência valida is_super_admin(auth.uid())
+    const userClient = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
 
     const token = authHeader.replace("Bearer ", "");
     const { data: { user: caller }, error: authError } = await anonClient.auth.getUser(token);
@@ -44,6 +49,14 @@ Deno.serve(async (req) => {
       return json(400, { error: "Você não pode excluir a própria conta por aqui" });
     }
 
+    // Nunca excluir outro super admin (protege a conta do superadmin da plataforma)
+    const { data: targetIsSuper } = await adminClient.rpc("is_super_admin", {
+      _user_id: consultant_id,
+    });
+    if (targetIsSuper) {
+      return json(400, { error: "Não é possível excluir um Super Admin" });
+    }
+
     const { data: consultant, error: consErr } = await adminClient
       .from("consultants")
       .select("id, name, license, phone, approved")
@@ -59,16 +72,15 @@ Deno.serve(async (req) => {
       return json(404, { error: "Usuário de autenticação não encontrado" });
     }
 
-    // FKs sem ON DELETE — limpar antes de apagar o consultor via cascade do auth.users
-    await adminClient
-      .from("customers")
-      .update({ customer_referred_by_consultant_id: null })
-      .eq("customer_referred_by_consultant_id", consultant_id);
-
-    await adminClient
-      .from("consultants")
-      .update({ referred_by: null })
-      .eq("referred_by", consultant_id);
+    // CRÍTICO: várias FKs para consultants são ON DELETE CASCADE (captured_leads,
+    // sales, proposals, igreen_*, rodizio_assignments) e customers é SET NULL.
+    // Transferimos tudo para o super admin que está excluindo, para não perder
+    // histórico nem deixar cliente órfão.
+    const { data: transferred, error: transferErr } = await userClient.rpc(
+      "admin_transfer_consultant_assets",
+      { p_from: consultant_id, p_to: caller.id },
+    );
+    if (transferErr) throw transferErr;
 
     await adminClient
       .from("rollout_config")
@@ -80,6 +92,8 @@ Deno.serve(async (req) => {
 
     return json(200, {
       success: true,
+      transferred_to: caller.id,
+      transferred,
       deleted: {
         id: consultant.id,
         name: consultant.name,
@@ -87,6 +101,7 @@ Deno.serve(async (req) => {
         email: targetUser.email ?? null,
       },
     });
+
   } catch (err) {
     return json(500, { error: (err as Error).message || "Erro ao excluir usuário" });
   }
