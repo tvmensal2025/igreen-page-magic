@@ -40,7 +40,9 @@ function redirectTo(url: string) {
     headers: {
       ...corsHeaders,
       Location: url,
-      "Cache-Control": "public, max-age=30",
+      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      Pragma: "no-cache",
+      Expires: "0",
     },
   });
 }
@@ -353,8 +355,10 @@ Deno.serve(async (req) => {
             ? rawKw
             : (partner.nome ?? "");
         const keyword = fromQuery || fallbackKw;
+        // O banco é a fonte viva e sempre vence. `msg` fica apenas como
+        // compatibilidade para QR antigo quando ainda não existe frase salva.
         const phraseSource =
-          (msgParam ?? "").trim() || (partner.qr_phrase as string | null);
+          (partner.qr_phrase as string | null) || (msgParam ?? "").trim();
         message = resolveQrMessage(phraseSource, keyword, partner.short_code);
       }
     }
@@ -386,6 +390,7 @@ Deno.serve(async (req) => {
         partner: partner?.short_code || null,
         // Diagnóstico: confirma que a frase salva no banco chegou ao runtime.
         phrase_db: partner?.qr_phrase ?? null,
+        phrase_limit: 600,
 
       });
     }

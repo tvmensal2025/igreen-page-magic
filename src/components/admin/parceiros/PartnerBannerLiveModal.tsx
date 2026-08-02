@@ -91,22 +91,28 @@ export function PartnerBannerLiveModal({
   const handleSave = async () => {
     setSaving(true);
     try {
-      const next = phrase.trim().slice(0, QR_PHRASE_MAX + 40) || null;
+      const next = phrase.trim().slice(0, QR_PHRASE_MAX) || null;
       if (spot) {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from("referral_partner_banner_spots" as never)
           .update({
             phrase: next,
             updated_at: new Date().toISOString(),
           } as never)
-          .eq("id", spot.id);
+          .eq("id", spot.id)
+          .select("phrase")
+          .maybeSingle();
         if (error) throw error;
+        if (!data || data.phrase !== next) throw new Error("A frase do banner não foi confirmada pelo banco.");
       } else {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from("referral_partners")
           .update({ qr_phrase: next } as never)
-          .eq("id", partner.id);
+          .eq("id", partner.id)
+          .select("qr_phrase")
+          .maybeSingle();
         if (error) throw error;
+        if (!data || data.qr_phrase !== next) throw new Error("A frase do parceiro não foi confirmada pelo banco.");
       }
       toast({
         title: "Frase salva",

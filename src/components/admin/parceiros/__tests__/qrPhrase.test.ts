@@ -44,6 +44,20 @@ describe("buildDefaultQrPhrase — frase padrão curta", () => {
 });
 
 describe("resolveQrMessage — decisão da mensagem final", () => {
+  it("aceita até 600 caracteres sem trocar pela frase padrão", () => {
+    const custom = `Valdenice ${"texto personalizado ".repeat(30)}`.slice(0, 600);
+    const msg = resolveQrMessage(custom, "Valdenice");
+    expect(msg).toBe(custom.trim());
+    expect(msg.length).toBeLessThanOrEqual(600);
+  });
+
+  it("limita acima de 600 sem substituir o começo salvo", () => {
+    const custom = `Valdenice ${"x".repeat(700)}`;
+    const msg = resolveQrMessage(custom, "Valdenice");
+    expect(msg.length).toBe(600);
+    expect(msg.startsWith("Valdenice ")).toBe(true);
+  });
+
   it("sem frase própria usa a padrão curta com a keyword", () => {
     const msg = resolveQrMessage(null, "Valdenice");
     expect(msg).toContain("Valdenice");

@@ -16,7 +16,7 @@
  * Teto ABSOLUTO da frase (só para manter a URL `wa.me` sã). A frase salva pelo
  * consultor NUNCA é descartada por tamanho — no pior caso é cortada aqui.
  */
-export const QR_PHRASE_MAX = 300;
+export const QR_PHRASE_MAX = 600;
 
 /** Teto usado só para montar a frase PADRÃO (quando não há frase salva). */
 const QR_DEFAULT_PHRASE_MAX = 90;
