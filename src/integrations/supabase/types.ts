@@ -13863,6 +13863,14 @@ export type Database = {
         Args: { p_instance: string; p_note?: string }
         Returns: Json
       }
+      admin_reset_consultant_identity: {
+        Args: { p_consultant: string; p_require_reapproval?: boolean }
+        Returns: Json
+      }
+      admin_transfer_consultant_assets: {
+        Args: { p_from: string; p_to: string }
+        Returns: Json
+      }
       admin_unpause_global_bot: { Args: never; Returns: number }
       ai_cooldown_check_and_set: {
         Args: { p_key: string; p_reason: string; p_ttl_ms: number }
