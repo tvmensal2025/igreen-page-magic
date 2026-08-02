@@ -549,6 +549,13 @@ export function PartnerQrCode({
     a.click();
   };
 
+  const handleDownloadQrOnly = async () => {
+    if (!(await persistKeywordIfNeeded())) return;
+    const svgEl = qrSvgWrapperRef.current?.querySelector("svg");
+    await downloadQrOnlyPng(svgEl, fileBase);
+  };
+
+
   const handleDownloadPDF = async () => {
     if (!(await persistKeywordIfNeeded())) return;
     const canvas = await renderToCanvas();
