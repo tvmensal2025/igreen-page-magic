@@ -384,6 +384,9 @@ Deno.serve(async (req) => {
         spot: spotParam || partnerSpotCode || null,
         event_target: eventTarget,
         partner: partner?.short_code || null,
+        // Diagnóstico: confirma que a frase salva no banco chegou ao runtime.
+        phrase_db: partner?.qr_phrase ?? null,
+
       });
     }
     return redirectTo(buildWhatsappUrl(normalizedPhone, message));

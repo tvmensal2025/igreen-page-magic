@@ -75,26 +75,26 @@ describe("resolveQrMessage — decisão da mensagem final", () => {
     expect(msg.length).toBeGreaterThan(0);
   });
 
-  it("frase longa salva (acima do limite) cai na padrão curta com a keyword", () => {
-    // Exatamente o caso que o usuário pegou: qr_phrase longa do "Valdenice me
-    // indicou...". Deve ENCURTAR para a frase padrão, não respeitar a longa.
+  it("frase salva longa é RESPEITADA (nunca troca pela padrão)", () => {
+    // Regressão: frases de ~93 chars eram descartadas e o lead recebia a frase
+    // padrão, ignorando o que o consultor salvou. Agora a frase salva vence.
     const longa =
       "Olá, a Valdenice me indicou você porque quero economizar na minha conta de luz e queria saber mais.";
     const msg = resolveQrMessage(longa, "Valdenice");
     expect(msg.length).toBeLessThanOrEqual(QR_PHRASE_MAX);
-    expect(msg.length).toBeLessThan(longa.length);
+    expect(msg).toBe(longa);
     expect(containsKeyword(msg, "Valdenice")).toBe(true);
   });
 
-  it("quando anexar a keyword estouraria o limite, usa a padrão curta", () => {
-    // Frase própria dentro do limite, mas sem a keyword; a keyword é longa o
-    // suficiente para que custom + "(indicação: ...)" passe de QR_PHRASE_MAX.
+  it("keyword longa é anexada sem descartar a frase do consultor", () => {
     const custom = "Quero muito reduzir o valor da minha conta de energia agora";
     const kw = "promocao-especial-black-friday-energia";
     const msg = resolveQrMessage(custom, kw);
     expect(msg.length).toBeLessThanOrEqual(QR_PHRASE_MAX);
+    expect(msg.startsWith(custom)).toBe(true);
     expect(containsKeyword(msg, kw)).toBe(true);
   });
+
 });
 
 describe("resolveQrMessage — marcador determinístico #R{short_code}", () => {
