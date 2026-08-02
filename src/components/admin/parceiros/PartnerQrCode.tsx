@@ -919,7 +919,7 @@ export function PartnerQrCode({
                     value={customPhrase}
                     onChange={(e) => setCustomPhrase(e.target.value)}
                     rows={3}
-                    maxLength={QR_PHRASE_MAX + 20}
+                    maxLength={QR_PHRASE_MAX}
                     placeholder="Frase que o cliente verá ao abrir o WhatsApp"
                     className="text-xs resize-none"
                   />

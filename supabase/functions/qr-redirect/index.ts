@@ -19,6 +19,7 @@ import {
 } from "../_shared/attendance-channel-env.ts";
 
 const SITE_URL = "https://igreen.institutodossonhos.com.br";
+const QR_REDIRECT_VERSION = "2026-08-02-600-live-v2";
 const DEFAULT_MESSAGE =
   "Oi! 👋 Vi sobre a iGreen Energy e quero saber como economizar na minha conta de luz.";
 
@@ -391,6 +392,7 @@ Deno.serve(async (req) => {
         // Diagnóstico: confirma que a frase salva no banco chegou ao runtime.
         phrase_db: partner?.qr_phrase ?? null,
         phrase_limit: 600,
+        version: QR_REDIRECT_VERSION,
 
       });
     }

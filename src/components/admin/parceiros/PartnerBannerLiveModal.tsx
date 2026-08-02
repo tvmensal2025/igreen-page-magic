@@ -200,7 +200,7 @@ export function PartnerBannerLiveModal({
                 onChange={(e) => setPhrase(e.target.value)}
                 rows={5}
                 className="resize-none text-sm"
-                maxLength={QR_PHRASE_MAX + 40}
+                maxLength={QR_PHRASE_MAX}
                 placeholder="Ex.: Vim pelo Daniel, quero economizar na conta de luz"
               />
               <p className="text-[11px] text-muted-foreground">
