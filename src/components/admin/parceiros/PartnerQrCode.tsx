@@ -12,7 +12,8 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Download, Upload, Trash2, ImageIcon, FileText, Lock, Unlock, Copy, ExternalLink, Check, Share2, Loader2 } from "lucide-react";
+import { Download, Upload, Trash2, ImageIcon, FileText, Lock, Unlock, Copy, ExternalLink, Check, Share2, Loader2, QrCode } from "lucide-react";
+import { downloadQrOnlyPng } from "@/components/admin/qrOnlyDownload";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
 import {
@@ -547,6 +548,13 @@ export function PartnerQrCode({
     a.href = canvas.toDataURL("image/png");
     a.click();
   };
+
+  const handleDownloadQrOnly = async () => {
+    if (!(await persistKeywordIfNeeded())) return;
+    const svgEl = qrSvgWrapperRef.current?.querySelector("svg");
+    await downloadQrOnlyPng(svgEl, fileBase);
+  };
+
 
   const handleDownloadPDF = async () => {
     if (!(await persistKeywordIfNeeded())) return;
@@ -1121,6 +1129,15 @@ export function PartnerQrCode({
           >
             <Download className="h-4 w-4" /> Baixar PNG
           </Button>
+          <Button
+            variant="secondary"
+            onClick={handleDownloadQrOnly}
+            disabled={savingKw}
+            className="gap-2"
+          >
+            <QrCode className="h-4 w-4" /> Baixar só o QR Code
+          </Button>
+
           <Button
             onClick={handleDownloadPDF}
             className="gap-2"

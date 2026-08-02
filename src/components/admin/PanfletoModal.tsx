@@ -10,7 +10,9 @@ import {
   clampFooterBand,
   previewFooterFontSize,
 } from "@/components/admin/flyerFooter";
-import { Download, Copy, FileText, Loader2, RotateCcw } from "lucide-react";
+import { Download, Copy, FileText, Loader2, RotateCcw, QrCode } from "lucide-react";
+import { downloadQrOnlyPng } from "@/components/admin/qrOnlyDownload";
+
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
 import { useToast } from "@/hooks/use-toast";
 
@@ -316,6 +318,21 @@ export function PanfletoModal({
     }
   };
 
+  const downloadQrOnly = async () => {
+    setRendering(true);
+    try {
+      const svgEl = qrSvgWrapperRef.current?.querySelector("svg");
+      const ok = await downloadQrOnlyPng(svgEl, `igreen-${licenca}`);
+      toast(
+        ok
+          ? { title: "✅ QR Code baixado!" }
+          : { title: "Não foi possível gerar o QR Code", variant: "destructive" },
+      );
+    } finally {
+      setRendering(false);
+    }
+  };
+
   const downloadPDF = async () => {
     setRendering(true);
     try {
@@ -474,6 +491,11 @@ export function PanfletoModal({
           <Button variant="outline" onClick={copyLink} className="gap-2">
             <Copy className="w-4 h-4" /> Copiar link
           </Button>
+          <Button variant="secondary" onClick={downloadQrOnly} disabled={rendering} className="gap-2">
+            {rendering ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
+            Baixar só o QR Code
+          </Button>
+
           <Button variant="outline" onClick={downloadPNG} disabled={rendering} className="gap-2">
             {rendering ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             Baixar PNG

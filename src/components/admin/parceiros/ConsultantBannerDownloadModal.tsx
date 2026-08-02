@@ -21,6 +21,8 @@ import {
   loadFlyerImage,
 } from "@/components/admin/flyerCanvasDraw";
 import { drawFlyerFooter } from "@/components/admin/flyerFooter";
+import { downloadQrOnlyPng } from "@/components/admin/qrOnlyDownload";
+
 import { formatFlyerPhoneDisplay } from "@/components/admin/flyerPhoneDisplay";
 import {
   FLYER_TEMPLATES,
@@ -457,6 +459,23 @@ export function ConsultantBannerDownloadModal({
       setRendering(false);
     }
   };
+
+  const downloadQrOnly = async () => {
+    if (!canDownload) return;
+    setRendering(true);
+    try {
+      const svgEl = qrSvgWrapperRef.current?.querySelector("svg");
+      const ok = await downloadQrOnlyPng(svgEl, fileBase());
+      toast(
+        ok
+          ? { title: "QR Code baixado!" }
+          : { title: "Não foi possível gerar o QR Code", variant: "destructive" },
+      );
+    } finally {
+      setRendering(false);
+    }
+  };
+
 
   const downloadPDF = async () => {
     if (!canDownload) return;
@@ -899,6 +918,20 @@ export function ConsultantBannerDownloadModal({
           <Button variant="outline" onClick={onClose} disabled={rendering}>
             Fechar
           </Button>
+          <Button
+            variant="secondary"
+            onClick={downloadQrOnly}
+            disabled={rendering || !canDownload}
+            className="gap-2"
+          >
+            {rendering ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <QrCode className="h-4 w-4" />
+            )}
+            Baixar só o QR Code
+          </Button>
+
           <Button
             variant="outline"
             onClick={downloadPNG}

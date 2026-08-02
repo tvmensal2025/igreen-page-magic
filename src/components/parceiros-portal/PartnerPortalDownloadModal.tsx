@@ -10,7 +10,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Download, FileText, Loader2, QrCode } from "lucide-react";
+import { downloadQrOnlyPng } from "@/components/admin/qrOnlyDownload";
 import { FlyerStaticPreview } from "@/components/admin/FlyerStaticPreview";
+
 import {
   drawImageCover,
   drawQrWithThinFrame,
@@ -63,7 +65,7 @@ export function PartnerPortalDownloadModal({
 }: Props) {
   const { toast } = useToast();
   const [format, setFormat] = useState<FlyerFormatId>("a4");
-  const [busy, setBusy] = useState<"png" | "pdf" | "both" | null>(null);
+  const [busy, setBusy] = useState<"png" | "pdf" | "both" | "qr" | null>(null);
   const qrSvgRef = useRef<HTMLDivElement>(null);
 
   const template = FLYER_TEMPLATES[format];
@@ -229,6 +231,25 @@ export function PartnerPortalDownloadModal({
     }
   };
 
+  const handleDownloadQrOnly = async () => {
+    setBusy("qr");
+    try {
+      const svgEl = qrSvgRef.current?.querySelector("svg");
+      const ok = await downloadQrOnlyPng(svgEl, fileSlug());
+      toast(
+        ok
+          ? { title: "QR Code baixado!" }
+          : {
+              title: "Não foi possível gerar o QR Code",
+              variant: "destructive",
+            },
+      );
+    } finally {
+      setBusy(null);
+    }
+  };
+
+
   const titleName = target?.name || partnerName;
 
   return (
@@ -319,6 +340,21 @@ export function PartnerPortalDownloadModal({
             )}
             Baixar os dois (PNG)
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full gap-1.5"
+            disabled={!liveUrl || !!busy}
+            onClick={() => void handleDownloadQrOnly()}
+          >
+            {busy === "qr" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <QrCode className="h-4 w-4" />
+            )}
+            Baixar só o QR Code (etiqueta)
+          </Button>
+
         </DialogFooter>
       </DialogContent>
     </Dialog>
