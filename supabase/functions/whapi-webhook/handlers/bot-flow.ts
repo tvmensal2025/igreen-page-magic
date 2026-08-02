@@ -3935,11 +3935,21 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
 
         // ANTI-DUP: se o passo custom acabou de perguntar, NÃO duplica o prompt legacy.
-        // Apenas espera o cliente mandar a foto/PDF (ou valor).
+        // Janela curta de silêncio (90s) só para não atropelar o envio do passo
+        // custom (áudio + texto). Fora dela — ou se o lead fez uma PERGUNTA —
+        // responde o CTA curto: bot mudo no meio do cadastro parece travamento.
         const _lastCustom = (customer as any).last_custom_prompt_at;
-        if (_lastCustom && (Date.now() - new Date(_lastCustom).getTime()) < 10 * 60 * 1000) {
-          console.log(`[anti-dup] aguardando_conta: passo custom já perguntou (${_lastCustom}) — silenciando re-prompt`);
-          reply = "";
+        const _sinceCustomMs = _lastCustom ? Date.now() - new Date(_lastCustom).getTime() : Number.POSITIVE_INFINITY;
+        if (_sinceCustomMs < 10 * 60 * 1000) {
+          const _looksQuestion = /\?/.test(txt) ||
+            /\b(o que|como|por ?que|pq|quanto|quais?|quando|onde|pra que|para que)\b/i.test(txt);
+          if (_sinceCustomMs < 90 * 1000 && !_looksQuestion) {
+            console.log(`[anti-dup] aguardando_conta: passo custom perguntou há ${Math.round(_sinceCustomMs / 1000)}s — aguardando foto/valor`);
+            reply = "";
+            break;
+          }
+          console.log(`[anti-dup] aguardando_conta: re-CTA curto (since=${Math.round(_sinceCustomMs / 1000)}s question=${_looksQuestion})`);
+          reply = `${v}pra seguir, me manda a *foto* (ou PDF) da sua conta de luz 📸 — ou me diz o valor médio que eu já calculo a economia 💡`;
           break;
         }
 
@@ -4781,11 +4791,21 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         break;
       }
       if (!isFile) {
-        // ANTI-DUP: se o passo custom acabou de perguntar, NÃO duplica o prompt legacy.
+        // ANTI-DUP: mesma regra do aguardando_conta — silêncio só por 90s e
+        // nunca quando o lead fez uma pergunta; fora disso, re-CTA curto.
         const _lastCustom = (customer as any).last_custom_prompt_at;
-        if (_lastCustom && (Date.now() - new Date(_lastCustom).getTime()) < 10 * 60 * 1000) {
-          console.log(`[anti-dup] aguardando_doc_auto: passo custom já perguntou (${_lastCustom}) — silenciando re-prompt`);
-          reply = "";
+        const _sinceCustomMs = _lastCustom ? Date.now() - new Date(_lastCustom).getTime() : Number.POSITIVE_INFINITY;
+        if (_sinceCustomMs < 10 * 60 * 1000) {
+          const _txtDoc = String(messageText || "").trim();
+          const _looksQuestion = /\?/.test(_txtDoc) ||
+            /\b(o que|como|por ?que|pq|quanto|quais?|quando|onde|pra que|para que)\b/i.test(_txtDoc);
+          if (_sinceCustomMs < 90 * 1000 && !_looksQuestion) {
+            console.log(`[anti-dup] aguardando_doc_auto: passo custom perguntou há ${Math.round(_sinceCustomMs / 1000)}s — aguardando foto`);
+            reply = "";
+            break;
+          }
+          console.log(`[anti-dup] aguardando_doc_auto: re-CTA curto (since=${Math.round(_sinceCustomMs / 1000)}s question=${_looksQuestion})`);
+          reply = "📸 Pra continuar, me manda a foto da *frente do seu documento* (RG ou CNH, o que estiver mais à mão).";
           break;
         }
         reply = "📸 Me envie a foto da *frente do seu documento*.\n\nPode ser RG ou CNH, o que estiver mais à mão. Formatos: JPG, PNG ou PDF.";
@@ -6555,8 +6575,21 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     case "processando_ocr_conta": {
-      // Sprint A1: evita cair no default que reseta para aguardando_conta
-      reply = "⏳ Ainda estou analisando sua conta, só mais um instante...";
+      // Sprint A1: evita cair no default que reseta para aguardando_conta.
+      // Recovery: se o passo está parado há >2min (OCR crashou / registro legado),
+      // a fila nunca mais sai daqui — reseta para aguardando_conta e pede reenvio.
+      // updated_at é o relógio: enquanto o OCR roda de verdade, a linha acabou
+      // de ser escrita; parado >120s significa que ninguém mais vai avançar.
+      const _stuckMs = (customer as any).updated_at
+        ? Date.now() - new Date((customer as any).updated_at).getTime()
+        : Number.POSITIVE_INFINITY;
+      if (_stuckMs > 120 * 1000) {
+        console.log(`[ocr-recovery] processando_ocr_conta parado há ${Math.round(_stuckMs / 1000)}s — resetando p/ aguardando_conta`);
+        updates.conversation_step = "aguardando_conta";
+        reply = "Tive uma dificuldade para ler essa conta 🙈 Me manda a *foto* (ou PDF) de novo, bem nítida, por favor?";
+      } else {
+        reply = "⏳ Ainda estou analisando sua conta, só mais um instante...";
+      }
       break;
     }
 

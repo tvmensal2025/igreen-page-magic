@@ -1096,14 +1096,12 @@ export const MULTICHANNEL_CADENCE_TEMPLATES: CadenceTemplate[] = [
     timing: "T+0 · AGUARDA resposta com o nome",
     canGenerateAudio: false,
     notes:
-      "OBRIGATÓRIO aguardar. Sem botões. Marca iGreen + apresentação do consultor + protocolo + pedido do nome.",
+      "OBRIGATÓRIO aguardar. Sem botões. Marca iGreen + apresentação do consultor + pedido do nome. Protocolo NÃO vai na mensagem (regra campanha-uuid: protocolo só existe no banco/admin).",
     body: `*iGreen | Conta de Luz Mais Barata 🌱*
 
 Olá! Aqui é {{o_a_consultor}} *{{representante}}* da *iGreen*.
 
 Seu atendimento foi iniciado com sucesso e eu vou acompanhar você durante todo o processo.
-
-📋 *Protocolo:* {{protocolo}}
 
 Para agilizar seu atendimento, por favor, informe seu *primeiro nome*.`,
   },

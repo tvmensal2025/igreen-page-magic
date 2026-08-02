@@ -1,5 +1,5 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { isCustomerPausedByHuman, wrapSenderWithLivePauseGuard } from "./paused.ts";
+import { evalNumberPauseRows, isCustomerPausedByHuman, wrapSenderWithLivePauseGuard } from "./paused.ts";
 
 Deno.test("isCustomerPausedByHuman: assigned_human_id silencia", () => {
   assertEquals(isCustomerPausedByHuman({ assigned_human_id: "u1" }), true);
@@ -15,6 +15,61 @@ Deno.test("isCustomerPausedByHuman: humano_assumiu silencia", () => {
 Deno.test("isCustomerPausedByHuman: manual_capture NÃO silencia", () => {
   assertEquals(
     isCustomerPausedByHuman({ bot_paused: true, bot_paused_reason: "manual_capture" }),
+    false,
+  );
+});
+
+Deno.test("evalNumberPauseRows: vazio não pausa", () => {
+  assertEquals(evalNumberPauseRows([]), false);
+});
+
+Deno.test("evalNumberPauseRows: humano em qualquer linha do número silencia", () => {
+  assertEquals(
+    evalNumberPauseRows([
+      { bot_paused: false, do_not_contact: false },
+      { assigned_human_id: "u1" }, // ex.: linha 55…_code do mesmo Zap
+    ]),
+    true,
+  );
+});
+
+Deno.test("evalNumberPauseRows: sombra DNC não derruba cliente vivo no mesmo número", () => {
+  assertEquals(
+    evalNumberPauseRows([
+      { do_not_contact: true }, // sombra de dedupe bloqueada
+      { bot_paused: false, do_not_contact: false }, // cliente de carteira vivo
+    ]),
+    false,
+  );
+});
+
+Deno.test("evalNumberPauseRows: todas as linhas DNC = opt-out real do número", () => {
+  assertEquals(
+    evalNumberPauseRows([
+      { do_not_contact: true },
+      { do_not_contact: true },
+    ]),
+    true,
+  );
+});
+
+Deno.test("evalNumberPauseRows: pausa futura em qualquer linha silencia", () => {
+  const future = new Date(Date.now() + 3600_000).toISOString();
+  assertEquals(
+    evalNumberPauseRows([
+      { do_not_contact: false },
+      { bot_paused_until: future },
+    ]),
+    true,
+  );
+});
+
+Deno.test("evalNumberPauseRows: manual_capture não silencia nem em outra linha", () => {
+  assertEquals(
+    evalNumberPauseRows([
+      { bot_paused: true, bot_paused_reason: "manual_capture" },
+      { do_not_contact: false },
+    ]),
     false,
   );
 });

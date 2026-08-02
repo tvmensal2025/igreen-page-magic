@@ -2686,6 +2686,43 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
   const toUpdateById: Array<{ id: string; patch: Record<string, unknown>; wasPlaceholder: boolean }> = [];
   const phonesClaimedInBatch = new Set<string>();
 
+  // Titulares atuais dos telefones limpos no banco (fora do batch). Se o dono
+  // do número limpo for lead sombra/bloqueado, a carteira PROMOVE o limpo e a
+  // sombra é rebaixada para `<limpo>_<codigo|sombra>` — sem isso o update por
+  // código bate no unique (consultant_id+phone) ou o sufixo `_codigo` volta a
+  // aparecer no cliente canônico (regressão vista em 2026-08).
+  const cleanPhoneHolder = new Map<string, {
+    id: string;
+    igreen_code: string | null;
+    do_not_contact: boolean | null;
+    customer_origin: string | null;
+  }>();
+  if (consultantId) {
+    const cleans = new Set<string>();
+    for (const rec of records) {
+      const p = String(rec.phone_whatsapp || "");
+      if (!p || p.startsWith("sem_celular_")) continue;
+      cleans.add(p.includes("_") ? p.split("_")[0] : p);
+    }
+    const cleanList = Array.from(cleans);
+    for (let i = 0; i < cleanList.length; i += 200) {
+      const { data } = await supabase
+        .from("customers")
+        .select("id, phone_whatsapp, igreen_code, do_not_contact, customer_origin")
+        .eq("consultant_id", consultantId)
+        .in("phone_whatsapp", cleanList.slice(i, i + 200));
+      for (const row of (data as Array<Record<string, unknown>>) || []) {
+        cleanPhoneHolder.set(String(row.phone_whatsapp), {
+          id: String(row.id),
+          igreen_code: (row.igreen_code as string | null) ?? null,
+          do_not_contact: (row.do_not_contact as boolean | null) ?? null,
+          customer_origin: (row.customer_origin as string | null) ?? null,
+        });
+      }
+    }
+  }
+  const holderDemotions: Array<{ id: string; phone_whatsapp: string }> = [];
+
   for (const rec of records) {
     const code = String(rec.igreen_code || "");
     const existing = code ? codeToExisting.get(code) : undefined;
@@ -2706,8 +2743,29 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
       if (phonesClaimedInBatch.has(clean)) {
         patch.phone_whatsapp = `${clean}_${code}`;
       } else {
-        phonesClaimedInBatch.add(clean);
-        patch.phone_whatsapp = clean;
+        const holder = cleanPhoneHolder.get(clean);
+        const holderIsOther = !!holder && holder.id !== existing.id;
+        const holderIsShadow = holderIsOther && (
+          holder!.do_not_contact === true ||
+          !holder!.igreen_code ||
+          holder!.customer_origin !== "igreen_sync"
+        );
+        if (holderIsShadow) {
+          // Sombra/lead bloqueado segura o limpo → carteira fica com o limpo.
+          holderDemotions.push({
+            id: holder!.id,
+            phone_whatsapp: `${clean}_${holder!.igreen_code || "sombra"}`,
+          });
+          cleanPhoneHolder.delete(clean);
+          phonesClaimedInBatch.add(clean);
+          patch.phone_whatsapp = clean;
+        } else if (holderIsOther) {
+          // Outro cliente de carteira VIVO com o mesmo número → mantém sufixo.
+          patch.phone_whatsapp = `${clean}_${code}`;
+        } else {
+          phonesClaimedInBatch.add(clean);
+          patch.phone_whatsapp = clean;
+        }
       }
       patch.whatsapp_chat_id = clean;
     } else if (currentReal) {
@@ -2718,6 +2776,22 @@ async function persistCustomers(supabase: any, consultantId: string | null, allC
       patch,
       wasPlaceholder: !currentReal && incomingReal,
     });
+  }
+
+  // Rebaixa sombras ANTES dos updates por id (libera o unique
+  // consultant_id+phone_whatsapp para a carteira ficar com o número limpo).
+  // CAS no phone: só rebaixa se a linha ainda segura o limpo deste batch.
+  for (const d of holderDemotions) {
+    const { error } = await supabase
+      .from("customers")
+      .update({ phone_whatsapp: d.phone_whatsapp })
+      .eq("id", d.id)
+      .eq("phone_whatsapp", d.phone_whatsapp.split("_")[0]);
+    if (error) {
+      console.warn(`[persistCustomers] demote sombra ${d.id} → ${d.phone_whatsapp} falhou: ${error.message}`);
+    } else {
+      console.log(`[persistCustomers] sombra ${d.id} rebaixada → ${d.phone_whatsapp} (limpo promovido p/ carteira)`);
+    }
   }
 
   for (let i = 0; i < toUpdateById.length; i += 25) {

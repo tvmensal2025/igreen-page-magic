@@ -37,6 +37,33 @@ export function isCustomerPausedByHuman(c: PausableCustomer | null | undefined):
 }
 
 /**
+ * Avalia um conjunto de linhas ligadas ao MESMO número (telefone limpo,
+ * com sufixo `_igreen_code` do sync e/ou whatsapp_chat_id):
+ *   - Humano assumiu em QUALQUER linha → o número está sob controle humano
+ *     (a conversa é única, independente de quantos cadastros dividem o Zap).
+ *   - do_not_contact só bloqueia quando TODAS as linhas são DNC: sombra de
+ *     dedupe (`55…_code` bloqueada) não pode derrubar o cliente vivo que
+ *     divide o mesmo número — o DNC por customer fica no assertCanContact.
+ */
+export function evalNumberPauseRows(rows: PausableCustomer[]): boolean {
+  if (!rows || rows.length === 0) return false;
+  const humanTakeover = rows.some((r) => {
+    if (!r) return false;
+    if (r.assigned_human_id) return true;
+    const reason = String(r.bot_paused_reason || "").toLowerCase();
+    if (r.bot_paused === true && reason !== "manual_capture") return true;
+    if (r.bot_paused_until) {
+      try {
+        if (new Date(r.bot_paused_until).getTime() > Date.now()) return true;
+      } catch { /* ignore */ }
+    }
+    return false;
+  });
+  if (humanTakeover) return true;
+  return rows.every((r) => r?.do_not_contact === true);
+}
+
+/**
  * Verifica diretamente no DB se o customer está pausado por humano.
  * Usar em loops/scheduled jobs onde só se tem phone+consultant_id.
  */
@@ -46,16 +73,19 @@ export async function isPausedByPhone(
   consultantId?: string | null,
 ): Promise<boolean> {
   if (!phone) return false;
-  const digits = String(phone).replace(/\D/g, "");
+  // Ignora sufixo de colisão do sync (`55…_<igreen_code>`) antes de limpar.
+  const digits = String(phone).split("_")[0].replace(/\D/g, "");
   if (!digits) return false;
+  // Casa telefone limpo, telefone COM sufixo do sync e whatsapp_chat_id —
+  // antes só `phone_whatsapp = digits`, que não enxergava `55…_code`.
   let q = supabase
     .from("customers")
     .select("bot_paused, bot_paused_reason, assigned_human_id, bot_paused_until, do_not_contact")
-    .eq("phone_whatsapp", digits)
-    .limit(1);
+    .or(`phone_whatsapp.eq.${digits},phone_whatsapp.like.${digits}\\_%,whatsapp_chat_id.eq.${digits}`)
+    .limit(5);
   if (consultantId) q = q.eq("consultant_id", consultantId);
-  const { data } = await q.maybeSingle();
-  return isCustomerPausedByHuman(data as PausableCustomer | null);
+  const { data } = await q;
+  return evalNumberPauseRows((data as PausableCustomer[] | null) || []);
 }
 
 // Cache leve em memória do estado global do consultor (5s) — evita uma query

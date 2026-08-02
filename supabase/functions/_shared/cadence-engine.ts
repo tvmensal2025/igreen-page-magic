@@ -139,6 +139,10 @@ export function isColdOutreachStage(stage: string): boolean {
 export function stageGroup(stage: string): "A" | "B" | "C" {
   if (stage.startsWith("RECALL_")) return "C";
   if (COLD_OUTREACH_STAGES.has(stage as Stage)) return "B";
+  // Ponte B→C (Meta/retarget pós-COLD_4): faz parte da jornada fria, NÃO do
+  // Grupo A de entrada. Antes caía em "A" e ficava presa no cadeado
+  // group_a_enabled — quem ligava só B+C via a jornada travar após COLD_4.
+  if (stage === "CLOSE_LOST" || stage.startsWith("RETARGET_")) return "B";
   return "A";
 }
 

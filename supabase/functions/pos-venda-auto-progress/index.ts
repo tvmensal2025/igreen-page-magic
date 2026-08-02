@@ -218,6 +218,7 @@ async function processCustomer(
     }
     const retriablePartial =
       st.startsWith("partial:") ||
+      st.startsWith("deferred:") ||
       st === "failed" ||
       st === "no_content" ||
       st.startsWith("no_channel:") ||
@@ -329,8 +330,9 @@ async function processCustomer(
       st === "dismissed" ||
       st === "skipped_prior" ||
       st === "skipped_spacing" ||
-      st === "skipped_duplicate_phone" ||
-      st.startsWith("partial:");
+      st === "skipped_duplicate_phone";
+    // partial:/deferred: NÃO é terminal — o sibling não completou o envio; se
+    // fosse terminal, este customer ficaria skipped_duplicate_phone para sempre.
     if (!terminal) return false;
     const otherBase = phoneBaseFromRemote(row.remote_jid);
     return !!phoneBase && !!otherBase && otherBase === phoneBase;
@@ -402,23 +404,25 @@ async function processCustomer(
   }
 
   if (await isConsultantAIDisabled(supabase, ownerId)) {
-    // Claim já reservado (retry) → libera para retentar depois.
+    // Claim já reservado (retry) → adia como deferred (retriável), nunca
+    // partial:audio_missing — IA desligada não é falha de áudio.
     if (staleClaimId) {
       await supabase.from("customer_auto_message_log").update({
-        status: "partial:audio_missing",
+        status: "deferred:ai_disabled",
         message_preview: "[blocked:ai_disabled]",
       }).eq("id", staleClaimId);
     }
     return { moved: true, sent: false };
   }
   if (await isPausedByPhone(supabase, phone, ownerId)) {
-    // Pós-venda D* não deve ficar preso em claimed_retry quando humano assumiu
-    // no meio do pacote (imagem ok / áudio faltando).
+    // Pós-venda D* com humano assumido: ADIA (retriável quando a pausa cair).
+    // Antes gravava partial:audio_missing permanente — parecia falha de áudio
+    // e o cron só regravava o mesmo erro a cada rodada.
     if (staleClaimId) {
       await supabase.from("customer_auto_message_log").update({
-        status: skipImageOnRetry ? "partial:audio_missing" : "failed",
+        status: "deferred:humano_assumiu",
         message_preview: skipImageOnRetry
-          ? "[img:ok|audio:fail] blocked:humano_assumiu"
+          ? "[img:ok|audio:pending] blocked:humano_assumiu"
           : "[blocked:humano_assumiu]",
       }).eq("id", staleClaimId);
     }
@@ -643,7 +647,9 @@ async function processCustomer(
     status,
   }).eq("id", claimId);
 
-  return { moved: true, sent: status === "sent" || status.startsWith("partial") };
+  // Só pacote completo consome cota de envio (batch/daily cap). partial/deferred
+  // retenta sem gastar cap — antes um áudio falho consumia o slot do dia.
+  return { moved: true, sent: status === "sent" };
 
 }
 
@@ -783,7 +789,7 @@ Deno.serve(async (req) => {
     const { data: approvedCustomers } = await supabase
       .from("customers")
       .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_invalid, status, andamento_igreen, pos_venda_approved_at")
-      .eq("customer_origin", "igreen_sync")
+      .in("customer_origin", ["igreen_sync", "igreen_extension"])
       .eq("pos_venda_stage", "aprovado")
       .eq("pos_venda_manual", true)
       .eq("pos_venda_invalid", false)
@@ -804,7 +810,7 @@ Deno.serve(async (req) => {
     const { data: approvedTrack } = await supabase
       .from("customers")
       .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_invalid, pos_venda_approved_at, status, andamento_igreen")
-      .eq("customer_origin", "igreen_sync")
+      .in("customer_origin", ["igreen_sync", "igreen_extension"])
       .eq("pos_venda_manual", true)
       .eq("pos_venda_invalid", false)
       .in("pos_venda_stage", ["aprovado", "d30", "d60", "d90", "d120", "d150", "d180", "d210"])

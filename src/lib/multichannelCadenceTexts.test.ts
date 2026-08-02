@@ -58,7 +58,9 @@ describe("Fluxo A — 3 esperas (nome → valor → explicação)", () => {
     expect(a1?.body).toMatch(/iGreen \| Conta de Luz Mais Barata 🌱/);
     expect(a1?.body).toMatch(/\*\{\{representante\}\}\* da \*iGreen\*/);
     expect(a1?.body).not.toMatch(/gestor/i);
-    expect(a1?.body).toMatch(/📋 \*Protocolo:\* \{\{protocolo\}\}/);
+    // Regra campanha-uuid: protocolo NÃO vai na mensagem WA (só banco/admin).
+    expect(a1?.body).not.toMatch(/Protocolo/i);
+    expect(a1?.body).not.toContain("{{protocolo}}");
     expect(a1?.body).toMatch(/agilizar seu atendimento/i);
     expect(a1?.body).toMatch(/primeiro nome/i);
     expect(a1?.body).toContain("{{representante}}");

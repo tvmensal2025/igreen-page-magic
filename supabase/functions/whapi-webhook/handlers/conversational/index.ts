@@ -1248,8 +1248,12 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         };
       } catch (e) {
         console.error("[conversational] falha ao delegar passo de captura p/ bot-flow:", (e as Error)?.message || e);
-        // Fail-safe: ao menos persiste a chave canônica pra próxima mensagem cair no OCR.
-        return { reply: "", updates: { conversation_step: _captureToCanonical } };
+        // Fail-safe: persiste a chave canônica pra próxima mensagem cair no OCR
+        // e AVISA o lead — antes ficava mudo e o cadastro parecia travado.
+        return {
+          reply: "Tive um probleminha pra processar agora 🙈 Me manda a foto de novo, por favor?",
+          updates: { conversation_step: _captureToCanonical },
+        };
       }
     }
   }
@@ -2976,9 +2980,11 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       console.log(`[smart-repeat] skip nudge — captureUpdates=${Object.keys(captureUpdates).join(",")} (avança via fluxo)`);
       return { reply: "", updates: { conversation_step: currentStep.id, ...captureUpdates, ...restoreDetourUpdates, __inline_sent: true } };
     }
-    // GUARD 1: debounce — se houve outbound nos últimos 30s, não nudge.
+    // GUARD 1: debounce — silêncio só nos primeiros 8s (proteção de corrida de
+    // envio duplo). Acima disso, segue o fluxo normal: se o texto saiu há <90s
+    // o lead recebe uma reformulação curta — bot mudo parece travamento.
     try {
-      const sinceDebounce = new Date(Date.now() - 30_000).toISOString();
+      const sinceDebounce = new Date(Date.now() - 8_000).toISOString();
       const { count: recentOut } = await ctx.supabase
         .from("conversations")
         .select("id", { count: "exact", head: true })
@@ -3014,7 +3020,11 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
     // Já mandou esse texto nos últimos 90s → reformula, SEM reenviar mídia.
     // Sprint C4: pool ampliado + fallback de escalonamento quando esgotar
-    const userName = vars.nome || ctx.customer.name || "";
+    // Nome só via fonte confiável — push-name/lixo nunca entra na saudação.
+    const userName = safeFirstNameForAddress(
+      (ctx.customer as any)?.name,
+      (ctx.customer as any)?.name_source,
+    ) || "";
     const reformVariants: Record<string, string[]> = {
       default: [
         "Sem pressa 🙂 Me conta com suas palavras que eu te oriento.",

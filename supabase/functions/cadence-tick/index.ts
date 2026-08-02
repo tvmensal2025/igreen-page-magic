@@ -1099,11 +1099,13 @@ Deno.serve(async (req) => {
       if (pct >= t && !alertedThresholds.has(`${kind}:${t}`)) {
         alertedThresholds.add(`${kind}:${t}`);
         try {
-          await logSkipped(supabase, {
+          await logSkipped(supabase, `outreach_cap_${kind.toLowerCase()}_${t}pct`, {
+            group: kind,
+            used,
+            limit,
+            pct,
             source: "cadence-tick",
-            reason: `outreach_cap_${kind.toLowerCase()}_${t}pct`,
-            details: { group: kind, used, limit, pct },
-          } as any);
+          });
         } catch { /* best-effort */ }
       }
     }
