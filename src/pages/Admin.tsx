@@ -67,10 +67,11 @@ const ParceirosTab = lazy(() => import("@/components/admin/parceiros/ParceirosTa
 const ConversaoCockpit = lazy(() => import("@/components/admin/conversao/ConversaoCockpit").then(m => ({ default: m.ConversaoCockpit })));
 const AgendamentosHub = lazy(() => import("@/components/whatsapp/AgendamentosHub").then(m => ({ default: m.AgendamentosHub })));
 const AudioStudioPanel = lazy(() => import("@/components/admin/AudioStudio").then(m => ({ default: m.AudioStudio })));
-const VozTab = lazy(() => import("@/components/admin/voz/VozTab").then(m => {
-  if (!m.VozTab) throw new Error("VozTab export missing");
-  return { default: m.VozTab };
-}));
+const VozTab = lazyNamed<React.ComponentProps<typeof import("@/components/admin/voz/VozTab")["VozTab"]>>(
+  () => import("@/components/admin/voz/VozTab"),
+  "VozTab",
+);
+
 const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").then(m => ({ default: m.AcademyTab })));
 const VendaPlataformaPanel = lazy(() =>
   import("@/components/superadmin/VendaPlataformaPanel").then((m) => ({ default: m.VendaPlataformaPanel })),
