@@ -65,7 +65,7 @@ export function PartnerPortalDownloadModal({
 }: Props) {
   const { toast } = useToast();
   const [format, setFormat] = useState<FlyerFormatId>("a4");
-  const [busy, setBusy] = useState<"png" | "pdf" | "both" | null>(null);
+  const [busy, setBusy] = useState<"png" | "pdf" | "both" | "qr" | null>(null);
   const qrSvgRef = useRef<HTMLDivElement>(null);
 
   const template = FLYER_TEMPLATES[format];
