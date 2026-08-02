@@ -114,11 +114,27 @@ export function useReferralPartners() {
       id,
       ...patch
     }: Partial<ReferralPartner> & { id: string }) => {
-      const { error } = await supabase
+      const normalizedPatch = {
+        ...patch,
+        ...(patch.qr_phrase !== undefined
+          ? { qr_phrase: patch.qr_phrase?.trim().slice(0, 600) || null }
+          : {}),
+        updated_at: new Date().toISOString(),
+      };
+      const { data, error } = await supabase
         .from("referral_partners")
-        .update({ ...patch, updated_at: new Date().toISOString() })
-        .eq("id", id);
+        .update(normalizedPatch)
+        .eq("id", id)
+        .select("id, qr_phrase")
+        .maybeSingle();
       if (error) throw error;
+      if (!data?.id) throw new Error("A frase não foi gravada. Atualize a sessão e tente novamente.");
+      if (patch.qr_phrase !== undefined) {
+        const expected = patch.qr_phrase?.trim().slice(0, 600) || null;
+        if (data.qr_phrase !== expected) {
+          throw new Error("A confirmação do banco divergiu da frase enviada.");
+        }
+      }
     },
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["referral-partners"] }),

@@ -21,7 +21,7 @@ import { useToast } from "@/hooks/use-toast";
  *  veria sem personalizar nada. */
 const DEFAULT_QR_MESSAGE =
   "Oi! 👋 Vi sobre a iGreen Energy e quero saber como economizar na minha conta de luz.";
-const QR_MESSAGE_MAX = 200;
+const QR_MESSAGE_MAX = 600;
 
 type Format = "a4" | "banner";
 

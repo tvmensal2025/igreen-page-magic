@@ -7,6 +7,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
@@ -15,7 +16,7 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
-import { buildDefaultQrPhrase, isGenericKeyword } from "./qrPhrase";
+import { buildDefaultQrPhrase, isGenericKeyword, QR_PHRASE_MAX } from "./qrPhrase";
 import { HelpHint } from "@/components/ui/help-hint";
 import {
   Tooltip,
@@ -551,15 +552,17 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                   example='Ex.: "Vim pelo Daniel, quero reduzir minha conta de luz"'
                 />
               </div>
-              <Input
+              <Textarea
                 id="partner-qr-phrase"
                 value={qrPhrase}
                 onChange={(e) => setQrPhrase(e.target.value)}
                 placeholder={buildDefaultQrPhrase(keywords[0] || keywordInput.trim())}
-                className="h-9"
+                maxLength={QR_PHRASE_MAX}
+                rows={4}
+                className="resize-none"
               />
               <p className="text-[10px] text-muted-foreground">
-                Se deixar vazio, o sistema usa a frase padrão com o nome do parceiro.
+                Se deixar vazio, o sistema usa a frase padrão com o nome do parceiro. {qrPhrase.length}/{QR_PHRASE_MAX}
               </p>
             </div>
           </section>

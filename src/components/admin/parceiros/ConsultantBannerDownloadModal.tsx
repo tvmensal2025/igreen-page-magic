@@ -341,27 +341,37 @@ export function ConsultantBannerDownloadModal({
     setError(null);
     try {
       if (mode === "root") {
-        const phrase = rootPhrase.trim().slice(0, QR_PHRASE_MAX + 40);
-        const { error: err } = await supabase
+        const phrase = rootPhrase.trim().slice(0, QR_PHRASE_MAX);
+        const { data, error: err } = await supabase
           .from("consultants")
           .update({ banner_default_phrase: phrase || null } as never)
-          .eq("id", consultantId);
+          .eq("id", consultantId)
+          .select("banner_default_phrase")
+          .maybeSingle();
         if (err) throw err;
+        if (!data || String(data.banner_default_phrase || "") !== phrase) {
+          throw new Error("A frase não foi confirmada pelo banco.");
+        }
         onSpotsChanged();
         toast({
           title: "Frase padrão salva",
           description: "Banners raiz já impressos passam a abrir esta frase.",
         });
       } else if (selectedSpot) {
-        const phrase = editPhrase.trim().slice(0, QR_PHRASE_MAX + 40);
-        const { error: err } = await supabase
+        const phrase = editPhrase.trim().slice(0, QR_PHRASE_MAX);
+        const { data, error: err } = await supabase
           .from("consultant_banner_spots")
           .update({
             phrase: phrase || null,
             updated_at: new Date().toISOString(),
           } as never)
-          .eq("id", selectedSpot.id);
+          .eq("id", selectedSpot.id)
+          .select("phrase")
+          .maybeSingle();
         if (err) throw err;
+        if (!data || String(data.phrase || "") !== phrase) {
+          throw new Error("A frase do local não foi confirmada pelo banco.");
+        }
         onSpotsChanged();
         toast({
           title: "Frase do local salva",

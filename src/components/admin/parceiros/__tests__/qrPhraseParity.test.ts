@@ -28,6 +28,8 @@ const CASOS: { qrPhrase: string | null; keyword: string | null }[] = [
     keyword: "Valdenice",
   },
   { qrPhrase: "Quero muito reduzir o valor da minha conta de energia agora", keyword: "promocao-especial-black-friday-energia" },
+  { qrPhrase: `Valdenice ${"texto personalizado ".repeat(30)}`.slice(0, 600), keyword: "Valdenice" },
+  { qrPhrase: `Valdenice ${"x".repeat(700)}`, keyword: "Valdenice" },
 ];
 
 describe("qr-phrase — paridade front ↔ Deno", () => {

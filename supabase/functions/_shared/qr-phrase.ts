@@ -25,7 +25,7 @@
  * Teto ABSOLUTO da frase (só para manter a URL `wa.me` sã). A frase salva pelo
  * consultor NUNCA é descartada por tamanho — no pior caso é cortada aqui.
  */
-export const QR_PHRASE_MAX = 300;
+export const QR_PHRASE_MAX = 600;
 
 /** Teto usado só para montar a frase PADRÃO (quando não há frase salva). */
 const QR_DEFAULT_PHRASE_MAX = 90;
@@ -98,11 +98,9 @@ export function buildDefaultQrPhrase(keyword?: string | null): string {
 /**
  * Resolve a mensagem final do link/QR a partir do que está salvo no parceiro.
  *
- *   1. Sem `qrPhrase`, OU `qrPhrase` longa demais (> `QR_PHRASE_MAX`): usa a
- *      frase padrão curta, que já contém a keyword.
- *   2. Frase própria dentro do limite, mas SEM a keyword: anexa a keyword ao
- *      final — mas, se isso estourar o limite, cai na frase padrão curta.
- *   3. Frase própria dentro do limite e com a keyword: respeita a escolha dele.
+ *   1. Sem `qrPhrase`: usa a frase padrão curta, que já contém a keyword.
+ *   2. Com frase própria: ela sempre vence e só é limitada ao teto absoluto.
+ *   3. Se faltar a keyword e houver espaço, ela é anexada sem substituir o texto.
  *
  * Em qualquer caso, se `shortCode` for fornecido, anexa `#R{short_code}` ao
  * final — esse é o marcador determinístico que o webhook usa para atribuir o
