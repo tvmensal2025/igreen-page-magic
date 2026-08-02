@@ -21,6 +21,8 @@ import {
   loadFlyerImage,
 } from "@/components/admin/flyerCanvasDraw";
 import { drawFlyerFooter } from "@/components/admin/flyerFooter";
+import { downloadQrOnlyPng } from "@/components/admin/qrOnlyDownload";
+
 import { formatFlyerPhoneDisplay } from "@/components/admin/flyerPhoneDisplay";
 import {
   FLYER_TEMPLATES,
