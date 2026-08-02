@@ -458,6 +458,23 @@ export function ConsultantBannerDownloadModal({
     }
   };
 
+  const downloadQrOnly = async () => {
+    if (!canDownload) return;
+    setRendering(true);
+    try {
+      const svgEl = qrSvgWrapperRef.current?.querySelector("svg");
+      const ok = await downloadQrOnlyPng(svgEl, fileBase());
+      toast(
+        ok
+          ? { title: "QR Code baixado!" }
+          : { title: "Não foi possível gerar o QR Code", variant: "destructive" },
+      );
+    } finally {
+      setRendering(false);
+    }
+  };
+
+
   const downloadPDF = async () => {
     if (!canDownload) return;
     setRendering(true);
