@@ -316,6 +316,21 @@ export function PanfletoModal({
     }
   };
 
+  const downloadQrOnly = async () => {
+    setRendering(true);
+    try {
+      const svgEl = qrSvgWrapperRef.current?.querySelector("svg");
+      const ok = await downloadQrOnlyPng(svgEl, `igreen-${licenca}`);
+      toast(
+        ok
+          ? { title: "✅ QR Code baixado!" }
+          : { title: "Não foi possível gerar o QR Code", variant: "destructive" },
+      );
+    } finally {
+      setRendering(false);
+    }
+  };
+
   const downloadPDF = async () => {
     setRendering(true);
     try {
