@@ -190,7 +190,9 @@ async function countOutreachTouchesToday(
   }
   const b = new Set<string>();
   const c = new Set<string>();
-  for (const r of (data || []) as { customer_id: string; stage: string }[]) {
+  const customerNamesToday = new Set<string>();
+  
+  for (const r of (data || []) as { customer_id: string; stage: string; detail?: any }[]) {
     if (stageGroup(r.stage) === "C") c.add(r.customer_id);
     else b.add(r.customer_id);
   }
