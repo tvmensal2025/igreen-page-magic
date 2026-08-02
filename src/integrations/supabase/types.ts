@@ -14355,6 +14355,13 @@ export type Database = {
       }
       clamp_to_business_window_brt: { Args: { ts: string }; Returns: string }
       cleanup_bot_test_data: { Args: { _run_id: string }; Returns: Json }
+      cleanup_customer_duplicates: {
+        Args: { p_consultant_id: string }
+        Returns: {
+          phone: string
+          removed_count: number
+        }[]
+      }
       cleanup_webhook_artifacts: { Args: never; Returns: undefined }
       clear_pending_inbound: {
         Args: { _customer_id: string }
