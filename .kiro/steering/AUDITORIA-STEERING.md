@@ -6,7 +6,18 @@ description: Histórico de rounds do pack steering.
 
 # Auditoria do pack steering
 
-Última atualização: **2026-08-01** (UX rodízio: sem parceiro = lead do dono).
+Última atualização: **2026-08-02** (fixes demo: silêncio bot, PV deferred, sync promove limpo, caps).
+
+## 2026-08-02 — Fixes pré-demo (silêncio, pós-venda, sync, caps)
+Mudanças de comportamento que o steering deve refletir:
+- **Anti-dup cadastro** (`bot-flow.ts`): silêncio só 90s e nunca com pergunta do lead — fora disso, re-CTA curto (antes: mudo 10 min).
+- **Smart-repeat** (`conversational/index.ts`): debounce 30s→8s; reform usa `safeFirstNameForAddress`.
+- **Pós-venda** (`pos-venda-auto-progress`): `humano_assumiu`/`ai_disabled` agora gravam `deferred:*` retriável (não `partial:audio_missing`); `partial:` não consome cap e não é terminal p/ sibling; progressão D30–D210 inclui `igreen_extension`.
+- **Sync carteira**: promove número limpo quando o holder é sombra/DNC (`holderDemotions`) — evita regressão do sufixo `_codigo`.
+- **Cadência**: `CLOSE_LOST`/`RETARGET_*` classificados como pack **B** (eram "A" e travavam a jornada pós-COLD_4); alertas de cap usam assinatura correta do `logSkipped` (`outreach_cap_*` chega ao super-admin-alerts).
+- **paused.ts**: `isPausedByPhone` casa limpo/sufixo/chat_id via `evalNumberPauseRows`; sombra DNC não derruba cliente vivo no mesmo número.
+- **`a1_ask_name`**: sem protocolo na mensagem WA (regra campanha-uuid).
+- `mapa-dominios.json`: god-file sync 2979→3281.
 
 ## 2026-08-01 — UX: lead sem parceiro = automático do consultor
 Textos alinhados ao comportamento canônico (`OWNER_ONLY_NO_REVIEW_REASONS`): rodízio OFF / pool vazia / Meta sem pool → lead do dono da página, sem fila. UI: `ManualReviewQueueCard`, `CampaignRodizioLeadsDialog`, `RodizioBlock`; aviso WA `notifyOwnerManualReview`; steering `#rodizio-parceiros-campanha`.

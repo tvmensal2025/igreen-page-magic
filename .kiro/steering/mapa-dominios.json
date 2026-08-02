@@ -780,7 +780,7 @@
     },
     {
       "path": "supabase/functions/sync-igreen-customers/index.ts",
-      "lines": 2979
+      "lines": 3281
     },
     {
       "path": "src/components/whatsapp/AgendamentosHub.tsx",
