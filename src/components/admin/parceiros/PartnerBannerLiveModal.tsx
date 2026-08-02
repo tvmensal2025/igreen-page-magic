@@ -103,7 +103,8 @@ export function PartnerBannerLiveModal({
           .select("phrase")
           .maybeSingle();
         if (error) throw error;
-        if (!data || data.phrase !== next) throw new Error("A frase do banner não foi confirmada pelo banco.");
+        const savedPhrase = (data as { phrase?: string | null } | null)?.phrase ?? null;
+        if (!data || savedPhrase !== next) throw new Error("A frase do banner não foi confirmada pelo banco.");
       } else {
         const { data, error } = await supabase
           .from("referral_partners")
