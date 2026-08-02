@@ -18,7 +18,7 @@ import {
 } from "../_shared/attendance-channel-env.ts";
 
 const SITE_URL = "https://igreen.institutodossonhos.com.br";
-const QR_REDIRECT_VERSION = "2026-08-02-600-live-v2";
+const QR_REDIRECT_VERSION = "2026-08-02-keyword-natural-v3";
 const DEFAULT_MESSAGE =
   "Oi! 👋 Vi sobre a iGreen Energy e quero saber como economizar na minha conta de luz.";
 const QR_PHRASE_MAX = 600;
@@ -43,10 +43,10 @@ function resolveQrMessage(
   let message = custom
     ? tidyPhrase(custom.slice(0, QR_PHRASE_MAX))
     : kw
-    ? tidyPhrase(`Oi! Quero saber mais sobre o desconto na energia. (indicação: ${kw})`)
+    ? tidyPhrase(`Oi! Vim pelo ${kw} e quero saber mais sobre o desconto na energia.`)
     : "Oi! Quero saber mais sobre o desconto na energia.";
   if (kw && !normalizePhrase(message).includes(normalizePhrase(kw))) {
-    const withKeyword = tidyPhrase(`${message} (indicação: ${kw})`);
+    const withKeyword = tidyPhrase(`${message} ${kw}`);
     if (withKeyword.length <= QR_PHRASE_MAX) message = withKeyword;
   }
   const code = String(shortCode ?? "").replace(/\D/g, "");

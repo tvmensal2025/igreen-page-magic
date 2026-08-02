@@ -47,18 +47,17 @@ export function buildDefaultQrPhrase(keyword?: string | null): string {
   const kw = tidy(keyword ?? "");
   const base = "Oi! Quero saber mais sobre o desconto na energia.";
   if (!kw) return base;
-  const withKw = tidy(`${base} (indicação: ${kw})`);
+  const withKw = tidy(`Oi! Vim pelo ${kw} e quero saber mais sobre o desconto na energia.`);
   if (withKw.length <= QR_DEFAULT_PHRASE_MAX) return withKw;
   // Keyword longa: encurta a base, mantém a keyword inteira (atribuição).
-  const shortBase = "Oi! Quero o desconto na energia.";
-  const short = tidy(`${shortBase} (indicação: ${kw})`);
+  const short = tidy(`Oi! Vim pelo ${kw}, quero o desconto na energia.`);
   if (short.length <= QR_DEFAULT_PHRASE_MAX) return short;
-  const minimal = tidy(`Oi! (indicação: ${kw})`);
+  const minimal = tidy(`Oi! Vim pelo ${kw}.`);
   if (minimal.length <= QR_DEFAULT_PHRASE_MAX) return minimal;
   // Último recurso: cabe o máximo possível da keyword sem estourar o limite.
-  const prefix = "Oi! (indicação: ";
+  const prefix = "Oi! Vim pelo ";
   const budget = Math.max(0, QR_DEFAULT_PHRASE_MAX - prefix.length - 1);
-  return tidy(`${prefix}${kw.slice(0, budget)})`);
+  return tidy(`${prefix}${kw.slice(0, budget)}`);
 }
 
 /**
@@ -84,7 +83,7 @@ export function resolveQrMessage(
       ? tidy(custom.slice(0, QR_PHRASE_MAX))
       : custom;
     if (kw && !containsKeyword(base, kw)) {
-      const withKw = tidy(`${base} (indicação: ${kw})`);
+      const withKw = tidy(`${base} ${kw}`);
       if (withKw.length <= QR_PHRASE_MAX) base = withKw;
     }
   }
