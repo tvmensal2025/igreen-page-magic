@@ -79,6 +79,7 @@ const SuperAdmin = () => {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [resettingConsultantId, setResettingConsultantId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"consultores" | "captacao" | "gestores_ads" | "ia" | "ia_aprendendo" | "crm" | "auditoria" | "funil" | "worker" | "plataforma_fb" | "templates_ads" | "templates_fluxo" | "saude_rede" | "rollout" | "solar">("consultores");
   const [searchTerm, setSearchTerm] = useState("");
   const accessDeniedToastShownRef = useRef(false);
@@ -301,7 +302,7 @@ const SuperAdmin = () => {
           `${data?.summary?.kept_captured_leads ?? 0} lead(s).`,
       });
       logAdminAction("reset_consultant", "consultant", consultantId, { name: consultantName });
-      void loadData();
+      void loadConsultants();
     } catch (err: unknown) {
       toast({
         title: "Erro ao resetar consultor",
