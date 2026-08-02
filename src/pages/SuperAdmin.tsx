@@ -649,6 +649,26 @@ const SuperAdmin = () => {
                                   <Button
                                     variant="ghost"
                                     size="icon"
+                                    className="h-8 w-8 rounded-lg text-amber-600 hover:text-amber-600 hover:bg-amber-500/10"
+                                    onClick={() => handleResetConsultant(c.id, c.name, c.total_customers || 0)}
+                                    disabled={resettingConsultantId === c.id || Boolean(userId && c.id === userId)}
+                                    aria-label={`Resetar ${c.name}`}
+                                  >
+                                    {resettingConsultantId === c.id ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <RotateCcw className="w-3.5 h-3.5" />
+                                    )}
+                                  </Button>
+                                </TooltipTrigger>
+                                <TooltipContent>Resetar (recomeçar do zero, mantém os dados)</TooltipContent>
+                              </Tooltip>
+
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
                                     className="h-8 w-8 rounded-lg text-destructive hover:text-destructive hover:bg-destructive/10"
                                     onClick={() => handleDeleteConsultant(c.id, c.name, c.total_customers || 0)}
                                     disabled={deletingId === c.id || Boolean(userId && c.id === userId)}
