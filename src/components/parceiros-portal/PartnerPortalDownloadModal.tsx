@@ -229,6 +229,25 @@ export function PartnerPortalDownloadModal({
     }
   };
 
+  const handleDownloadQrOnly = async () => {
+    setBusy("qr");
+    try {
+      const svgEl = qrSvgRef.current?.querySelector("svg");
+      const ok = await downloadQrOnlyPng(svgEl, fileSlug());
+      toast(
+        ok
+          ? { title: "QR Code baixado!" }
+          : {
+              title: "Não foi possível gerar o QR Code",
+              variant: "destructive",
+            },
+      );
+    } finally {
+      setBusy(null);
+    }
+  };
+
+
   const titleName = target?.name || partnerName;
 
   return (
