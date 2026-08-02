@@ -11,6 +11,7 @@ import {
   extractValor, extractValorPermissivo, extractTelefone, extractCPF, extractNome, detectRegexIntents,
 } from "../../../_shared/captureExtractors.ts";
 import { getStepMediaOrder, makeKindComparator } from "../../../_shared/step-media-order.ts";
+import { safeFirstNameForAddress } from "../../../_shared/customer-display-name.ts";
 import { isMockMode, isTestMode } from "../../../_shared/test-mode.ts";
 import { isFlowInstantMode } from "../../../_shared/flow-pace.ts";
 // rules-engine removido em Sprint 2.5 (bot_flow_rules = 0 linhas, código morto)
@@ -1219,8 +1220,13 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         };
       } catch (e) {
         console.error("[conversational] falha ao delegar passo de captura p/ bot-flow:", (e as Error)?.message || e);
-        // Fail-safe: ao menos persiste a chave canônica pra próxima mensagem cair no OCR.
-        return { reply: "", updates: { conversation_step: _captureToCanonical } };
+        // Fail-safe: persiste a chave canônica pra próxima mensagem cair no OCR
+        // — e responde algo (paridade whapi 2026-08-02): silêncio aqui deixava
+        // o lead falando sozinho quando o worker de OCR estava fora.
+        return {
+          reply: "Tive um probleminha pra processar agora 🙈 Me manda a foto de novo, por favor?",
+          updates: { conversation_step: _captureToCanonical },
+        };
       }
     }
   }
@@ -2838,9 +2844,11 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       console.log(`[smart-repeat] skip nudge — captureUpdates=${Object.keys(captureUpdates).join(",")} (avança via fluxo)`);
       return { reply: "", updates: { conversation_step: currentStep.id, ...captureUpdates, ...restoreDetourUpdates, __inline_sent: true } };
     }
-    // GUARD 1: debounce — se houve outbound nos últimos 30s, não nudge.
+    // GUARD 1: debounce — proteção de corrida curta (8s). Antes eram 30s de
+    // silêncio total: o bot ficava mudo meio minuto se o lead respondesse rápido.
+    // 8s cobre apenas a janela de double-fire do mesmo turno (paridade whapi 2026-08-02).
     try {
-      const sinceDebounce = new Date(Date.now() - 30_000).toISOString();
+      const sinceDebounce = new Date(Date.now() - 8_000).toISOString();
       const { count: recentOut } = await ctx.supabase
         .from("conversations")
         .select("id", { count: "exact", head: true })
@@ -2876,7 +2884,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
     // Já mandou esse texto nos últimos 90s → reformula, SEM reenviar mídia.
     // Sprint C4: pool ampliado + fallback de escalonamento quando esgotar
-    const userName = vars.nome || ctx.customer.name || "";
+    // Nome só quando fonte confiável (paridade whapi 2026-08-02) — nunca "Oi Zap"/lixo OCR.
+    const userName = safeFirstNameForAddress(ctx.customer.name, (ctx.customer as any).name_source) || "";
     const reformVariants: Record<string, string[]> = {
       default: [
         "Sem pressa 🙂 Me conta com suas palavras que eu te oriento.",

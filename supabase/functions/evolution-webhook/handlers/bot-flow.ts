@@ -3748,11 +3748,22 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
 
         // ANTI-DUP: se o passo custom acabou de perguntar, NÃO duplica o prompt legacy.
-        // Apenas espera o cliente mandar a foto/PDF (ou valor).
+        // Janela curta de silêncio (90s) só para não atropelar o envio do passo
+        // custom (áudio + texto). Fora dela — ou se o lead fez uma PERGUNTA —
+        // responde o CTA curto: bot mudo no meio do cadastro parece travamento.
+        // (Paridade com whapi-webhook 2026-08-02.)
         const _lastCustom = (customer as any).last_custom_prompt_at;
-        if (_lastCustom && (Date.now() - new Date(_lastCustom).getTime()) < 10 * 60 * 1000) {
-          console.log(`[anti-dup] aguardando_conta: passo custom já perguntou (${_lastCustom}) — silenciando re-prompt`);
-          reply = "";
+        const _sinceCustomMs = _lastCustom ? Date.now() - new Date(_lastCustom).getTime() : Number.POSITIVE_INFINITY;
+        if (_sinceCustomMs < 10 * 60 * 1000) {
+          const _looksQuestion = /\?/.test(txt) ||
+            /\b(o que|como|por ?que|pq|quanto|quais?|quando|onde|pra que|para que)\b/i.test(txt);
+          if (_sinceCustomMs < 90 * 1000 && !_looksQuestion) {
+            console.log(`[anti-dup] aguardando_conta: passo custom perguntou há ${Math.round(_sinceCustomMs / 1000)}s — aguardando foto/valor`);
+            reply = "";
+            break;
+          }
+          console.log(`[anti-dup] aguardando_conta: re-CTA curto (since=${Math.round(_sinceCustomMs / 1000)}s question=${_looksQuestion})`);
+          reply = `${v}pra seguir, me manda a *foto* (ou PDF) da sua conta de luz 📸 — ou me diz o valor médio que eu já calculo a economia 💡`;
           break;
         }
 
@@ -4540,11 +4551,22 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         break;
       }
       if (!isFile) {
-        // ANTI-DUP: se o passo custom acabou de perguntar, NÃO duplica o prompt legacy.
+        // ANTI-DUP: mesma regra do aguardando_conta — silêncio só por 90s e
+        // nunca quando o lead fez uma pergunta; fora disso, re-CTA curto.
+        // (Paridade com whapi-webhook 2026-08-02.)
         const _lastCustom = (customer as any).last_custom_prompt_at;
-        if (_lastCustom && (Date.now() - new Date(_lastCustom).getTime()) < 10 * 60 * 1000) {
-          console.log(`[anti-dup] aguardando_doc_auto: passo custom já perguntou (${_lastCustom}) — silenciando re-prompt`);
-          reply = "";
+        const _sinceCustomMs = _lastCustom ? Date.now() - new Date(_lastCustom).getTime() : Number.POSITIVE_INFINITY;
+        if (_sinceCustomMs < 10 * 60 * 1000) {
+          const _txtDoc = String(messageText || "").trim();
+          const _looksQuestion = /\?/.test(_txtDoc) ||
+            /\b(o que|como|por ?que|pq|quanto|quais?|quando|onde|pra que|para que)\b/i.test(_txtDoc);
+          if (_sinceCustomMs < 90 * 1000 && !_looksQuestion) {
+            console.log(`[anti-dup] aguardando_doc_auto: passo custom perguntou há ${Math.round(_sinceCustomMs / 1000)}s — aguardando foto`);
+            reply = "";
+            break;
+          }
+          console.log(`[anti-dup] aguardando_doc_auto: re-CTA curto (since=${Math.round(_sinceCustomMs / 1000)}s question=${_looksQuestion})`);
+          reply = "📸 Pra continuar, me manda a foto da *frente do seu documento* (RG ou CNH, o que estiver mais à mão).";
           break;
         }
         reply = "📸 Me envie a foto da *frente do seu documento*.\n\nPode ser RG ou CNH, o que estiver mais à mão. Formatos: JPG, PNG ou PDF.";
@@ -6304,7 +6326,24 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
     }
 
     case "processando_ocr_conta": {
-      // Sprint A1: evita cair no default que reseta para aguardando_conta
+      // Sprint A1: evita cair no default que reseta para aguardando_conta.
+      // Recovery (paridade whapi 2026-08-02): se o step está travado há mais de
+      // 2 min (OCR falhou sem rebaixar o step — acontece quando o worker está
+      // fora/lento), volta para aguardando_conta e pede o reenvio em vez de
+      // responder "só mais um instante" para sempre.
+      const _updMs = (customer as any).updated_at ? Date.now() - new Date((customer as any).updated_at).getTime() : 0;
+      if (_updMs > 120 * 1000) {
+        console.warn(`[processando_ocr_conta] travado há ${Math.round(_updMs / 1000)}s — rebaixando para aguardando_conta (recovery)`);
+        const _first = safeFirstNameForAddress((customer as any).name, (customer as any).name_source);
+        reply = `${_first ? `${_first}, ` : ""}tive uma dificuldade para ler sua conta 😕 Pode me mandar a *foto* (ou PDF) de novo, por favor? Se preferir, me diz o valor médio que eu já calculo a economia 💡`;
+        try {
+          await supabase
+            .from("customers")
+            .update({ conversation_step: "aguardando_conta", updated_at: new Date().toISOString() })
+            .eq("id", customer.id);
+        } catch (_) { /* best-effort: reply já orienta o reenvio */ }
+        break;
+      }
       reply = "⏳ Ainda estou analisando sua conta, só mais um instante...";
       break;
     }
