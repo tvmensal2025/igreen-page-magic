@@ -64,8 +64,8 @@ export async function findCustomerForInboundPhone(
   const base = () => {
     let q = supabase.from("customers").select(select).eq("consultant_id", consultantId);
     if (opts?.onlyTestLead) q = q.eq("is_test_lead", true);
-    // Prioriza o registro com nome preenchido em caso de colisão
-    q = q.order("name", { ascending: false, nullsFirst: false });
+    // Preferência canônica fica em pickPreferredInboundCustomer (carteira > status).
+    // Não ordenar por name: com limit(20) poderia excluir o registro de carteira.
     return q;
   };
 

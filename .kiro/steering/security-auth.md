@@ -35,6 +35,8 @@ Alinhado ao padrão Supabase: `verify_jwt` fica **ligado** para UI autenticada; 
 
 Migration: `20260724120000_views_security_invoker_safe.sql`. Não “consertar” as 2 exceções sem quebrar LP/Ads.
 
+**Regressão Lovable 2026-08-02:** migration `20260801220949` forçou `security_invoker=true` em **todas** as views (incluindo as 2 exceções). Ads (`platform_facebook_audience_status`) voltava 0 linhas para consultor não-admin. Hotfix: `20260802013000_hotfix_lovable_security_views_rpc` (restaura `invoker=false` + fecha `cleanup_customer_duplicates`/`audit_duplicate_leads_in_cadence` só `service_role`).
+
 ## RPCs `SECURITY DEFINER` + `EXECUTE` para `anon` (inventário 2026-07-24)
 Advisor residual: **21** funções anon+DEFINER (era 27). **P0 revogado** (`20260724140000_revoke_p0_anon_definer_rpcs`).
 
