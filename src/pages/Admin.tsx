@@ -29,6 +29,8 @@ import { GuideEntryButton } from "@/features/onboarding/GuideEntryButton";
 import { TAB_GUIDE_SLUG, resolveWhatsAppGuideSlug } from "@/features/help/tabGuideMap";
 import { useAlertasBoletosCount } from "@/components/admin/financeiro/useAlertasBoletosCount";
 import { useUserRole } from "@/hooks/useUserRole";
+import { lazyNamed } from "@/lib/lazyNamed";
+
 
 
 
