@@ -1130,6 +1130,15 @@ export function PartnerQrCode({
             <Download className="h-4 w-4" /> Baixar PNG
           </Button>
           <Button
+            variant="secondary"
+            onClick={handleDownloadQrOnly}
+            disabled={savingKw}
+            className="gap-2"
+          >
+            <QrCode className="h-4 w-4" /> Baixar só o QR Code
+          </Button>
+
+          <Button
             onClick={handleDownloadPDF}
             className="gap-2"
             variant="outline"
