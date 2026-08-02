@@ -10,7 +10,9 @@ import {
   clampFooterBand,
   previewFooterFontSize,
 } from "@/components/admin/flyerFooter";
-import { Download, Copy, FileText, Loader2, RotateCcw } from "lucide-react";
+import { Download, Copy, FileText, Loader2, RotateCcw, QrCode } from "lucide-react";
+import { downloadQrOnlyPng } from "@/components/admin/qrOnlyDownload";
+
 import { useFlyerPreviewSize } from "@/components/admin/flyerPreviewSize";
 import { useToast } from "@/hooks/use-toast";
 
