@@ -15,6 +15,7 @@ Mudanças de comportamento que o steering deve refletir:
 - **Pós-venda** (`pos-venda-auto-progress`): `humano_assumiu`/`ai_disabled` agora gravam `deferred:*` retriável (não `partial:audio_missing`); `partial:` não consome cap e não é terminal p/ sibling; progressão D30–D210 inclui `igreen_extension`.
 - **Sync carteira**: promove número limpo quando o holder é sombra/DNC (`holderDemotions`) — evita regressão do sufixo `_codigo`.
 - **Cadência**: `CLOSE_LOST`/`RETARGET_*` classificados como pack **B** (eram "A" e travavam a jornada pós-COLD_4); alertas de cap usam assinatura correta do `logSkipped` (`outreach_cap_*` chega ao super-admin-alerts).
+- **Paridade Evolution** (mesma data, commit `0c4b6ebb7`): todos os fixes de silêncio acima portados para `evolution-webhook` (anti-dup ×2, recovery OCR, smart-repeat 8s + nome seguro, catch OCR com resposta). **Sem** ramo Cérebro/Fluxo B no Evolution por decisão do usuário — Evolution segue determinístico (Grupo A); Cérebro continua só no Whapi.
 - **paused.ts**: `isPausedByPhone` casa limpo/sufixo/chat_id via `evalNumberPauseRows`; sombra DNC não derruba cliente vivo no mesmo número.
 - **`a1_ask_name`**: sem protocolo na mensagem WA (regra campanha-uuid).
 - `mapa-dominios.json`: god-file sync 2979→3281.
