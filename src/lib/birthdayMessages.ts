@@ -89,16 +89,24 @@ export function pickRandomBirthdayMessage(): string {
 
 export function isValidWhatsAppPhone(phone: string | null | undefined): boolean {
   if (!phone || phone.startsWith("sem_celular_")) return false;
-  const digits = phone.replace(/\D/g, "");
+  // Sync grava colisão como `55…_<igreen_code>` — validar só a parte do número.
+  const base = String(phone).split("_")[0]?.trim() || "";
+  if (!base || base.startsWith("sem_celular")) return false;
+  const digits = base.replace(/\D/g, "");
   return digits.length >= 10;
 }
 
-/** Chave estável do WhatsApp (DDI 55 + dígitos) para deduplicar cadastros. */
+/**
+ * Chave estável do WhatsApp (DDI 55 + dígitos) para deduplicar cadastros.
+ * Ignora sufixo `_codigo` do sync (ex.: 5511…_1137420 → mesmo Zap).
+ */
 export function retentionPhoneKey(phone: string | null | undefined): string | null {
   if (!isValidWhatsAppPhone(phone)) return null;
-  let digits = phone!.replace(/\D/g, "").replace(/^0+/, "");
+  const base = String(phone).split("_")[0]?.trim() || "";
+  let digits = base.replace(/\D/g, "").replace(/^0+/, "");
   if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
-  if (digits.length < 12) return null;
+  // Número BR com DDI: 12–13 dígitos. Sufixo já foi cortado acima.
+  if (digits.length < 12 || digits.length > 13) return null;
   return digits;
 }
 

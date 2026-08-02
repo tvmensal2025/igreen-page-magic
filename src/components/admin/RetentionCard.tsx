@@ -53,7 +53,8 @@ async function sendRetentionViaInstance(opts: {
   conversationStep: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const { instanceName, isWhapi, phone, text, customerId, conversationStep } = opts;
-  if (!isValidWhatsAppPhone(phone)) {
+  const phoneKey = retentionPhoneKey(phone);
+  if (!phoneKey) {
     return { ok: false, error: "Sem WhatsApp cadastrado" };
   }
   if (!isWhapi && !instanceName) {
@@ -61,7 +62,7 @@ async function sendRetentionViaInstance(opts: {
   }
   const result = await sendWhatsAppMessage({
     instanceName: instanceName || (isWhapi ? "whapi-superadmin" : ""),
-    phone,
+    phone: phoneKey,
     mediaCategory: "text",
     text,
     isWhapi: !!isWhapi,
@@ -132,21 +133,41 @@ type CustomerWithMeta = Customer & { _dupCount?: number };
 
 /**
  * Colapsa cadastros com o mesmo WhatsApp (duplicata / 2 casas no mesmo número).
- * Sem telefone válido: mantém cada um (não dá pra deduplicar).
+ * Sem telefone válido: colapsa por nome + data de nascimento completa (quando houver).
  */
+function nameBirthDedupeKey(c: Customer): string | null {
+  const name = String(c.name || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+  const b = parseBirth(c.data_nascimento);
+  if (!name || !b) return null;
+  return `${name}|${b.year}-${String(b.month).padStart(2, "0")}-${String(b.day).padStart(2, "0")}`;
+}
+
 function dedupeByWhatsApp(customers: Customer[]): CustomerWithMeta[] {
   const byPhone = new Map<string, Customer[]>();
-  const noPhone: Customer[] = [];
+  const byNameBirth = new Map<string, Customer[]>();
+  const orphans: Customer[] = [];
 
   for (const c of customers) {
-    const key = retentionPhoneKey(c.phone_whatsapp);
-    if (!key) {
-      noPhone.push(c);
+    const phoneKey = retentionPhoneKey(c.phone_whatsapp);
+    if (phoneKey) {
+      const arr = byPhone.get(phoneKey) || [];
+      arr.push(c);
+      byPhone.set(phoneKey, arr);
       continue;
     }
-    const arr = byPhone.get(key) || [];
-    arr.push(c);
-    byPhone.set(key, arr);
+    const nb = nameBirthDedupeKey(c);
+    if (nb) {
+      const arr = byNameBirth.get(nb) || [];
+      arr.push(c);
+      byNameBirth.set(nb, arr);
+      continue;
+    }
+    orphans.push(c);
   }
 
   const pickBest = (group: Customer[]): CustomerWithMeta => {
@@ -163,7 +184,8 @@ function dedupeByWhatsApp(customers: Customer[]): CustomerWithMeta[] {
 
   const out: CustomerWithMeta[] = [];
   for (const group of byPhone.values()) out.push(pickBest(group));
-  for (const c of noPhone) out.push({ ...c, _dupCount: 1 });
+  for (const group of byNameBirth.values()) out.push(pickBest(group));
+  for (const c of orphans) out.push({ ...c, _dupCount: 1 });
   return out;
 }
 
