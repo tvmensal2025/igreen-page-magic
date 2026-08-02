@@ -491,6 +491,11 @@ export function PanfletoModal({
           <Button variant="outline" onClick={copyLink} className="gap-2">
             <Copy className="w-4 h-4" /> Copiar link
           </Button>
+          <Button variant="secondary" onClick={downloadQrOnly} disabled={rendering} className="gap-2">
+            {rendering ? <Loader2 className="w-4 h-4 animate-spin" /> : <QrCode className="w-4 h-4" />}
+            Baixar só o QR Code
+          </Button>
+
           <Button variant="outline" onClick={downloadPNG} disabled={rendering} className="gap-2">
             {rendering ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
             Baixar PNG
