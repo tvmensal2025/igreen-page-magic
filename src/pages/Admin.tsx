@@ -29,15 +29,18 @@ import { GuideEntryButton } from "@/features/onboarding/GuideEntryButton";
 import { TAB_GUIDE_SLUG, resolveWhatsAppGuideSlug } from "@/features/help/tabGuideMap";
 import { useAlertasBoletosCount } from "@/components/admin/financeiro/useAlertasBoletosCount";
 import { useUserRole } from "@/hooks/useUserRole";
+import { lazyNamed } from "@/lib/lazyNamed";
+
 
 
 
 // Heavy panels — lazy load on demand
 const QRCodeSVG = lazy(() => import("qrcode.react").then(m => ({ default: m.QRCodeSVG })));
-const DashboardTab = lazy(() => import("@/components/admin/DashboardTab").then(m => {
-  if (!m.DashboardTab) throw new Error("DashboardTab export missing");
-  return { default: m.DashboardTab };
-}));
+const DashboardTab = lazyNamed<React.ComponentProps<typeof import("@/components/admin/DashboardTab")["DashboardTab"]>>(
+  () => import("@/components/admin/DashboardTab"),
+  "DashboardTab",
+);
+
 const DadosTab = lazy(() => import("@/components/admin/DadosTab").then(m => ({ default: m.DadosTab })));
 const WhatsAppConnectionSettingsCard = lazy(() =>
   import("@/components/admin/WhatsAppConnectionSettingsCard").then((m) => ({
@@ -64,10 +67,11 @@ const ParceirosTab = lazy(() => import("@/components/admin/parceiros/ParceirosTa
 const ConversaoCockpit = lazy(() => import("@/components/admin/conversao/ConversaoCockpit").then(m => ({ default: m.ConversaoCockpit })));
 const AgendamentosHub = lazy(() => import("@/components/whatsapp/AgendamentosHub").then(m => ({ default: m.AgendamentosHub })));
 const AudioStudioPanel = lazy(() => import("@/components/admin/AudioStudio").then(m => ({ default: m.AudioStudio })));
-const VozTab = lazy(() => import("@/components/admin/voz/VozTab").then(m => {
-  if (!m.VozTab) throw new Error("VozTab export missing");
-  return { default: m.VozTab };
-}));
+const VozTab = lazyNamed<React.ComponentProps<typeof import("@/components/admin/voz/VozTab")["VozTab"]>>(
+  () => import("@/components/admin/voz/VozTab"),
+  "VozTab",
+);
+
 const AcademyTab = lazy(() => import("@/components/admin/academy/AcademyTab").then(m => ({ default: m.AcademyTab })));
 const VendaPlataformaPanel = lazy(() =>
   import("@/components/superadmin/VendaPlataformaPanel").then((m) => ({ default: m.VendaPlataformaPanel })),
