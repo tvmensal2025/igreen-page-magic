@@ -12,7 +12,8 @@ import { Slider } from "@/components/ui/slider";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Download, Upload, Trash2, ImageIcon, FileText, Lock, Unlock, Copy, ExternalLink, Check, Share2, Loader2 } from "lucide-react";
+import { Download, Upload, Trash2, ImageIcon, FileText, Lock, Unlock, Copy, ExternalLink, Check, Share2, Loader2, QrCode } from "lucide-react";
+import { downloadQrOnlyPng } from "@/components/admin/qrOnlyDownload";
 import { QRCodeSVG } from "qrcode.react";
 import jsPDF from "jspdf";
 import {
