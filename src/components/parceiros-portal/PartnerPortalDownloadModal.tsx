@@ -340,6 +340,21 @@ export function PartnerPortalDownloadModal({
             )}
             Baixar os dois (PNG)
           </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full gap-1.5"
+            disabled={!liveUrl || !!busy}
+            onClick={() => void handleDownloadQrOnly()}
+          >
+            {busy === "qr" ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <QrCode className="h-4 w-4" />
+            )}
+            Baixar só o QR Code (etiqueta)
+          </Button>
+
         </DialogFooter>
       </DialogContent>
     </Dialog>
