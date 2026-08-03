@@ -41,6 +41,7 @@ import {
   buildBannerNameRows,
 } from "./BannerNamesTable";
 import { BannersRanking } from "./BannersRanking";
+import { MyBannersInsights } from "./MyBannersInsights";
 import { PartnerBannersPanel } from "./PartnerBannersPanel";
 import type { BannerSpot } from "./ConsultantBannerDownloadModal";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
@@ -400,6 +401,16 @@ export function BannersHub({
         />
       ) : (
         <div className="space-y-4">
+          <MyBannersInsights
+            initials={initials}
+            igreenId={igreenId}
+            defaultPhrase={defaultPhrase}
+            spots={spots}
+            scanCounts={scanCounts}
+            leadCounts={leadCounts}
+            loading={loadingCounts}
+            onOpenDownload={onOpenDownload}
+          />
           <Alert className="border-primary/20 bg-primary/5">
             <Info className="h-4 w-4 text-primary" />
             <AlertTitle className="text-sm">
