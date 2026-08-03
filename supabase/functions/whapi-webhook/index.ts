@@ -2297,7 +2297,7 @@ Deno.serve(async (req) => {
 
     // ─── 🆘 HANDOFF: cliente pediu pra falar com humano ────────────────
     if (messageText && detectHandoffIntent(messageText)) {
-      const pausedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      const pausedUntil = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
       await supabase.from("customers").update({
         bot_paused_until: pausedUntil,
         bot_paused_reason: "handoff_request",

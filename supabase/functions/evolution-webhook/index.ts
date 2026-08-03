@@ -2349,6 +2349,40 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ─── Handoff manual detectado pelo parser (Evolution) ─────────────
+    // Se o parser detectou um pedido explícito de atendimento humano.
+    if ((parsed as any).handoffIntent && (customer as any).id) {
+      const pausedUntil = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+      await supabase.from("customers").update({
+        bot_paused_until: pausedUntil,
+        bot_paused_reason: "handoff_request",
+      }).eq("id", customer.id);
+      
+      await supabase.from("bot_handoff_alerts").insert({
+        customer_id: customer.id,
+        consultant_id: instanceData.consultant_id,
+        phone,
+        reason: "client_requested_human",
+        user_message: (messageText || "").slice(0, 500),
+      });
+
+      const handoffReply = `Tudo bem! 🙏 Vou te transferir agora para ${nomeRepresentante}. Em alguns instantes alguém vai responder por aqui.`;
+      try { await sender.sendText(remoteJid, handoffReply); } catch (e: any) { console.error("erro handoff reply:", e); }
+      
+      await supabase.from("conversations").insert({
+        customer_id: customer.id,
+        message_direction: "outbound",
+        message_text: handoffReply,
+        message_type: "text",
+        conversation_step: (customer as any).conversation_step,
+      });
+
+      console.log(`🆘 Handoff ativado via intenção para ${phone} (${customer.id})`);
+      return new Response(JSON.stringify({ ok: true, msg: "handoff_triggered", paused_until: pausedUntil }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // ─── 7.1.b) AI vs Flow exclusivity gate (bugfix §2.10 + §2.17) ────
     // Em aguardando_conta, se o cliente mandou MÍDIA (foto da conta), NÃO chamar IA;
     // o bot hardcoded faz OCR + envia botões SIM/NÃO/EDITAR.

@@ -306,7 +306,7 @@ export function HandoffLeadsDialog({
               <span className="leading-snug">Atendimentos pausados</span>
             </DialogTitle>
             <DialogDescription className="text-left text-xs sm:text-sm leading-relaxed">
-              Leads em que a IA pausou. <strong>Voltar</strong> = devolve ao ciclo ·{" "}
+              Leads em que a IA pausou. <strong>Voltar</strong> = devolve ao ciclo (48h de validade no handoff) ·{" "}
               <strong>Esquecer</strong> = já cliente / fora do ciclo (Zap manual ok) ·{" "}
               <strong>Bloquear</strong> = nunca mais mensagem automática (sai da lista).
               Clientes da carteira e bloqueados não aparecem aqui.
