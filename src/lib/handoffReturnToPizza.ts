@@ -308,7 +308,23 @@ export async function loadHandoffLeads(consultantId: string): Promise<HandoffLea
   for (const r of cadenceHandoff || []) {
     if (r.customer_id) customerIds.add(r.customer_id);
   }
+  
+  // Inclui também clientes com pausa manual ou assigned_human_id
   for (const c of humanPausedCustomers) customerIds.add(c.id);
+
+  // NOVO: Inclui leads que tiveram bot_paused por silêncio/takeover (mesmo sem alert explícito)
+  const { data: silentHandoffs } = await supabase
+    .from("customers")
+    .select("id")
+    .eq("consultant_id", consultantId)
+    .eq("bot_paused", true)
+    .is("do_not_contact", false)
+    .order("updated_at", { ascending: false })
+    .limit(100);
+    
+  for (const c of silentHandoffs || []) {
+    customerIds.add(c.id);
+  }
 
   if (!customerIds.size) return [];
 

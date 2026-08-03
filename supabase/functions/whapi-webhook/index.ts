@@ -2205,9 +2205,18 @@ Deno.serve(async (req) => {
           conversation_step: customer.conversation_step,
           external_message_id: messageId || null,
         });
-        const _pausedUntil = (customer as any).bot_paused_until && new Date((customer as any).bot_paused_until) > new Date();
-        const _reason = (customer as any).bot_paused_reason || ((customer as any).assigned_human_id ? "humano_assumiu" : (_pausedUntil ? "paused_until" : "manual"));
-        console.log(`🔇 Bot pausado para ${phone} (flag=${(customer as any).bot_paused === true}, human=${(customer as any).assigned_human_id || "—"}, until=${(customer as any).bot_paused_until || "—"}, reason=${_reason}) — ignorando msg`);
+        const isPausedByHuman = (customer as any).bot_paused === true || (customer as any).assigned_human_id;
+        const pausedUntil = (customer as any).bot_paused_until && new Date((customer as any).bot_paused_until) > new Date();
+        
+        // Regra 48h (Rafa 2026-08-03): Se o bot está pausado para atendimento humano,
+        // mas o consultor não fala nada há 48h, a próxima msg do lead DEVE "acordar" o bot.
+        const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+        const lastActivity = (customer as any).updated_at ? new Date((customer as any).updated_at) : new Date();
+        const silenceExpired = isPausedByHuman && lastActivity < fortyEightHoursAgo;
+
+        if ((isPausedByHuman || pausedUntil) && !silenceExpired) {
+          const _reason = (customer as any).bot_paused_reason || ((customer as any).assigned_human_id ? "humano_assumiu" : (pausedUntil ? "paused_until" : "manual"));
+          console.log(`🔇 Bot pausado para ${phone} (flag=${(customer as any).bot_paused === true}, human=${(customer as any).assigned_human_id || "—"}, until=${(customer as any).bot_paused_until || "—"}, reason=${_reason}) — ignorando msg`);
 
         // Cliente respondeu durante o atendimento humano: avisa o consultor.
         // Fire-and-forget (dedup interno). Cobre texto, imagem, áudio e documento.
@@ -2297,7 +2306,7 @@ Deno.serve(async (req) => {
 
     // ─── 🆘 HANDOFF: cliente pediu pra falar com humano ────────────────
     if (messageText && detectHandoffIntent(messageText)) {
-      const pausedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+      const pausedUntil = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
       await supabase.from("customers").update({
         bot_paused_until: pausedUntil,
         bot_paused_reason: "handoff_request",

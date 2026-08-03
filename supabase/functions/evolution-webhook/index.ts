@@ -1996,8 +1996,14 @@ Deno.serve(async (req) => {
 
     // ─── 6.1) BOT PAUSED — handoff humano ativo ────────────────────────
     // Se um humano assumiu, NÃO responder. Avisa o consultor (texto/mídia).
-    // Usa helper canônico (bot_paused OU assigned_human_id OU until).
-    if (isCustomerPausedByHuman(customer as any)) {
+    // Regra 48h (Rafa 2026-08-03): Se o bot está pausado para atendimento humano,
+    // mas o consultor não fala nada há 48h, a próxima msg do lead DEVE "acordar" o bot.
+    const isPausedByHuman = isCustomerPausedByHuman(customer as any);
+    const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+    const lastActivity = (customer as any).updated_at ? new Date((customer as any).updated_at) : new Date();
+    const silenceExpired = isPausedByHuman && lastActivity < fortyEightHoursAgo;
+
+    if (isPausedByHuman && !silenceExpired) {
       const _autoReason = String((customer as any).bot_paused_reason || "").toLowerCase();
       // Só recovery automático. Takeover humano NUNCA despausa sozinho.
       const _isAutoStuckPause = _autoReason.startsWith("lead_travado_recovery")
@@ -2054,7 +2060,7 @@ Deno.serve(async (req) => {
         }
       }
     }
-    if (isCustomerPausedByHuman(customer as any)) {
+    if (isPausedByHuman && !silenceExpired) {
       console.log(`🤝 [handoff] bot pausado para ${customer.id} (motivo: ${(customer as any).bot_paused_reason}). Skip auto-reply.`);
       try {
         const notifyTo = (customer as any).assigned_human_id || (customer as any).consultant_id || instanceData.consultant_id;
@@ -2347,6 +2353,40 @@ Deno.serve(async (req) => {
           message: e instanceof Error ? e.message : String(e),
         });
       }
+    }
+
+    // ─── Handoff manual detectado pelo parser (Evolution) ─────────────
+    // Se o parser detectou um pedido explícito de atendimento humano.
+    if ((parsed as any).handoffIntent && (customer as any).id) {
+      const pausedUntil = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+      await supabase.from("customers").update({
+        bot_paused_until: pausedUntil,
+        bot_paused_reason: "handoff_request",
+      }).eq("id", customer.id);
+      
+      await supabase.from("bot_handoff_alerts").insert({
+        customer_id: customer.id,
+        consultant_id: instanceData.consultant_id,
+        phone,
+        reason: "client_requested_human",
+        user_message: (messageText || "").slice(0, 500),
+      });
+
+      const handoffReply = `Tudo bem! 🙏 Vou te transferir agora para ${nomeRepresentante}. Em alguns instantes alguém vai responder por aqui.`;
+      try { await sender.sendText(remoteJid, handoffReply); } catch (e: any) { console.error("erro handoff reply:", e); }
+      
+      await supabase.from("conversations").insert({
+        customer_id: customer.id,
+        message_direction: "outbound",
+        message_text: handoffReply,
+        message_type: "text",
+        conversation_step: (customer as any).conversation_step,
+      });
+
+      console.log(`🆘 Handoff ativado via intenção para ${phone} (${customer.id})`);
+      return new Response(JSON.stringify({ ok: true, msg: "handoff_triggered", paused_until: pausedUntil }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
     // ─── 7.1.b) AI vs Flow exclusivity gate (bugfix §2.10 + §2.17) ────

@@ -1171,17 +1171,30 @@ Deno.serve(async (req) => {
   const { data: custRows } = await supabase
     .from("customers")
     .select(
-      "id, phone_whatsapp, bot_paused, bot_paused_until, assigned_human_id, do_not_contact, customer_origin, status, is_converted, pos_venda_stage, pos_venda_recadastro_at, andamento_igreen, conversation_step, portal_submitted_at",
+      "id, phone_whatsapp, bot_paused, bot_paused_until, assigned_human_id, do_not_contact, customer_origin, status, is_converted, pos_venda_stage, pos_venda_recadastro_at, andamento_igreen, conversation_step, portal_submitted_at, updated_at",
     )
     .in("id", customerIds);
   const custById = new Map((custRows || []).map((c: any) => [c.id, c]));
   const blockedCustomers = new Set(
     (custRows || [])
-      .filter((c: any) =>
-        !!c.do_not_contact ||
-        !!c.bot_paused ||
-        !!c.assigned_human_id ||
-        (c.bot_paused_until && new Date(c.bot_paused_until) > now))
+      .filter((c: any) => {
+        // do_not_contact e bot_paused_until no futuro sempre bloqueiam.
+        if (!!c.do_not_contact) return true;
+        if (c.bot_paused_until && new Date(c.bot_paused_until) > now) return true;
+
+        // assigned_human_id e bot_paused (flag manual) bloqueiam se recentes (< 48h).
+        // Se já passou de 48h de silêncio do consultor, o lead volta ao ciclo.
+        const isPausedByHuman = !!c.bot_paused || !!c.assigned_human_id;
+        if (isPausedByHuman) {
+          // Busca data da última interação (no customers é simplificado; no state temos last_action_at).
+          // Usamos a flag de 48h baseada na atualização do registro como proxy de segurança.
+          const lastInteraction = c.updated_at ? new Date(c.updated_at) : now;
+          const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
+          if (lastInteraction > fortyEightHoursAgo) return true;
+        }
+        
+        return false;
+      })
       .map((c: any) => c.id),
   );
 
