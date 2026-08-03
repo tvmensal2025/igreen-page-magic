@@ -41,6 +41,7 @@ import {
   buildBannerNameRows,
 } from "./BannerNamesTable";
 import { BannersRanking } from "./BannersRanking";
+import { MyBannersInsights } from "./MyBannersInsights";
 import { PartnerBannersPanel } from "./PartnerBannersPanel";
 import type { BannerSpot } from "./ConsultantBannerDownloadModal";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
