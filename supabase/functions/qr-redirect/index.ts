@@ -62,7 +62,7 @@ function resolveQrMessage(
  * Banner próprio já chega ao WhatsApp do consultor correto pelo `igreen_id` do
  * link vivo. Portanto, a frase salva deve aparecer exatamente como foi escrita:
  * o código/keyword do local serve para telemetria do clique, não para poluir a
- * primeira mensagem do lead. Parceiros continuam usando keyword + `#R` abaixo.
+ * primeira mensagem do lead. Parceiros continuam usando apenas a keyword.
  */
 function resolveConsultantBannerMessage(
   spotPhrase: string | null | undefined,
@@ -398,7 +398,6 @@ Deno.serve(async (req) => {
         message = resolveQrMessage(
           custom || (msgParam ?? "").trim() || partner.qr_phrase,
           kw || keywordParam || partner.nome,
-          partner.short_code,
         );
       } else {
         const fromQuery = (keywordParam ?? "").trim();
@@ -414,7 +413,7 @@ Deno.serve(async (req) => {
         // compatibilidade para QR antigo quando ainda não existe frase salva.
         const phraseSource =
           (partner.qr_phrase as string | null) || (msgParam ?? "").trim();
-        message = resolveQrMessage(phraseSource, keyword, partner.short_code);
+        message = resolveQrMessage(phraseSource, keyword);
       }
     }
 
