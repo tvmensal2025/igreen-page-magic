@@ -18,7 +18,7 @@ import {
 } from "../_shared/attendance-channel-env.ts";
 
 const SITE_URL = "https://igreen.institutodossonhos.com.br";
-const QR_REDIRECT_VERSION = "2026-08-03-consultant-phrase-exact-v4";
+const QR_REDIRECT_VERSION = "2026-08-03-keyword-only-v5";
 const DEFAULT_MESSAGE =
   "Oi! 👋 Vi sobre a iGreen Energy e quero saber como economizar na minha conta de luz.";
 const QR_PHRASE_MAX = 600;
@@ -32,11 +32,17 @@ function normalizePhrase(value: string): string {
     .toLowerCase().replace(/[^\w\s]/g, " "));
 }
 
-/** Resolver local para o deploy não depender de bundle compartilhado em cache. */
+/**
+ * Resolver local para o deploy não depender de bundle compartilhado em cache.
+ *
+ * ATRIBUIÇÃO = SOMENTE KEYWORD (decisão 2026-08-03). O marcador `#R{short_code}`
+ * foi removido do texto: cada consultor/parceiro atende em instância própria
+ * (Whapi do superadmin ou Evolution do consultor), então a keyword não colide
+ * entre canais. O webhook ainda entende `#R` de QR antigo já impresso.
+ */
 function resolveQrMessage(
   qrPhrase: string | null | undefined,
   keyword: string | null | undefined,
-  shortCode?: string | null,
 ): string {
   const custom = tidyPhrase(qrPhrase ?? "");
   const kw = tidyPhrase(keyword ?? "");
@@ -49,10 +55,6 @@ function resolveQrMessage(
     const withKeyword = tidyPhrase(`${message} ${kw}`);
     if (withKeyword.length <= QR_PHRASE_MAX) message = withKeyword;
   }
-  const code = String(shortCode ?? "").replace(/\D/g, "");
-  if (/^\d{3,}$/.test(code) && !new RegExp(`#?\\s*R\\s*${code}\\b`, "i").test(message)) {
-    message = tidyPhrase(`${message} #R${code}`);
-  }
   return message;
 }
 
@@ -60,7 +62,7 @@ function resolveQrMessage(
  * Banner próprio já chega ao WhatsApp do consultor correto pelo `igreen_id` do
  * link vivo. Portanto, a frase salva deve aparecer exatamente como foi escrita:
  * o código/keyword do local serve para telemetria do clique, não para poluir a
- * primeira mensagem do lead. Parceiros continuam usando keyword + `#R` abaixo.
+ * primeira mensagem do lead. Parceiros continuam usando apenas a keyword.
  */
 function resolveConsultantBannerMessage(
   spotPhrase: string | null | undefined,
@@ -396,7 +398,6 @@ Deno.serve(async (req) => {
         message = resolveQrMessage(
           custom || (msgParam ?? "").trim() || partner.qr_phrase,
           kw || keywordParam || partner.nome,
-          partner.short_code,
         );
       } else {
         const fromQuery = (keywordParam ?? "").trim();
@@ -412,7 +413,7 @@ Deno.serve(async (req) => {
         // compatibilidade para QR antigo quando ainda não existe frase salva.
         const phraseSource =
           (partner.qr_phrase as string | null) || (msgParam ?? "").trim();
-        message = resolveQrMessage(phraseSource, keyword, partner.short_code);
+        message = resolveQrMessage(phraseSource, keyword);
       }
     }
 

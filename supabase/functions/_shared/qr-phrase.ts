@@ -132,7 +132,10 @@ export function resolveQrMessage(
     }
   }
 
-  return appendShortCodeMarker(base, code);
+  // Atribuição por KEYWORD apenas (2026-08-03): o marcador `#R` não é mais
+  // anexado ao texto. `shortCode` fica no contrato só por compatibilidade.
+  void code;
+  return base;
 }
 
 
