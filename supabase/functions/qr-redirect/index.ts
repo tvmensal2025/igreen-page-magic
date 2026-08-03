@@ -18,7 +18,7 @@ import {
 } from "../_shared/attendance-channel-env.ts";
 
 const SITE_URL = "https://igreen.institutodossonhos.com.br";
-const QR_REDIRECT_VERSION = "2026-08-02-keyword-natural-v3";
+const QR_REDIRECT_VERSION = "2026-08-03-consultant-phrase-exact-v4";
 const DEFAULT_MESSAGE =
   "Oi! 👋 Vi sobre a iGreen Energy e quero saber como economizar na minha conta de luz.";
 const QR_PHRASE_MAX = 600;
@@ -54,6 +54,24 @@ function resolveQrMessage(
     message = tidyPhrase(`${message} #R${code}`);
   }
   return message;
+}
+
+/**
+ * Banner próprio já chega ao WhatsApp do consultor correto pelo `igreen_id` do
+ * link vivo. Portanto, a frase salva deve aparecer exatamente como foi escrita:
+ * o código/keyword do local serve para telemetria do clique, não para poluir a
+ * primeira mensagem do lead. Parceiros continuam usando keyword + `#R` abaixo.
+ */
+function resolveConsultantBannerMessage(
+  spotPhrase: string | null | undefined,
+  consultantDefaultPhrase: string | null | undefined,
+): string {
+  const custom = tidyPhrase(spotPhrase ?? "");
+  if (custom) return tidyPhrase(custom.slice(0, QR_PHRASE_MAX));
+  const fallback = tidyPhrase(consultantDefaultPhrase ?? "");
+  return fallback
+    ? tidyPhrase(fallback.slice(0, QR_PHRASE_MAX))
+    : DEFAULT_MESSAGE;
 }
 
 const corsHeaders = {
@@ -264,17 +282,18 @@ Deno.serve(async (req) => {
           .eq("code", spotParam)
           .maybeSingle();
         if (spot) {
-          const kw = String(spot.keyword || "").trim();
           const custom = String(spot.phrase || "").trim();
-          message = resolveQrMessage(custom || null, kw || spotParam, null);
+          message = resolveConsultantBannerMessage(
+            custom || null,
+            consultant.banner_default_phrase,
+          );
           liveBannerResolved = true;
           eventTarget = `banner_spot:${spotParam}`;
         } else {
-          // Spot inexistente: não quebra — frase padrão + código no texto.
-          message = resolveQrMessage(
-            consultant.banner_default_phrase,
-            spotParam,
+          // Spot inexistente: não quebra nem expõe o código interno no texto.
+          message = resolveConsultantBannerMessage(
             null,
+            consultant.banner_default_phrase,
           );
           liveBannerResolved = true;
           eventTarget = `banner_spot:${spotParam}`;

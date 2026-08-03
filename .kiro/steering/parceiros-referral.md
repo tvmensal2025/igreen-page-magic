@@ -136,6 +136,7 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
 - `notifyPartnerNewLead` **pula** lead com `do_not_contact` (salvo `force`).
 - Telemetria `qr-redirect`: `banner_root` / `banner_spot:{code}` / `partner:{short}` / `partner:{short}:{spot}`. Insert de `qr_scan` é **await** (não fire-and-forget). Canal WA do redirect = Whapi **ou** Evolution via `resolveConsultantConnectedWaPhone`.
 - Keywords espelho em `consultants.banner_keywords` e `referral_partners.keywords` — sync **une** (nunca remove histórico ao arquivar).
+- **Banner próprio do consultor:** a mensagem do WhatsApp é exatamente `consultant_banner_spots.phrase` (fallback `consultants.banner_default_phrase`), sem anexar `keyword`, código do spot ou “indicação”. O `igreen_id` do link já define o consultor e o path do spot continua registrando `page_events.event_target=banner_spot:{code}`. Keywords e marcador `#R` permanecem obrigatórios somente nos banners de **parceiros**, onde existe atribuição de indicador.
 
 ---
 
