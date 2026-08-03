@@ -22,7 +22,7 @@ export const FROZEN_PAUSE_REASONS = new Set([
   "manual_admin_clear_sla_backlog",
   "dnc",
   "opt_out",
-  "handoff_humano",
+  // "handoff_humano", // REMOVIDO: volta ao ciclo após 48h de silêncio via motor
   "invalid_phone",
 ]);
 
