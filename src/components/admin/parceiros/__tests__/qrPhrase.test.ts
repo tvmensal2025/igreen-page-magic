@@ -111,22 +111,17 @@ describe("resolveQrMessage — decisão da mensagem final", () => {
 
 });
 
-describe("resolveQrMessage — marcador determinístico #R{short_code}", () => {
-  it("anexa #R{code} ao final quando shortCode é fornecido", () => {
+describe("resolveQrMessage — atribuição SÓ por keyword (sem marcador #R)", () => {
+  it("não anexa #R mesmo recebendo shortCode", () => {
     const msg = resolveQrMessage(null, "Valdenice", "482917");
-    expect(msg).toContain("#R482917");
+    expect(msg).not.toMatch(/#R/i);
     expect(msg).toContain("Valdenice");
   });
 
-  it("não duplica o marcador se já estiver na frase", () => {
+  it("preserva #R já digitado na frase salva pelo consultor", () => {
     const custom = "Oi, vim pela Valdenice #R482917 hoje";
     const msg = resolveQrMessage(custom, "Valdenice", "482917");
-    expect((msg.match(/#R482917/gi) || []).length).toBe(1);
-  });
-
-  it("ignora shortCode inválido (não numérico ou curto)", () => {
-    const msg = resolveQrMessage(null, "Valdenice", "ab");
-    expect(msg).not.toMatch(/#R/i);
+    expect(msg).toBe(custom);
   });
 
   it("aceita shortCode null/undefined sem quebrar", () => {
@@ -134,12 +129,12 @@ describe("resolveQrMessage — marcador determinístico #R{short_code}", () => {
     expect(resolveQrMessage(null, "Valdenice", undefined)).not.toMatch(/#R/i);
   });
 
-  it("frase longa cai na padrão, mas mantém o marcador", () => {
+  it("frase longa é respeitada e continua sem marcador", () => {
     const longa =
       "Olá, a Valdenice me indicou você porque quero economizar na minha conta de luz e queria saber mais.";
     const msg = resolveQrMessage(longa, "Valdenice", "482917");
-    expect(msg).toContain("#R482917");
-    expect(msg).toContain("Valdenice");
+    expect(msg).toBe(longa);
+    expect(msg).not.toMatch(/#R/i);
   });
 });
 
