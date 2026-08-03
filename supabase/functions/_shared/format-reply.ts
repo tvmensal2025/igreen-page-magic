@@ -127,14 +127,14 @@ export function emphasizeKeyTerms(text: string): string {
  * Parágrafo inteiro que é só CTA agressivo / botão fantasma.
  */
 const PUSHY_PARA_START =
-  /^(?:👇\s*)?(?:Posso seguir com|Quer (?:que eu )?(?:já )?(?:comece|adiante|siga com)|Bora (?:deixar tudo pronto|cadastrar|ativar)|Faz sentido pra você seguir|Vamos seguir com (?:o )?seu cadastro|[ÉEe] s[oó] tocar|escolher uma das op)/iu;
+  /^(?:👇\s*)?(?:Posso seguir com|Quer (?:que eu )?(?:já )?(?:comece|adiante|siga com)|Bora (?:deixar tudo pronto|cadastrar|ativar)|Faz sentido pra você seguir|Vamos seguir com (?:o )?seu cadastro|[ÉEe] s[oó] tocar|escolher uma das op|você prefere|qual é o seu)/iu;
 
 /**
  * Frase final pushy no mesmo parágrafo (ex.: "... todo mês. Posso seguir com o seu cadastro para já darmos...?").
  * Cobre as variantes reais vistas em produção.
  */
 const PUSHY_TRAILING_SENTENCE =
-  /(?:^|(?<=[.!?…]))\s*(?:👇\s*)?(?:Posso seguir com[^.!?\n]{0,160}|Quer (?:que eu )?(?:já )?(?:comece|adiante|siga com)[^.!?\n]{0,100}|Bora (?:deixar tudo pronto|cadastrar|ativar)[^.!?\n]{0,80}|Faz sentido pra você seguir[^.!?\n]{0,80}|Vamos seguir com (?:o )?seu cadastro[^.!?\n]{0,80}|[ÉEe] s[oó] tocar[^.!?\n]{0,80}|escolher uma das op[cç][oõ]es[^.!?\n]{0,60})\?[^\S\n]*(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]*)?\s*$/iu;
+  /(?:^|(?<=[.!?…]))\s*(?:👇\s*)?(?:Posso seguir com[^.!?\n]{0,160}|Quer (?:que eu )?(?:já )?(?:comece|adiante|siga com)[^.!?\n]{0,100}|Bora (?:deixar tudo pronto|cadastrar|ativar)[^.!?\n]{0,80}|Faz sentido pra você seguir[^.!?\n]{0,80}|Vamos seguir com (?:o )?seu cadastro[^.!?\n]{0,80}|[ÉEe] s[oó] tocar[^.!?\n]{0,80}|escolher uma das op[cç][oõ]es[^.!?\n]{0,60}|você prefere[^.!?\n]{0,60}|qual é o seu[^.!?\n]{0,60})\?[^\S\n]*(?:[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]*)?\s*$/iu;
 
 /**
  * Remove CTAs agressivos de cadastro E CTAs fantasma de botão
@@ -177,7 +177,7 @@ export function stripPushyCadastroCta(text: string): string {
  * O reemitStepButtons cuida do CTA clicável em mensagem separada.
  */
 export const SOFT_FLOW_CLOSE =
-  "Qualquer outra dúvida, é só perguntar.";
+  "Se tiver qualquer outra dúvida, é só me chamar.";
 
 /**
  * True se o texto já fecha com pergunta / ponte de retorno (não precisa anexar).
