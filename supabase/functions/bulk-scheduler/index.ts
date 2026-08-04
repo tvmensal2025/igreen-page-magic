@@ -347,6 +347,7 @@ Deno.serve(async (req) => {
       // F12/F16: O áudio da Sofia (ou customizado no wizard) deve ser respeitado se configurado.
       // O usuário solicitou que entrem em handoff por padrão.
       const action = cfg.afterSendAction || "handoff";
+      const tDigits = t.phone.replace(/\D/g, "");
 
       const { data: lead } = await supabase.from("customers")
         .select("id")
