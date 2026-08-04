@@ -141,32 +141,32 @@ export function ScheduleStep({ config, onChange, totalContacts }: Props) {
           ))}
         </div>
       </div>
-144: 
-145:       {/* Post-send action */}
-146:       <div className="rounded-xl border border-border/40 bg-secondary/10 p-3 space-y-3">
-147:         <div className="flex items-center gap-2"><Zap className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-bold">Após o envio</span></div>
-148:         <div className="grid grid-cols-2 gap-2">
-149:           <button
-150:             type="button" onClick={() => onChange({ ...config, afterSendAction: "handoff" })}
-151:             className={`px-3 py-2 rounded-lg text-left border transition-all ${config.afterSendAction !== "grupo_a" ? "border-primary/50 bg-primary/10" : "border-border/40 bg-secondary/20"}`}
-152:           >
-153:             <p className="text-xs font-bold">Aguardar Humano</p>
-154:             <p className="text-[10px] text-muted-foreground">Pausa o bot (Handoff 48h)</p>
-155:           </button>
-156:           <button
-157:             type="button" onClick={() => onChange({ ...config, afterSendAction: "grupo_a" })}
-158:             className={`px-3 py-2 rounded-lg text-left border transition-all ${config.afterSendAction === "grupo_a" ? "border-primary/50 bg-primary/10" : "border-border/40 bg-secondary/20"}`}
-159:           >
-160:             <p className="text-xs font-bold">Auto-Cadastro (IA)</p>
-161:             <p className="text-[10px] text-muted-foreground">Inicia funil Sofia Grupo A</p>
-162:           </button>
-163:         </div>
-164:         <p className="text-[10px] text-muted-foreground leading-tight">
-165:           {config.afterSendAction === "grupo_a" 
-166:             ? "Os leads serão direcionados para o funil automático de cadastro (Grupo A) assim que receberem a mensagem."
-167:             : "O robô será pausado para cada lead, permitindo que você assuma a conversa manualmente no WhatsApp."}
-168:         </p>
-169:       </div>
+
+      {/* Post-send action */}
+      <div className="rounded-xl border border-border/40 bg-secondary/10 p-3 space-y-3">
+        <div className="flex items-center gap-2"><Zap className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-bold">Após o envio</span></div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button" onClick={() => onChange({ ...config, afterSendAction: "handoff" })}
+            className={`px-3 py-2 rounded-lg text-left border transition-all ${config.afterSendAction !== "grupo_a" ? "border-primary/50 bg-primary/10" : "border-border/40 bg-secondary/20"}`}
+          >
+            <p className="text-xs font-bold">Aguardar Humano</p>
+            <p className="text-[10px] text-muted-foreground">Pausa o bot (Handoff 48h)</p>
+          </button>
+          <button
+            type="button" onClick={() => onChange({ ...config, afterSendAction: "grupo_a" })}
+            className={`px-3 py-2 rounded-lg text-left border transition-all ${config.afterSendAction === "grupo_a" ? "border-primary/50 bg-primary/10" : "border-border/40 bg-secondary/20"}`}
+          >
+            <p className="text-xs font-bold">Auto-Cadastro (IA)</p>
+            <p className="text-[10px] text-muted-foreground">Inicia funil Sofia Grupo A</p>
+          </button>
+        </div>
+        <p className="text-[10px] text-muted-foreground leading-tight">
+          {config.afterSendAction === "grupo_a" 
+            ? "Os leads serão direcionados para o funil automático de cadastro (Grupo A) assim que receberem a mensagem."
+            : "O robô será pausado para cada lead, permitindo que você assuma a conversa manualmente no WhatsApp."}
+        </p>
+      </div>
 
       {/* Schedule */}
       <div className="rounded-xl border border-border/40 bg-secondary/10 p-3 space-y-3">
