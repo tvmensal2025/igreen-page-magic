@@ -344,9 +344,9 @@ Deno.serve(async (req) => {
 
       const jid = toJid(t.phone);
 
-      // F12/F16: Antes de enviar massa, pausa o bot do lead se ele existir.
-      // Isso evita que a IA responda ou o motor A/B/C interfira durante o disparo.
-      // O motivo 'bulk_pro' faz com que ele expire em 48h (handoff), voltando à pizza se não houver resposta.
+      // F12/F16: Antes de enviar massa, pausa o bot ou joga no Grupo A.
+      const action = cfg.afterSendAction || "handoff";
+
       const { data: lead } = await supabase.from("customers")
         .select("id")
         .eq("phone_whatsapp", tDigits)
@@ -354,14 +354,30 @@ Deno.serve(async (req) => {
         .maybeSingle();
 
       if (lead?.id) {
-        await supabase.from("customers")
-          .update({
-            bot_paused: true,
-            bot_paused_reason: "bulk_pro",
-            bot_paused_at: new Date().toISOString(),
-            assigned_human_id: camp.consultant_id, // Atribui ao consultor do disparo
-          })
-          .eq("id", lead.id);
+        if (action === "grupo_a") {
+          // Joga no Grupo A (cadastro automático)
+          await supabase.from("customers")
+            .update({
+              bot_paused: false,
+              bot_paused_reason: null,
+              flow_variant: "A",
+              conversation_step: "a1_ask_name",
+              last_outbound_at: new Date().toISOString(),
+            })
+            .eq("id", lead.id);
+        } else {
+          // Padrão: Handoff (atendimento humano)
+          // Isso evita que a IA responda ou o motor A/B/C interfira durante o disparo.
+          // O motivo 'bulk_pro' faz com que ele expire em 48h (handoff), voltando à pizza se não houver resposta.
+          await supabase.from("customers")
+            .update({
+              bot_paused: true,
+              bot_paused_reason: "bulk_pro",
+              bot_paused_at: new Date().toISOString(),
+              assigned_human_id: camp.consultant_id, // Atribui ao consultor do disparo
+            })
+            .eq("id", lead.id);
+        }
       }
 
       // Efeito por target: reconcile sending→queued não reenvia se já sent/unknown.

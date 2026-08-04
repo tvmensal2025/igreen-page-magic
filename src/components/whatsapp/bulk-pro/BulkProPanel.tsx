@@ -345,17 +345,34 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
         ok = false; err = e?.message || "Erro desconhecido";
       }
 
-      // F12/F16: Sincroniza estado de pausa no banco para disparos via UI
+      // F12/F16: Sincroniza estado de pausa ou roteamento no banco para disparos via UI
       if (ok && t.id && t.id.length > 10) { // Assume UUID se > 10 chars
-        supabase.from("customers")
-          .update({
-            bot_paused: true,
-            bot_paused_reason: "bulk_pro",
-            bot_paused_at: new Date().toISOString(),
-            assigned_human_id: consultantId,
-          })
-          .eq("id", t.id)
-          .then(() => {});
+        const action = useConfig.afterSendAction || "handoff";
+        
+        if (action === "grupo_a") {
+          // Joga no Grupo A (cadastro)
+          supabase.from("customers")
+            .update({
+              bot_paused: false, // Garante bot ligado
+              bot_paused_reason: null,
+              flow_variant: "A",
+              conversation_step: "a1_ask_name", // Reinicia funil
+              last_outbound_at: new Date().toISOString(),
+            })
+            .eq("id", t.id)
+            .then(() => {});
+        } else {
+          // Padrão: Handoff (atendimento humano)
+          supabase.from("customers")
+            .update({
+              bot_paused: true,
+              bot_paused_reason: "bulk_pro",
+              bot_paused_at: new Date().toISOString(),
+              assigned_human_id: consultantId,
+            })
+            .eq("id", t.id)
+            .then(() => {});
+        }
       }
 
       setTargets(prev => prev.map(x => x.id === t.id ? {
