@@ -34,7 +34,8 @@ export const NON_ADDRESSABLE_NAME_SOURCES = new Set([
 const BAD_NAME_TOKENS = new Set([
   // meme / risada / interjeição
   "ixi", "kkk", "kkkk", "kkkkk", "haha", "hahaha", "rsrs", "rsrsrs", "hehe",
-  "aff", "nossa", "caramba", "puts", "poxa", "eita", "opa", "ops",
+  "aff", "nossa", "caramba", "puts", "poxa", "eita", "opa", "ops", "entendi",
+  "aham", "ta", "tá", "tbm", "tambem", "também",
   // saudação / confirmação
   "oi", "ola", "olá", "oie", "oii", "hey", "hi", "hello", "bom", "boa",
   "dia", "tarde", "noite", "ok", "okay", "sim", "nao", "não", "blz", "beleza",
