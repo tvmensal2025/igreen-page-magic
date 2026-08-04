@@ -1,4 +1,10 @@
-import type { PreparedMedia } from "./types";
+export type SpeedPreset = "safe" | "normal" | "fast" | "custom";
+
+export interface PreparedMedia {
+  url: string;
+  kind: "image" | "video" | "audio" | "document";
+  fileName?: string;
+}
 
 export interface SendConfig {
   preset: SpeedPreset;
@@ -12,22 +18,17 @@ export interface SendConfig {
   mediaItems?: PreparedMedia[];
   mediaOrder?: "text_first" | "media_first" | "caption_only";
   scheduleAt?: string | null;
+  // Multichannel additions
+  sendSms?: boolean;
+  smsText?: string;
+  makeCall?: boolean;
+  callAudioClipId?: string;
   // F12/F16: Ao disparar, o que fazer com o lead?
-  // 'handoff' (default): pausa bot + atribui ao humano por 48h
-  // 'grupo_a': joga o lead no início do funil automático de cadastro
   afterSendAction?: "handoff" | "grupo_a";
 }
 
-export type SpeedPreset = "safe" | "normal" | "fast" | "custom";
-
-export interface PreparedMedia {
-  url: string;
-  kind: "image" | "video" | "audio" | "document";
-  fileName?: string;
-}
-
 export interface CampaignTarget {
-  id?: string; // id no banco (customer_id)
+  id?: string;
   phone: string;
   name?: string;
   bill?: number;
@@ -61,7 +62,8 @@ export const PRESETS: Record<Exclude<SpeedPreset, "custom">, Partial<SendConfig>
 
 export const DEFAULT_CONFIG: SendConfig = {
   preset: "normal",
-  ...PRESETS.normal,
+  intervalMinS: 18,
+  intervalMaxS: 32,
   windowStart: "08:00",
   windowEnd: "20:00",
   weekdaysOnly: true,
