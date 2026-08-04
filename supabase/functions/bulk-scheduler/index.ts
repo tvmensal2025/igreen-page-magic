@@ -48,6 +48,7 @@ interface CampaignRow {
     smsText?: string;
     makeCall?: boolean;
     callAudioClipId?: string;
+    mediaItems?: Array<{ url: string; kind: string; fileName?: string }>;
     [key: string]: any;
   } | null;
   status: string;
@@ -398,51 +399,65 @@ Deno.serve(async (req) => {
       let sendThrew = false;
       try {
         await markEffectSending(supabase, eff.effectId);
-        const hasMedia = !!(camp.media_url && camp.media_type && camp.media_type !== "text");
-        const mediaKind = camp.media_type as "image" | "video" | "audio" | "document";
-        if (hasMedia && mediaOrder === "media_first") {
-          // Imagem/vídeo/doc: caption no media. Áudio: caption fraco → texto depois.
-          const useCaption = mediaKind !== "audio";
-          const mr = await channel.adapter.sendMedia(
-            jid,
-            {
-              kind: mediaKind,
-              url: camp.media_url!,
-              caption: useCaption ? (finalMsg || undefined) : undefined,
-              fileName: camp.media_filename || undefined,
-            } as any,
-            sendCtx as any,
-          );
-          ok = mr.ok;
-          if (!mr.ok) errText = (mr as { detail?: string }).detail || (mr as { reason?: string }).reason;
-          else if (finalMsg && mediaKind === "audio") {
-            const tr = await channel.adapter.sendText(jid, finalMsg, {
-              ...sendCtx,
-              idempotencyKey: `${bulkKey}:text`,
-            } as any);
-            ok = tr.ok;
-            if (!tr.ok) errText = (tr as { detail?: string }).detail || (tr as { reason?: string }).reason;
-          }
-        } else if (hasMedia && mediaOrder === "text_first") {
-          if (finalMsg) {
+        
+        // Suporte a múltiplas mídias
+        const mediaItems = cfg.mediaItems || [];
+        // Compatibilidade com campanhas antigas se não houver mediaItems
+        if (mediaItems.length === 0 && camp.media_url && camp.media_type && camp.media_type !== "text") {
+          mediaItems.push({ 
+            url: camp.media_url, 
+            kind: camp.media_type, 
+            fileName: camp.media_filename || undefined 
+          });
+        }
+
+        const hasMedia = mediaItems.length > 0;
+        
+        if (hasMedia) {
+          // Se configurado para texto primeiro
+          if (mediaOrder === "text_first" && finalMsg) {
             const tr = await channel.adapter.sendText(jid, finalMsg, sendCtx as any);
             ok = tr.ok;
             if (!tr.ok) errText = (tr as { detail?: string }).detail || (tr as { reason?: string }).reason;
-          } else {
-            ok = true;
+            await new Promise(r => setTimeout(r, 1000));
           }
-          if (ok) {
+
+          // Envia todos os anexos
+          for (let mIdx = 0; mIdx < mediaItems.length; mIdx++) {
+            const m = mediaItems[mIdx];
+            const mediaKind = m.kind as "image" | "video" | "audio" | "document";
+            
+            // Legenda apenas na primeira mídia e se não foi enviado como texto separado
+            const useCaption = mIdx === 0 && mediaOrder !== "text_first" && mediaKind !== "audio";
+            
             const mr = await channel.adapter.sendMedia(
               jid,
               {
-                kind: camp.media_type as "image" | "video" | "audio" | "document",
-                url: camp.media_url!,
-                fileName: camp.media_filename || undefined,
+                kind: mediaKind,
+                url: m.url,
+                caption: useCaption ? (finalMsg || undefined) : undefined,
+                fileName: m.fileName || undefined,
               } as any,
-              { ...sendCtx, idempotencyKey: `${bulkKey}:media` } as any,
+              { ...sendCtx, idempotencyKey: `${bulkKey}:media:${mIdx}` } as any,
             );
+            
             ok = mr.ok;
-            if (!mr.ok) errText = (mr as { detail?: string }).detail || (mr as { reason?: string }).reason;
+            if (!mr.ok) {
+              errText = (mr as { detail?: string }).detail || (mr as { reason?: string }).reason;
+            }
+
+            // Pequeno delay entre anexos do mesmo destino
+            if (mIdx < mediaItems.length - 1) {
+              await new Promise(r => setTimeout(r, 1200));
+            }
+          }
+
+          // Se for áudio ou media_first sem caption e não enviou texto ainda
+          if (ok && finalMsg && mediaOrder === "media_first" && (mediaItems[0].kind === "audio" || !["image", "video"].includes(mediaItems[0].kind))) {
+             await new Promise(r => setTimeout(r, 1000));
+             const tr = await channel.adapter.sendText(jid, finalMsg, { ...sendCtx, idempotencyKey: `${bulkKey}:text_after` } as any);
+             ok = tr.ok;
+             if (!tr.ok) errText = (tr as { detail?: string }).detail || (tr as { reason?: string }).reason;
           }
         } else if (finalMsg) {
           const tr = await channel.adapter.sendText(jid, finalMsg, sendCtx as any);
