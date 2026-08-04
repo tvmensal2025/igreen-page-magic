@@ -17,6 +17,7 @@ export interface PausableCustomer {
   assigned_human_id?: string | null;
   bot_paused_until?: string | null;
   do_not_contact?: boolean | null;
+  updated_at?: string | null;
 }
 
 export function isCustomerPausedByHuman(c: PausableCustomer | null | undefined): boolean {
@@ -49,9 +50,17 @@ export function evalNumberPauseRows(rows: PausableCustomer[]): boolean {
   if (!rows || rows.length === 0) return false;
   const humanTakeover = rows.some((r) => {
     if (!r) return false;
-    if (r.assigned_human_id) return true;
+    // DNC ou Bloqueio definitivo sempre pausam.
     const reason = String(r.bot_paused_reason || "").toLowerCase();
+    if (r.do_not_contact === true || reason === "requested" || reason === "opt_out" || reason === "complaint") return true;
+    
+    // Humano vinculado.
+    if (r.assigned_human_id) return true;
+    
+    // Pausa manual (bot_paused=true).
     if (r.bot_paused === true && reason !== "manual_capture") return true;
+    
+    // Pausa temporária (até certa data).
     if (r.bot_paused_until) {
       try {
         if (new Date(r.bot_paused_until).getTime() > Date.now()) return true;
