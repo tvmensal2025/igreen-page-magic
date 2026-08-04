@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { 
   CheckCircle2, 
+  AlertCircle, 
   Settings2, 
   Megaphone, 
   Rocket,
@@ -148,10 +149,10 @@ export function StepReview({ state, derived, patch, publish, consultantId, consu
         
         {preflight && (
           <Card className={`p-3 text-xs space-y-2 border ${preflight.ok ? "bg-primary/10 border-[hsl(var(--ads-emerald-2))]/30" : "bg-destructive/10 border-destructive/30"}`}>
-            <div className={`font-bold flex items-center gap-2 ${preflight.ok ? "text-[hsl(var(--ads-emerald-2))]" : "text-destructive"}`}>
-              {preflight.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertTriangle className="w-3.5 h-3.5" />}
-              {preflight.ok ? "Configuração de Alta Conversão" : "Problemas detectados"}
-            </div>
+          <div className={`font-bold flex items-center gap-2 ${preflight.ok ? "text-[hsl(var(--ads-emerald-2))]" : "text-destructive"}`}>
+            {preflight.ok ? <CheckCircle2 className="w-3.5 h-3.5" /> : <AlertCircle className="w-3.5 h-3.5" />}
+            {preflight.ok ? "Configuração de Alta Conversão" : "Problemas detectados"}
+          </div>
             {preflight.blockers.map((b, i) => <div key={i} className="text-destructive">• {b}</div>)}
             {preflight.ok && isSingleStory && (
               <div className="text-[hsl(var(--ads-emerald-2))] flex items-center gap-1.5">
