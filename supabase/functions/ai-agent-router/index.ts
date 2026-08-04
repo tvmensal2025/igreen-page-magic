@@ -188,8 +188,10 @@ Deno.serve(async (req) => {
     if (!customer) return new Response(JSON.stringify({ error: "customer not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
 
     // 2) Se bot pausado OU humano vinculado, sair (segurança extra).
+    // F14: Reforça o silêncio absoluto se o motivo for 'bulk_pro' (handoff de massa).
     if (customer.bot_paused || customer.assigned_human_id) {
-      return new Response(JSON.stringify({ ok: true, skipped: "bot_paused" }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      console.log(`[ai-agent-router] skipped for customer ${customer_id}: bot_paused=${customer.bot_paused}, reason=${customer.bot_paused_reason}, human=${customer.assigned_human_id}`);
+      return new Response(JSON.stringify({ ok: true, skipped: "bot_paused", reason: customer.bot_paused_reason }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     const consultantId = customer.consultant_id;

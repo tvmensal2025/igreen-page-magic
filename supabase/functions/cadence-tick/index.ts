@@ -535,11 +535,17 @@ async function dispatchWhatsApp(
 ): Promise<DispatchResult> {
   const { data: cust } = await supabase
     .from("customers")
-    .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id")
+    .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id, bot_paused, bot_paused_reason")
     .eq("id", row.customer_id)
     .maybeSingle();
 
   if (!cust?.phone_whatsapp) return { ok: false, detail: "no_phone" };
+
+  // F14: Se o bot está pausado (Handoff), a cadência NÃO deve enviar mensagens.
+  // Isso respeita a trava automática do "Bulk Pro" (bot_paused_reason = 'bulk_pro').
+  if (cust.bot_paused) {
+    return { ok: false, detail: `bot_paused:${cust.bot_paused_reason || "manual"}` };
+  }
 
   const gate = await assertBotOutboundAllowed(supabase, {
     customerId: row.customer_id,
