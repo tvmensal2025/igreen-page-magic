@@ -290,24 +290,41 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
       let ok = true;
       let err: string | undefined;
       try {
-        if (useMedia) {
-          // Send media first or text first
+        if (useMediaItems.length > 0) {
+          // Se houver múltiplas mídias, enviamos o texto uma vez (se configurado como primeiro)
+          // ou enviamos como legenda da primeira imagem/vídeo.
           if (useConfig.mediaOrder === "text_first" && finalMsg.trim()) {
             const r = await sendWhatsAppMessage({ instanceName, phone: t.phone, mediaCategory: "text", text: finalMsg });
             if (r.status === "failed") { ok = false; err = r.error; }
-            await new Promise(r2 => setTimeout(r2, 1500 + Math.random() * 1500));
+            await new Promise(r2 => setTimeout(r2, 1000 + Math.random() * 1000));
           }
-          const cat = useMedia.kind === "image" ? "image" : useMedia.kind === "video" ? "video" : useMedia.kind === "audio" ? "audio" : "document";
-          const caption = useConfig.mediaOrder === "caption_only" || useConfig.mediaOrder === "media_first" ? finalMsg : undefined;
-          const r = await sendWhatsAppMessage({
-            instanceName, phone: t.phone, mediaCategory: cat as any,
-            mediaUrl: useMedia.url,
-            text: cat === "image" || cat === "video" ? caption : undefined,
-            fileName: useMedia.fileName,
-          });
-          if (r.status === "failed") { ok = false; err = r.error || err; }
-          if (useConfig.mediaOrder === "media_first" && finalMsg.trim() && useMedia.kind !== "image" && useMedia.kind !== "video") {
-            await new Promise(r2 => setTimeout(r2, 1500 + Math.random() * 1500));
+
+          for (let mIdx = 0; mIdx < useMediaItems.length; mIdx++) {
+            const m = useMediaItems[mIdx];
+            const cat = m.kind === "image" ? "image" : m.kind === "video" ? "video" : m.kind === "audio" ? "audio" : "document";
+            
+            // Legenda vai apenas na primeira mídia se configurado como "caption_only" ou "media_first"
+            const caption = mIdx === 0 && (useConfig.mediaOrder === "caption_only" || useConfig.mediaOrder === "media_first") 
+              ? finalMsg 
+              : undefined;
+
+            const r = await sendWhatsAppMessage({
+              instanceName, phone: t.phone, mediaCategory: cat as any,
+              mediaUrl: m.url,
+              text: (cat === "image" || cat === "video") ? caption : undefined,
+              fileName: m.fileName,
+            });
+            if (r.status === "failed") { ok = false; err = r.error || err; }
+
+            // Intervalo entre mídias do mesmo contato
+            if (mIdx < useMediaItems.length - 1) {
+              await new Promise(r2 => setTimeout(r2, 1200 + Math.random() * 800));
+            }
+          }
+
+          // Se configurado para texto por último (e não foi legenda)
+          if (useConfig.mediaOrder === "media_first" && finalMsg.trim() && !useMediaItems.some(m => m.kind === "image" || m.kind === "video")) {
+            await new Promise(r2 => setTimeout(r2, 1000 + Math.random() * 1000));
             const r2 = await sendWhatsAppMessage({ instanceName, phone: t.phone, mediaCategory: "text", text: finalMsg });
             if (r2.status === "failed") { ok = false; err = r2.error || err; }
           }
