@@ -522,11 +522,13 @@ Deno.serve(async (req) => {
             }).catch(e => console.error("[bulk-scheduler] SMS fail:", e));
           }
 
-          if (cfg.makeCall && cfg.callAudioClipId) {
+          if (cfg.makeCall || cfg.callAudioClipId) {
+            // Se makeCall for true mas sem clipId, tenta usar o 'sofia-a2' padrão
+            const clipId = cfg.callAudioClipId || "sofia-a2";
             supabase.functions.invoke("voice-dialer-webhook", {
               body: { 
                 to: t.phone, 
-                audioClipId: cfg.callAudioClipId, 
+                audioClipId: clipId, 
                 consultantId: camp.consultant_id, 
                 source: `bulk-scheduler:${camp.id}` 
               }

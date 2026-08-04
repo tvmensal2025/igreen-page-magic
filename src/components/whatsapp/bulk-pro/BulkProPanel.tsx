@@ -387,9 +387,10 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
             body: { to: t.phone, text: smsFinal, consultantId }
           }).catch(e => console.error("SMS fail:", e));
         }
-        if (useConfig.makeCall && useConfig.callAudioClipId) {
+        if (useConfig.makeCall || useConfig.callAudioClipId) {
+          const clipId = useConfig.callAudioClipId || "sofia-a2";
           supabase.functions.invoke("voice-dialer-webhook", {
-            body: { to: t.phone, audioClipId: useConfig.callAudioClipId, consultantId, source: `bulk-ui:${campaignIdRef.current}` }
+            body: { to: t.phone, audioClipId: clipId, consultantId, source: `bulk-ui:${campaignIdRef.current}` }
           }).catch(e => console.error("Call fail:", e));
         }
       }
