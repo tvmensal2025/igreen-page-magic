@@ -359,7 +359,7 @@ Deno.serve(async (req) => {
           await supabase.from("customers")
             .update({
               bot_paused: false,
-              bot_paused_reason: null,
+              bot_paused_reason: null as any,
               flow_variant: "A",
               conversation_step: "a1_ask_name",
               last_outbound_at: new Date().toISOString(),
@@ -372,7 +372,7 @@ Deno.serve(async (req) => {
           await supabase.from("customers")
             .update({
               bot_paused: true,
-              bot_paused_reason: "bulk_pro",
+              bot_paused_reason: "bulk_pro" as any,
               bot_paused_at: new Date().toISOString(),
               assigned_human_id: camp.consultant_id, // Atribui ao consultor do disparo
             })
