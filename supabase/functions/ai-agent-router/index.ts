@@ -256,13 +256,19 @@ Deno.serve(async (req) => {
         const sender = wrapSenderWithGuard(_raw, { supabase, instanceName: instance_name });
 
         if (lookup.found && lookup.text) {
-          // Envia texto da base.
-          try {
-            await sender.sendText(remote_jid, lookup.text);
-          } catch (e: any) {
-            console.warn("[ai-agent-router/kb_only] sendText failed:", e?.message);
+          // F11: Se o match veio da Base de Conhecimento e é muito curto (confiança baixa), 
+          // ou se a mensagem do usuário parece ser um spam de sistema, não responde nada ou vai p/ handoff.
+          const isSuspect = (user_input || "").length > 300 || lookup.confidence < 0.4;
+          
+          if (!isSuspect) {
+            try {
+              await sender.sendText(remote_jid, lookup.text);
+            } catch (e: any) {
+              console.warn("[ai-agent-router/kb_only] sendText failed:", e?.message);
+            }
           }
-          // Log
+          
+          // Log (mesmo se suspect, para auditoria)
           try {
             await supabase.from("ai_agent_logs").insert({
               consultant_id: consultantId,
@@ -270,13 +276,14 @@ Deno.serve(async (req) => {
               phone: customer.phone_whatsapp,
               step_before: customer.conversation_step,
               step_after: customer.conversation_step,
-              llm_output: { kb_only: true, source: lookup.source, confidence: lookup.confidence },
+              llm_output: { kb_only: true, source: lookup.source, confidence: lookup.confidence, suppressed: isSuspect },
               handoff: false,
               latency_ms: Date.now() - t0,
             });
           } catch (_) { /* swallow */ }
+          
           return new Response(
-            JSON.stringify({ ok: true, mode: "kb_only", source: lookup.source }),
+            JSON.stringify({ ok: true, mode: "kb_only", source: lookup.source, suppressed: isSuspect }),
             { headers: { ...corsHeaders, "Content-Type": "application/json" } },
           );
         }
