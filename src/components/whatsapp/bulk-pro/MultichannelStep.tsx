@@ -152,6 +152,8 @@ export function MultichannelStep({ config, onChange, consultantId }: Props) {
     }
   };
 
+  const selectedClip = clips.find(c => c.id === config.callAudioClipId);
+
   return (
     <div className="space-y-6">
       <div className="rounded-xl border border-border/40 bg-secondary/10 p-4 space-y-4">
@@ -172,9 +174,12 @@ export function MultichannelStep({ config, onChange, consultantId }: Props) {
               value={config.smsText} 
               onChange={(e) => onChange({ ...config, smsText: e.target.value.slice(0, 160) })}
               placeholder="Oi {primeiro_nome}, te mandei um áudio no WhatsApp sobre sua conta de luz. Veja lá!"
-              className="text-sm h-20"
+              className="text-sm h-20 bg-white"
             />
-            <p className="text-[10px] text-right text-muted-foreground">{config.smsText?.length || 0}/160</p>
+            <div className="flex justify-between items-center">
+              <p className="text-[10px] text-muted-foreground italic">Dica: use {`{primeiro_nome}`} para personalizar</p>
+              <p className="text-[10px] text-right font-medium text-primary">{config.smsText?.length || 0}/160</p>
+            </div>
           </div>
         )}
       </div>
@@ -248,6 +253,20 @@ export function MultichannelStep({ config, onChange, consultantId }: Props) {
                 </label>
               </div>
             </div>
+
+            {selectedClip && (
+              <div className="p-3 rounded-lg bg-background border border-border/40 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Headphones className="w-4 h-4 text-primary" />
+                  <span className="text-xs font-medium truncate flex-1">{selectedClip.name}</span>
+                </div>
+                <audio 
+                  controls 
+                  src={selectedClip.audio_url} 
+                  className="w-full h-8"
+                />
+              </div>
+            )}
           </div>
         )}
       </div>

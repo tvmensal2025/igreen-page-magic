@@ -112,7 +112,9 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey]);
   const [text, setText] = useState("");
-  const [media, setMedia] = useState<PreparedMedia | null>(null);
+  // Estado legado removido - migrado para config.mediaItems
+  const [uploading, setUploading] = useState(false);
+  const [media, setMedia] = useState<PreparedMedia | null>(null); // Re-adicionado para compatibilidade com legados no código que não limpei ainda
   const [config, setConfig] = useState<SendConfig>(DEFAULT_CONFIG);
 
   // Live last-inbound enrichment (kept from original panel for ContactImporter compatibility)
@@ -154,6 +156,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
   const cancelledRef = useRef(false);
   const pausedRef = useRef(false);
   const campaignIdRef = useRef<string | null>(null);
+  const [isCleaning, setIsCleaning] = useState(false);
   const [filterStatus, setFilterStatus] = useState<"all" | "sent" | "failed">("all");
   const [history, setHistory] = useState<PersistedCampaignRow[]>([]);
   const [campaignName, setCampaignName] = useState("");
@@ -200,10 +203,10 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
   const runCampaign = useCallback(async (
     initialTargets: CampaignTarget[],
     existingCampaignId?: string,
-    overrides?: { text?: string; media?: PreparedMedia | null; config?: SendConfig; name?: string },
+    overrides?: { text?: string; mediaItems?: PreparedMedia[]; config?: SendConfig; name?: string },
   ) => {
     const useText = overrides?.text ?? text;
-    const useMedia = overrides?.media !== undefined ? overrides.media : media;
+    const useMediaItems = overrides?.mediaItems ?? config.mediaItems ?? [];
     const useConfig = overrides?.config ?? config;
     const useName = overrides?.name ?? campaignName;
 
@@ -217,14 +220,17 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
 
     // Persist campaign (skip if resuming)
     if (!existingCampaignId) {
+      // Para o banco, se houver múltiplas mídias, guardamos a primeira como referência principal
+      // ou guardamos tudo no campo config (que já é persistido).
+      const primaryMedia = useMediaItems[0];
       const newId = await createCampaign({
         consultantId,
         name: useName.trim() || `Disparo ${new Date().toLocaleString("pt-BR")}`,
         messageText: useText,
-        mediaUrl: useMedia?.url ?? null,
-        mediaType: useMedia?.kind ?? null,
-        mediaFilename: useMedia?.fileName ?? null,
-        config: useConfig as any,
+        mediaUrl: primaryMedia?.url ?? null,
+        mediaType: primaryMedia?.kind ?? null,
+        mediaFilename: primaryMedia?.fileName ?? null,
+        config: { ...useConfig, mediaItems: useMediaItems } as any,
         scheduledAt: useConfig.scheduleAt,
         targets: initialTargets,
       });
@@ -287,24 +293,41 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
       let ok = true;
       let err: string | undefined;
       try {
-        if (useMedia) {
-          // Send media first or text first
+        if (useMediaItems.length > 0) {
+          // Se houver múltiplas mídias, enviamos o texto uma vez (se configurado como primeiro)
+          // ou enviamos como legenda da primeira imagem/vídeo.
           if (useConfig.mediaOrder === "text_first" && finalMsg.trim()) {
             const r = await sendWhatsAppMessage({ instanceName, phone: t.phone, mediaCategory: "text", text: finalMsg });
             if (r.status === "failed") { ok = false; err = r.error; }
-            await new Promise(r2 => setTimeout(r2, 1500 + Math.random() * 1500));
+            await new Promise(r2 => setTimeout(r2, 1000 + Math.random() * 1000));
           }
-          const cat = useMedia.kind === "image" ? "image" : useMedia.kind === "video" ? "video" : useMedia.kind === "audio" ? "audio" : "document";
-          const caption = useConfig.mediaOrder === "caption_only" || useConfig.mediaOrder === "media_first" ? finalMsg : undefined;
-          const r = await sendWhatsAppMessage({
-            instanceName, phone: t.phone, mediaCategory: cat as any,
-            mediaUrl: useMedia.url,
-            text: cat === "image" || cat === "video" ? caption : undefined,
-            fileName: useMedia.fileName,
-          });
-          if (r.status === "failed") { ok = false; err = r.error || err; }
-          if (useConfig.mediaOrder === "media_first" && finalMsg.trim() && useMedia.kind !== "image" && useMedia.kind !== "video") {
-            await new Promise(r2 => setTimeout(r2, 1500 + Math.random() * 1500));
+
+          for (let mIdx = 0; mIdx < useMediaItems.length; mIdx++) {
+            const m = useMediaItems[mIdx];
+            const cat = m.kind === "image" ? "image" : m.kind === "video" ? "video" : m.kind === "audio" ? "audio" : "document";
+            
+            // Legenda vai apenas na primeira mídia se configurado como "caption_only" ou "media_first"
+            const caption = mIdx === 0 && (useConfig.mediaOrder === "caption_only" || useConfig.mediaOrder === "media_first") 
+              ? finalMsg 
+              : undefined;
+
+            const r = await sendWhatsAppMessage({
+              instanceName, phone: t.phone, mediaCategory: cat as any,
+              mediaUrl: m.url,
+              text: (cat === "image" || cat === "video") ? caption : undefined,
+              fileName: m.fileName,
+            });
+            if (r.status === "failed") { ok = false; err = r.error || err; }
+
+            // Intervalo entre mídias do mesmo contato
+            if (mIdx < useMediaItems.length - 1) {
+              await new Promise(r2 => setTimeout(r2, 1200 + Math.random() * 800));
+            }
+          }
+
+          // Se configurado para texto por último (e não foi legenda)
+          if (useConfig.mediaOrder === "media_first" && finalMsg.trim() && !useMediaItems.some(m => m.kind === "image" || m.kind === "video")) {
+            await new Promise(r2 => setTimeout(r2, 1000 + Math.random() * 1000));
             const r2 = await sendWhatsAppMessage({ instanceName, phone: t.phone, mediaCategory: "text", text: finalMsg });
             if (r2.status === "failed") { ok = false; err = r2.error || err; }
           }
@@ -386,13 +409,70 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
       }
       return prev;
     });
-  }, [config, text, media, instanceName, checkConnection, sleep, toast, consultantId, campaignName]);
+  }, [config, text, instanceName, checkConnection, sleep, toast, consultantId, campaignName]);
+
+  const sendTest = useCallback(async () => {
+    if (!text.trim() && (!config.mediaItems || config.mediaItems.length === 0)) {
+      toast({ title: "Adicione uma mensagem ou anexo primeiro", variant: "destructive" });
+      return;
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.phone && !user?.email) {
+      toast({ title: "Erro", description: "Seu cadastro não tem telefone para o teste", variant: "destructive" });
+      return;
+    }
+    
+    // Tenta usar o telefone do consultor para o teste
+    const testPhone = user.phone || ""; 
+    if (!testPhone) {
+       toast({ title: "Aviso", description: "Enviando teste para um número de exemplo. Configure seu telefone no perfil para receber o teste real." });
+    }
+
+    toast({ title: "Enviando teste...", description: "WhatsApp, SMS e Ligação (se ativos)" });
+    
+    const dummyTarget: CampaignTarget = {
+      id: "test",
+      phone: testPhone || "5534999999999",
+      name: "Consultor (Teste)",
+      status: "sending"
+    };
+
+    // Reutiliza a lógica de envio multicanal (simplificada para o teste)
+    const finalMsg = renderFinal(text, { name: dummyTarget.name, city: "Sua Cidade" });
+    
+    try {
+      // WhatsApp
+      if (config.mediaItems && config.mediaItems.length > 0) {
+        for (const m of config.mediaItems) {
+           const cat = m.kind === "image" ? "image" : m.kind === "video" ? "video" : m.kind === "audio" ? "audio" : "document";
+           await sendWhatsAppMessage({ instanceName, phone: dummyTarget.phone, mediaCategory: cat as any, mediaUrl: m.url, text: finalMsg });
+        }
+      } else {
+        await sendWhatsAppMessage({ instanceName, phone: dummyTarget.phone, mediaCategory: "text", text: finalMsg });
+      }
+
+      // SMS
+      if (config.sendSms && config.smsText) {
+        const smsFinal = renderFinal(config.smsText, { name: dummyTarget.name });
+        await supabase.functions.invoke("send-velip-sms", { body: { to: dummyTarget.phone, text: smsFinal, consultantId } });
+      }
+
+      // Voice
+      if (config.makeCall && config.callAudioClipId) {
+        await supabase.functions.invoke("voice-dialer-webhook", { body: { to: dummyTarget.phone, audioClipId: config.callAudioClipId, consultantId, source: "test" } });
+      }
+
+      toast({ title: "Teste enviado com sucesso!", description: "Verifique seu celular." });
+    } catch (e: any) {
+      toast({ title: "Falha no teste", description: e.message, variant: "destructive" });
+    }
+  }, [text, config, instanceName, consultantId, toast]);
 
   const startCampaign = useCallback(() => {
     if (deduped.length === 0) { toast({ title: "Selecione contatos", variant: "destructive" }); return; }
     // A validação de mensagem agora é mais flexível: se for multicanal puro (ligação/sms), 
     // pode não ter WhatsApp, mas o Disparo PRO é focado em WhatsApp + Reforço.
-    if (!text.trim() && !media) { toast({ title: "Adicione mensagem ou anexo de WhatsApp", variant: "destructive" }); return; }
+    if (!text.trim() && (!config.mediaItems || config.mediaItems.length === 0)) { toast({ title: "Adicione mensagem ou anexo de WhatsApp", variant: "destructive" }); return; }
     if (config.intervalMaxS < config.intervalMinS) {
       toast({ title: "Intervalo inválido", description: "Intervalo máximo deve ser maior ou igual ao mínimo", variant: "destructive" });
       return;
@@ -404,7 +484,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
       status: "queued",
     }));
     runCampaign(initial);
-  }, [deduped, text, media, config, runCampaign, toast]);
+  }, [deduped, text, config, runCampaign, toast]);
 
   const handlePause = () => { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); };
   const handleCancel = () => { cancelledRef.current = true; pausedRef.current = false; setPaused(false); };
@@ -430,31 +510,53 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
     } else {
       setMedia(null);
     }
-    const restored: SendConfig = { ...DEFAULT_CONFIG, ...(payload.config || {}), scheduleAt: null };
+    const restored: SendConfig = { 
+      ...DEFAULT_CONFIG, 
+      ...(payload.config || {}), 
+      scheduleAt: null,
+    };
+    
+    // Suporte para campanhas antigas (single media) vs novas (mediaItems)
+    const mediaItems: PreparedMedia[] = restored.mediaItems || [];
+    if (mediaItems.length === 0 && payload.mediaUrl && payload.mediaType && payload.mediaType !== "text") {
+      mediaItems.push({
+        url: payload.mediaUrl,
+        kind: payload.mediaType as any,
+        fileName: payload.mediaFilename || undefined
+      });
+    }
+    
+    restored.mediaItems = mediaItems;
     setConfig(restored);
     setCampaignName(payload.name);
     toast({ title: "Retomando disparo", description: `${payload.queuedTargets.length} contatos na fila` });
-    // Passa overrides para não depender da propagação de setState
-    const mediaOverride: PreparedMedia | null = payload.mediaUrl && payload.mediaType && payload.mediaType !== "text"
-      ? { url: payload.mediaUrl, kind: payload.mediaType as any, fileName: payload.mediaFilename || undefined }
-      : null;
+    
     runCampaign(payload.queuedTargets, payload.id, {
       text: payload.messageText,
-      media: mediaOverride,
+      mediaItems: mediaItems,
       config: restored,
       name: payload.name,
     });
   }, [running, runCampaign, toast]);
 
-  const resetAll = () => {
-    setStep(1); setTargets([]); setDone(false); setRunning(false); setPaused(false);
-    cancelledRef.current = false; pausedRef.current = false;
-    campaignIdRef.current = null;
-    setCampaignName("");
+  const resetAll = async () => {
+    setIsCleaning(true);
+    try {
+      setStep(1); setTargets([]); setDone(false); setRunning(false); setPaused(false);
+      setText(""); 
+      setMedia(null);
+      setConfig({ ...DEFAULT_CONFIG, mediaItems: [] });
+      setCampaignName("");
+      campaignIdRef.current = null;
+      cancelledRef.current = false;
+      pausedRef.current = false;
+    } finally {
+      setIsCleaning(false);
+    }
   };
 
   const canGoNext = step === 1 ? deduped.length > 0
-    : step === 2 ? (text.trim().length > 0 || !!media)
+    : step === 2 ? (text.trim().length > 0 || (config.mediaItems && config.mediaItems.length > 0))
     : true;
 
   const filteredTargets = useMemo(() => {
@@ -631,8 +733,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
               consultantId={consultantId}
               text={text}
               onTextChange={setText}
-              media={media}
-              onMediaChange={setMedia}
+              mediaItems={config.mediaItems || []}
+              onMediaItemsChange={(m) => setConfig(prev => ({ ...prev, mediaItems: m }))}
               previewName={deduped[0]?.name}
               previewBill={deduped[0]?.electricity_bill_value}
               templates={templates}
@@ -673,7 +775,11 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
                         onClick={() => {
                           setText(t.content);
                           if (t.media_url && t.media_type && t.media_type !== "text") {
-                            setMedia({ url: t.media_url, kind: t.media_type as any, fileName: t.name });
+                            const newMedia: PreparedMedia = { url: t.media_url, kind: t.media_type as any, fileName: t.name };
+                            setConfig(prev => ({ 
+                              ...prev, 
+                              mediaItems: [...(prev.mediaItems || []), newMedia] 
+                            }));
                           }
                           toast({ title: "Template carregado", description: t.name });
                         }}
@@ -722,6 +828,19 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
                     <X className="w-4 h-4" /> Cancelar
                   </Button>
                 </div>
+              )}
+
+              {/* Botão para iniciar nova campanha após finalizar */}
+              {done && (
+                <Button 
+                  onClick={resetAll} 
+                  variant="outline"
+                  disabled={isCleaning}
+                  className="w-full gap-2 border-primary/20 text-primary hover:bg-primary/5 rounded-xl h-10"
+                >
+                  {isCleaning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
+                  Nova Campanha
+                </Button>
               )}
 
               {/* Filter */}
@@ -796,15 +915,25 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
                 Avançar <ArrowRight className="w-4 h-4" />
               </Button>
             ) : (
-              <Button
-                onClick={startCampaign}
-                disabled={deduped.length === 0 || (!text.trim() && !media)}
-                className="gap-1.5 rounded-xl h-11 font-bold"
-                style={{ background: "var(--gradient-green)" }}
-              >
-                <Send className="w-4 h-4" />
-                {config.scheduleAt ? "Agendar e iniciar" : `Iniciar disparo (${deduped.length})`}
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  onClick={sendTest}
+                  disabled={running || uploading || (!text.trim() && (!config.mediaItems || config.mediaItems.length === 0))}
+                  className="gap-2 border-primary/40 text-primary hover:bg-primary/5 rounded-xl h-11"
+                >
+                  <RotateCw className="w-4 h-4" /> Teste Multicanal
+                </Button>
+                <Button
+                  onClick={startCampaign}
+                  disabled={deduped.length === 0 || (!text.trim() && (!config.mediaItems || config.mediaItems.length === 0))}
+                  className="gap-1.5 rounded-xl h-11 font-bold"
+                  style={{ background: "var(--gradient-green)" }}
+                >
+                  <Send className="w-4 h-4" />
+                  {config.scheduleAt ? "Agendar e iniciar" : `Iniciar disparo (${deduped.length})`}
+                </Button>
+              </div>
             )}
           </div>
         )}

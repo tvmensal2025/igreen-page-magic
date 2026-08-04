@@ -25,6 +25,7 @@ export interface SendConfig {
   smsText?: string;
   makeCall?: boolean;
   callAudioClipId?: string;
+  mediaItems?: PreparedMedia[]; // Adicionado para suportar múltiplas mídias
 }
 
 export interface CampaignTarget {
@@ -57,4 +58,5 @@ export const DEFAULT_CONFIG: SendConfig = {
   smsText: "",
   makeCall: false,
   callAudioClipId: "",
+  mediaItems: [],
 };

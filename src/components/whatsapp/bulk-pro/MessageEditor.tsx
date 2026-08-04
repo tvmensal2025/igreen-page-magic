@@ -1,5 +1,5 @@
 import { useRef, useState, useCallback } from "react";
-import { Image as ImageIcon, Video, Mic, FileText, X, Loader2, Upload, Square, Play, FilePlus2, Search } from "lucide-react";
+import { Image as ImageIcon, Video, Mic, FileText, X, Loader2, Upload, Square, Play, FilePlus2, Search, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/components/ui/use-toast";
@@ -26,8 +26,11 @@ interface Props {
   consultantId: string;
   text: string;
   onTextChange: (v: string) => void;
-  media: PreparedMedia | null;
-  onMediaChange: (m: PreparedMedia | null) => void;
+  mediaItems?: PreparedMedia[];
+  onMediaItemsChange?: (m: PreparedMedia[]) => void;
+  // Legado para compatibilidade se necessário
+  media?: PreparedMedia | null;
+  onMediaChange?: (m: PreparedMedia | null) => void;
   previewName?: string;
   previewBill?: number;
   templates?: MessageTemplate[];
@@ -41,15 +44,33 @@ const VARS = [
   { tag: "{saudacao}", label: "Bom dia / tarde / noite" },
 ];
 
-export function MessageEditor({ consultantId, text, onTextChange, media, onMediaChange, previewName, previewBill, templates = [] }: Props) {
+export function MessageEditor({ 
+  consultantId, 
+  text, 
+  onTextChange, 
+  mediaItems = [], 
+  onMediaItemsChange, 
+  media, 
+  onMediaChange,
+  previewName, 
+  previewBill, 
+  templates = [] 
+}: Props) {
   const confirm = useConfirm();
   const [tplQuery, setTplQuery] = useState("");
   const [tplOpen, setTplOpen] = useState(false);
+  const { toast } = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const [pct, setPct] = useState(0);
+  const taRef = useRef<HTMLTextAreaElement>(null);
+
   const filteredTemplates = templates.filter(t => {
     const q = tplQuery.trim().toLowerCase();
     if (!q) return true;
     return t.name.toLowerCase().includes(q) || (t.content || "").toLowerCase().includes(q);
   });
+
   const applyTemplate = async (t: MessageTemplate) => {
     if (text.trim()) {
       const ok = await confirm({ title: "Substituir a mensagem atual pelo template?", confirmText: "Substituir" });
@@ -57,15 +78,15 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
     }
     onTextChange(t.content || "");
     if (t.media_url && t.media_type && t.media_type !== "text") {
-      onMediaChange({ url: t.media_url, kind: t.media_type as any, fileName: t.name });
+      const newMedia: PreparedMedia = { url: t.media_url, kind: t.media_type as any, fileName: t.name };
+      if (onMediaItemsChange) {
+        onMediaItemsChange([...mediaItems, newMedia]);
+      } else if (onMediaChange) {
+        onMediaChange(newMedia);
+      }
     }
     setTplOpen(false);
   };
-  const fileRef = useRef<HTMLInputElement>(null);
-  const [uploading, setUploading] = useState(false);
-  const [pct, setPct] = useState(0);
-  const { toast } = useToast();
-  const taRef = useRef<HTMLTextAreaElement>(null);
 
   const handleUploadedBlob = useCallback(async (file: File, forcedKind?: MediaKind) => {
     if (file.size > 100 * 1024 * 1024) {
@@ -84,14 +105,21 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
         consultant_id: consultantId,
         kind,
       });
-      onMediaChange({ url: res.url, kind, fileName: file.name, mime: file.type });
+      const newMedia: PreparedMedia = { url: res.url, kind, fileName: file.name, mime: file.type };
+      
+      if (onMediaItemsChange) {
+        onMediaItemsChange([...mediaItems, newMedia]);
+      } else if (onMediaChange) {
+        onMediaChange(newMedia);
+      }
+      
       toast({ title: "Anexo pronto", description: `${kind.toUpperCase()} • ${formatFileSize(res.size)}` });
     } catch (e: any) {
       toast({ title: "Falha no upload", description: e?.message || "Tente novamente", variant: "destructive" });
     } finally {
       setUploading(false);
     }
-  }, [consultantId, onMediaChange, toast]);
+  }, [consultantId, mediaItems, onMediaItemsChange, onMediaChange, toast]);
 
   const handleFile = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]; if (!f) return;
@@ -99,7 +127,6 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
     if (fileRef.current) fileRef.current.value = "";
   }, [handleUploadedBlob]);
 
-  // Audio recorder → uploads OGG and sets media
   const recorder = useAudioRecorder(async (b64) => {
     const bin = atob(b64);
     const arr = new Uint8Array(bin.length);
@@ -121,11 +148,17 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
 
   const insertSpintax = () => insertVar("{oi|olá|e aí}");
 
-  const previews = [0, 1, 2].map(() => renderFinal(text, { name: previewName, bill: previewBill }));
+  const removeMedia = (index: number) => {
+    if (onMediaItemsChange) {
+      const newList = [...mediaItems];
+      newList.splice(index, 1);
+      onMediaItemsChange(newList);
+    } else if (onMediaChange) {
+      onMediaChange(null);
+    }
+  };
 
-  const MediaIcon = media ? ({
-    image: ImageIcon, video: Video, audio: Mic, document: FileText,
-  }[media.kind]) : null;
+  const previews = [0, 1, 2].map(() => renderFinal(text, { name: previewName, bill: previewBill }));
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4 items-start">
@@ -224,15 +257,10 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
       {/* Media row */}
       <div className="rounded-xl border border-border/40 bg-secondary/10 p-3 space-y-3">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-bold text-foreground">Anexo (opcional)</span>
-          {media && (
-            <button onClick={() => onMediaChange(null)} className="text-xs text-destructive hover:text-destructive flex items-center gap-1">
-              <X className="w-3 h-3" /> Remover
-            </button>
-          )}
+          <span className="text-xs font-bold text-foreground">Anexos ({mediaItems.length})</span>
         </div>
 
-        {!media && !uploading && !recorder.isRecording && (
+        {!uploading && !recorder.isRecording && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <Button variant="outline" className="h-16 flex-col gap-1 rounded-lg" onClick={() => { if (fileRef.current) { fileRef.current.accept = "image/*"; fileRef.current.click(); } }}>
               <ImageIcon className="w-4 h-4 text-info" />
@@ -272,17 +300,36 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
           </div>
         )}
 
-        {media && MediaIcon && (
-          <div className="flex items-center gap-3 rounded-lg bg-secondary/40 border border-border/40 px-3 py-2">
-            <div className="w-9 h-9 rounded-md bg-background/60 flex items-center justify-center">
-              <MediaIcon className="w-4 h-4" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-medium text-foreground truncate">{media.fileName || media.url.split("/").pop()}</p>
-              <p className="text-[10px] text-muted-foreground uppercase">{media.kind}{media.kind === "audio" ? " (enviado como voz)" : ""}</p>
-            </div>
-            {media.kind === "image" && <img src={media.url} alt="" className="w-9 h-9 rounded object-cover" />}
-            {media.kind === "audio" && <audio controls src={media.url} className="h-8 max-w-[160px]" />}
+        {mediaItems.length > 0 && (
+          <div className="space-y-2 max-h-60 overflow-auto">
+            {mediaItems.map((item, idx) => {
+              const Icon = {
+                image: ImageIcon, video: Video, audio: Mic, document: FileText,
+              }[item.kind] || FileText;
+
+              return (
+                <div key={idx} className="flex items-center gap-3 rounded-lg bg-secondary/40 border border-border/40 px-3 py-2 group">
+                  <div className="w-8 h-8 rounded bg-background/60 flex items-center justify-center shrink-0">
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[11px] font-medium text-foreground truncate">{item.fileName || item.url.split("/").pop()}</p>
+                    <p className="text-[9px] text-muted-foreground uppercase">{item.kind}</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {item.kind === "image" && <img src={item.url} alt="" className="w-8 h-8 rounded object-cover" />}
+                    <Button 
+                      variant="ghost" 
+                      size="icon" 
+                      className="h-8 w-8 text-destructive opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={() => removeMedia(idx)}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
 
@@ -321,37 +368,41 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
                 backgroundSize: "16px 16px",
               }}
             >
-              <div className="ml-auto max-w-[88%] bg-[#dcf8c6] rounded-lg shadow-sm overflow-hidden">
-                {/* media block */}
-                {media?.kind === "image" && (
-                  <img src={media.url} alt="preview" className="w-full max-h-[180px] object-cover" />
-                )}
-                {media?.kind === "video" && (
-                  <video src={media.url} className="w-full max-h-[180px] object-cover bg-black" muted />
-                )}
-                {media?.kind === "audio" && (
-                  <div className="px-3 py-2 bg-[#d1efb5] flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-[#075e54] flex items-center justify-center">
-                      <Play className="w-3 h-3 text-white fill-white" />
+              {mediaItems.length > 0 && (
+                <div className="space-y-2 mb-3">
+                  {mediaItems.map((item, idx) => (
+                    <div key={idx} className="ml-auto max-w-[88%] bg-[#dcf8c6] rounded-lg shadow-sm overflow-hidden">
+                      {item.kind === "image" && (
+                        <img src={item.url} alt="preview" className="w-full max-h-[140px] object-cover" />
+                      )}
+                      {item.kind === "video" && (
+                        <video src={item.url} className="w-full max-h-[140px] object-cover bg-black" muted />
+                      )}
+                      {item.kind === "audio" && (
+                        <div className="px-2 py-1.5 bg-[#d1efb5] flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-[#075e54] flex items-center justify-center">
+                            <Play className="w-2.5 h-2.5 text-white fill-white" />
+                          </div>
+                          <div className="flex-1 h-1 bg-[#075e54]/30 rounded-full" />
+                        </div>
+                      )}
+                      {item.kind === "document" && (
+                        <div className="px-2 py-1.5 bg-[#d1efb5] flex items-center gap-2 border-b border-[#0d7a5f]/10">
+                          <FileText className="w-3 h-3 text-[#075e54]" />
+                          <p className="text-[9px] font-medium text-[#064e3b] truncate flex-1">{item.fileName || "doc.pdf"}</p>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex-1 h-1 bg-[#075e54]/30 rounded-full">
-                      <div className="h-full w-1/3 bg-[#075e54] rounded-full" />
-                    </div>
-                    <span className="text-[9px] text-[#075e54]/70">0:12</span>
-                  </div>
-                )}
-                {media?.kind === "document" && (
-                  <div className="px-3 py-2 bg-[#d1efb5] flex items-center gap-2 border-b border-[#0d7a5f]/10">
-                    <FileText className="w-4 h-4 text-[#075e54]" />
-                    <p className="text-[10px] font-medium text-[#064e3b] truncate flex-1">{media.fileName || "documento.pdf"}</p>
-                  </div>
-                )}
+                  ))}
+                </div>
+              )}
 
+              <div className="ml-auto max-w-[88%] bg-[#dcf8c6] rounded-lg shadow-sm overflow-hidden">
                 {/* text */}
                 <div className="px-3 py-2">
                   <p className="text-[12px] leading-snug text-gray-800 whitespace-pre-wrap break-words">
                     {previews[0] || (
-                      <span className="text-gray-400 italic">{media ? "(sem legenda)" : "Comece a escrever sua mensagem..."}</span>
+                      <span className="text-gray-400 italic">Comece a escrever sua mensagem...</span>
                     )}
                   </p>
                   <p className="text-[9px] text-gray-500 text-right mt-1">
@@ -367,20 +418,9 @@ export function MessageEditor({ consultantId, text, onTextChange, media, onMedia
                   <p className="text-[11px] leading-snug text-gray-700 whitespace-pre-wrap break-words">{previews[1]}</p>
                 </div>
               )}
-              {previews[2] && previews[2] !== previews[0] && previews[2] !== previews[1] && (
-                <div className="ml-auto max-w-[88%] bg-[#dcf8c6]/60 rounded-lg shadow-sm px-3 py-2 mt-3 border border-dashed border-[#075e54]/20">
-                  <p className="text-[9px] uppercase font-bold text-[#075e54]/70 mb-1">Variação 3</p>
-                  <p className="text-[11px] leading-snug text-gray-700 whitespace-pre-wrap break-words">{previews[2]}</p>
-                </div>
-              )}
             </div>
           </div>
         </div>
-
-        <p className="text-[9px] text-center text-[#064e3b]/50 mt-2">
-          Atualiza em tempo real
-        </p>
-
       </div>
     </div>
   );
