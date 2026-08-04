@@ -33,7 +33,7 @@ export const NON_ADDRESSABLE_NAME_SOURCES = new Set([
 /** Tokens que nunca são prenome (meme, lixo, saudação, domínio). */
 const BAD_NAME_TOKENS = new Set([
   // consultor (slugs vazados)
-  "silviaclaudiaalmeida", "silvia", "claudia", "silvia claudia", "silvia claudia almeida",
+  "silviaclaudiaalmeida", "silvia", "claudia", "silvia claudia", "silvia claudia almeida", "rafael", "rafa",
   // meme / risada / interjeição
   "ixi", "kkk", "kkkk", "kkkkk", "haha", "hahaha", "rsrs", "rsrsrs", "hehe",
   "aff", "nossa", "caramba", "puts", "poxa", "eita", "opa", "ops", "entendi",
@@ -73,6 +73,13 @@ export function isUsableCustomerName(raw: string | null | undefined): boolean {
   if (digits.length >= 8 && digits.length >= full.replace(/\s/g, "").length * 0.7) {
     return false;
   }
+  
+  // F15: Bloqueia slugs de sistema "silvia", "claudia", "rafael" em qualquer posição se for suspeito
+  const lower = full.toLowerCase();
+  if (/\b(silvia|claudia|rafael|rafa)\b/i.test(lower)) {
+    return false;
+  }
+
   const parts = full.split(/\s+/).filter(Boolean);
   if (parts.length === 0) return false;
   if (parts.length > 6) return false; // status Zap longo

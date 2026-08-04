@@ -115,7 +115,7 @@ export function isNonNameReply(text: string): boolean {
     return true;
   }
   // Intents / objeções que NUNCA são nome (F09: Adicionado lixo comum e frases de erro do lead)
-  if (/\b(interessad[oa]|ativar|quero ativar|cadastrar|golpe|furada|fidelidade|titular|aluguel|minha cidade|tem cobertura|cidade vizinha|moro em|sou de|fica em|atende na minha|cemig|economiz|manda (o )?link|depois|vou pensar|agradece seu contato|horário de|responderemos|disponível no momento|me chamo|agradecemos sua mensagem|escrevi errado|digitei errado|me enganei|n[aã]o entendi|como assim|quem [eé]|por que|silvia|claudia|silvia claudia|silvia claudia almeida)$/i.test(t)) {
+  if (/\b(interessad[oa]|ativar|quero ativar|cadastrar|golpe|furada|fidelidade|titular|aluguel|minha cidade|tem cobertura|cidade vizinha|moro em|sou de|fica em|atende na minha|cemig|economiz|manda (o )?link|depois|vou pensar|agradece seu contato|horário de|responderemos|disponível no momento|me chamo|agradecemos sua mensagem|escrevi errado|digitei errado|me enganei|n[aã]o entendi|como assim|quem [eé]|por que|silvia|claudia|silvia claudia|silvia claudia almeida|entendi|ixi|aham|eita|nossa)$/i.test(t)) {
     return true;
   }
   return false;
