@@ -891,15 +891,25 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
                 Avançar <ArrowRight className="w-4 h-4" />
               </Button>
             ) : (
-              <Button
-                onClick={startCampaign}
-                disabled={deduped.length === 0 || (!text.trim() && !media)}
-                className="gap-1.5 rounded-xl h-11 font-bold"
-                style={{ background: "var(--gradient-green)" }}
-              >
-                <Send className="w-4 h-4" />
-                {config.scheduleAt ? "Agendar e iniciar" : `Iniciar disparo (${deduped.length})`}
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  variant="outline" 
+                  onClick={sendTest}
+                  disabled={running || uploading || (!text.trim() && (!config.mediaItems || config.mediaItems.length === 0))}
+                  className="gap-2 border-primary/40 text-primary hover:bg-primary/5 rounded-xl h-11"
+                >
+                  <RotateCw className="w-4 h-4" /> Teste Multicanal
+                </Button>
+                <Button
+                  onClick={startCampaign}
+                  disabled={deduped.length === 0 || (!text.trim() && (!config.mediaItems || config.mediaItems.length === 0))}
+                  className="gap-1.5 rounded-xl h-11 font-bold"
+                  style={{ background: "var(--gradient-green)" }}
+                >
+                  <Send className="w-4 h-4" />
+                  {config.scheduleAt ? "Agendar e iniciar" : `Iniciar disparo (${deduped.length})`}
+                </Button>
+              </div>
             )}
           </div>
         )}
