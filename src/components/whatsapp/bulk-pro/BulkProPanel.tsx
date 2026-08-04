@@ -19,6 +19,7 @@ import { createCampaign, updateCampaignStatus, updateTargetStatus, listCampaigns
 
 interface Customer {
   id: string; name: string; phone_whatsapp: string; electricity_bill_value?: number;
+  city?: string; // Adicionado para suportar variável {cidade}
   status?: string; devolutiva?: string | null; registered_by_name?: string | null;
   last_inbound_at?: string | null;
 }
