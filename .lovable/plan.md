@@ -1,30 +1,33 @@
-# Plano de Correção e Aprimoramento: Bulk Pro Multicanal (Multi-Mídia e Reforço)
+# Plano de Correção e Mapeamento Profundo — Estabilização do Sistema
 
-O usuário relatou dificuldades no uso do módulo de disparo em massa (Bulk Pro), especificamente a incapcidade de adicionar mensagens, ouvir o áudio gerado para ligações e adicionar textos de SMS. Além disso, solicitou a capacidade de enviar múltiplos arquivos (imagem, vídeo, PDF) no mesmo disparo em massa.
+O usuário relatou insatisfação com a qualidade das respostas da IA e falhas no bloqueio de contatos. Identificamos falhas críticas no motor de cadência e no roteamento de IA que permitem vazamento de mensagens para contatos bloqueados e respostas genéricas.
 
-## 1. Suporte a Multi-Mídia no WhatsApp (`MessageEditor.tsx` & `BulkProPanel.tsx`)
-- **Lista de Anexos**: Alterar o estado `media` de um único objeto para um array `mediaItems: PreparedMedia[]`. [CONCLUÍDO]
-- **UI de Gerenciamento**: Adicionar uma lista de arquivos anexados com opção de remover individualmente e ordenar. [CONCLUÍDO]
-- **Lógica de Envio**: Atualizar o loop em `BulkProPanel.tsx` para percorrer o array de mídias e enviá-las sequencialmente conforme a ordem configurada. [CONCLUÍDO]
-- **Limites**: Permitir múltiplos arquivos (imagem, vídeo, PDF) por contato. [CONCLUÍDO]
+## 1. Correção Crítica de Bloqueio (cadence-tick)
+- **Problema**: A coluna `bot_paused_reason` não está sendo selecionada no motor de cadência. Isso faz com que a trava de "Bloqueio Definitivo" (`requested`) falhe, permitindo que o timeout de 48h desbloqueie o lead indevidamente.
+- **Ação**: 
+  - Adicionar `bot_paused_reason` ao `select` na `cadence-tick/index.ts`.
+  - Garantir que `requested`, `opt_out` e `complaint` bloqueiem o envio para sempre, sem expiração.
 
-## 2. Aprimoramento do Passo "Multicanal" (`MultichannelStep.tsx`)
-- **Visualização de Áudio**: Adicionar um player de áudio (`<audio controls />`) que aparece assim que um áudio da Sofia é gerado ou um clipe salvo é selecionado. [CONCLUÍDO]
-- **UX de SMS e Ligação**:
-  - Tornar os campos de texto para SMS e Sofia sempre visíveis e editáveis. [CONCLUÍDO]
-  - Adicionar um contador de caracteres para o SMS (limite 160). [CONCLUÍDO]
-  - Melhorar o feedback visual de ativação dos canais. [CONCLUÍDO]
+## 2. Melhoria da "Inteligência" das Respostas (ai-agent-router)
+- **Problema**: O modo `kbOnlyMode` (apenas base de conhecimento) está ativo por padrão, resultando em respostas enlatadas ("Vou pedir para alguém...") quando o lead foge do roteiro.
+- **Ação**:
+  - Sugerir/Configurar `ai_kb_only_mode = false` para permitir que o LLM (Gemini) use o contexto da iGreen para gerar respostas mais fluidas e humanas.
+  - Refinar o `systemPrompt` para desencorajar frases robóticas e insistir no uso do nome do consultor correto.
 
-## 3. Reforço na Orquestração e Testes (`BulkProPanel.tsx`)
-- **Botão de Teste**: Adicionar "Enviar Teste Multicanal" para o próprio número do consultor, validando WhatsApp (com todas as mídias), SMS e Ligação antes do disparo real. [CONCLUÍDO]
-- **Validação**: Impedir o avanço se houver mídias em upload ou se campos obrigatórios de canais ativos estiverem vazios. [CONCLUÍDO]
+## 3. Blindagem de Nomes Inválidos ("entendi", "ixi")
+- **Problema**: Leads estão sendo chamados por interjeições capturadas como nome.
+- **Ação**:
+  - Expandir `BAD_NAME_TOKENS` em `_shared/customer-display-name.ts`.
+  - Adicionar guarda no prompt da IA para que ela nunca use nomes que soem como interjeições, mesmo se estiverem no banco.
+  - Verificar e corrigir o uso de `scrubEmptyNameGreeting` em todos os canais de saída.
 
-## 4. Persistência e Backend (`useCampaignPersistence.ts` & Worker)
-- **Schema**: Adaptar a persistência em `bulk_campaigns` (via campo `config` ou novas colunas) para armazenar a lista de mídias. [CONCLUÍDO - persistido via JSON config]
-- **Worker**: Atualizar a Edge Function `bulk-scheduler` para processar múltiplos anexos por destino. [PENDENTE - Necessário atualizar o worker Deno]
+## 4. Prevenção de Duplicidade e Loops
+- **Problema**: Leads recebendo mensagens repetidas ou duplicadas.
+- **Ação**:
+  - Garantir que a RPC `cleanup_customer_duplicates` seja chamada antes de cada disparo na cadência.
+  - Ajustar o limiar de similaridade do anti-loop para ser mais rigoroso.
 
-## Tarefas Técnicas Realizadas
-1. Modificado `types.ts` para suportar `mediaItems: PreparedMedia[]`.
-2. Atualizado `MessageEditor.tsx` para permitir múltiplos uploads e exibir a lista de arquivos com preview.
-3. Ajustado `BulkProPanel.tsx` para orquestrar o envio sequencial das mídias no loop de disparo e adicionada funcionalidade de teste.
-4. Melhorado `MultichannelStep.tsx` com player de áudio e inputs persistentes.
+## 5. Auditoria de Identidade ("silviaclaudiaalmeida")
+- **Problema**: O nome/slug de consultores antigos está aparecendo em leads.
+- **Ação**:
+  - Bloquear explicitamente qualquer string que contenha slugs conhecidos de sistema nas funções de exibição de nome.
