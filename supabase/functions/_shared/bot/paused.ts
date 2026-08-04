@@ -17,16 +17,17 @@ export interface PausableCustomer {
   assigned_human_id?: string | null;
   bot_paused_until?: string | null;
   do_not_contact?: boolean | null;
+  updated_at?: string | null;
 }
 
 export function isCustomerPausedByHuman(c: PausableCustomer | null | undefined): boolean {
   if (!c) return false;
-  // Opt-out / reclamação: nunca responder automático (mesmo se bot_paused foi zerado por engano).
-  if (c.do_not_contact === true) return true;
+  // Opt-out / reclamação / bloqueio solicitado: nunca responder automático (mesmo se bot_paused foi zerado por engano).
+  const reason = String(c.bot_paused_reason || "").toLowerCase();
+  if (c.do_not_contact === true || reason === "requested" || reason === "opt_out" || reason === "complaint") return true;
   // Humano vinculado SEMPRE silencia.
   if (c.assigned_human_id) return true;
   // Modo Captação assistido NÃO silencia o bot — OCR/capture handlers precisam rodar.
-  const reason = String(c.bot_paused_reason || "").toLowerCase();
   if (c.bot_paused === true && reason !== "manual_capture") return true;
   if (c.bot_paused_until) {
     try {
@@ -49,9 +50,17 @@ export function evalNumberPauseRows(rows: PausableCustomer[]): boolean {
   if (!rows || rows.length === 0) return false;
   const humanTakeover = rows.some((r) => {
     if (!r) return false;
-    if (r.assigned_human_id) return true;
+    // DNC ou Bloqueio definitivo sempre pausam.
     const reason = String(r.bot_paused_reason || "").toLowerCase();
+    if (r.do_not_contact === true || reason === "requested" || reason === "opt_out" || reason === "complaint") return true;
+    
+    // Humano vinculado.
+    if (r.assigned_human_id) return true;
+    
+    // Pausa manual (bot_paused=true).
     if (r.bot_paused === true && reason !== "manual_capture") return true;
+    
+    // Pausa temporária (até certa data).
     if (r.bot_paused_until) {
       try {
         if (new Date(r.bot_paused_until).getTime() > Date.now()) return true;
@@ -80,7 +89,7 @@ export async function isPausedByPhone(
   // antes só `phone_whatsapp = digits`, que não enxergava `55…_code`.
   let q = supabase
     .from("customers")
-    .select("bot_paused, bot_paused_reason, assigned_human_id, bot_paused_until, do_not_contact")
+    .select("bot_paused, bot_paused_reason, assigned_human_id, bot_paused_until, do_not_contact, updated_at")
     .or(`phone_whatsapp.eq.${digits},phone_whatsapp.like.${digits}\\_%,whatsapp_chat_id.eq.${digits}`)
     .limit(5);
   if (consultantId) q = q.eq("consultant_id", consultantId);

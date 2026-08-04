@@ -1222,6 +1222,14 @@ Deno.serve(async (req) => {
         // Se já passou de 48h de silêncio do consultor, o lead volta ao ciclo.
         const isPausedByHuman = !!c.bot_paused || !!c.assigned_human_id;
         if (isPausedByHuman) {
+          const pauseReason = String(c.bot_paused_reason || "").toLowerCase();
+          
+          // F12: BLOQUEIO DEFINITIVO (requested/opt_out) nunca expira pelo timeout de 48h.
+          // Handoff (ia_decidiu/human_takeover) e Bloqueio (requested) são diferentes.
+          if (pauseReason === "requested" || pauseReason === "opt_out" || pauseReason === "complaint") {
+            return true; // Bloqueio manual/definitivo: para sempre.
+          }
+
           // Busca data da última interação (no customers é simplificado; no state temos last_action_at).
           // Usamos a flag de 48h baseada na atualização do registro como proxy de segurança.
           const lastInteraction = c.updated_at ? new Date(c.updated_at) : now;
