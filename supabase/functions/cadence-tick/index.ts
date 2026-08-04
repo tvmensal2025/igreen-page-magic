@@ -1326,6 +1326,9 @@ Deno.serve(async (req) => {
     let stage = row.stage as Stage;
     const claimToken = row.claim_token as string | null | undefined;
 
+    // 4) Estabilidade do Motor: Limpeza de duplicados antes de processar
+    await cleanupDuplicatedLeads(supabase, row.customer_id);
+
     const cust = custById.get(row.customer_id);
 
     // Trava: CLIENTE (carteira / aprovado / pós-venda) NUNCA recebe A/B/C como lead.
