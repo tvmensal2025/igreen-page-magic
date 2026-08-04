@@ -273,4 +273,3 @@ export function MultichannelStep({ config, onChange, consultantId }: Props) {
     </div>
   );
 }
-}
