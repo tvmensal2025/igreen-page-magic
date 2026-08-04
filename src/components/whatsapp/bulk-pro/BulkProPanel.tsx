@@ -326,10 +326,13 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
           }
 
           // Se configurado para texto por último (e não foi legenda)
-          if (useConfig.mediaOrder === "media_first" && finalMsg.trim() && !useMediaItems.some(m => m.kind === "image" || m.kind === "video")) {
-            await new Promise(r2 => setTimeout(r2, 1000 + Math.random() * 1000));
-            const r2 = await sendWhatsAppMessage({ instanceName, phone: t.phone, mediaCategory: "text", text: finalMsg });
-            if (r2.status === "failed") { ok = false; err = r2.error || err; }
+          if (useConfig.mediaOrder === "media_first" && finalMsg.trim()) {
+            const alreadySentAsCaption = useMediaItems.some(m => m.kind === "image" || m.kind === "video");
+            if (!alreadySentAsCaption || useConfig.mediaOrder === "media_first") {
+              await new Promise(r2 => setTimeout(r2, 1000 + Math.random() * 1000));
+              const r2 = await sendWhatsAppMessage({ instanceName, phone: t.phone, mediaCategory: "text", text: finalMsg });
+              if (r2.status === "failed") { ok = false; err = r2.error || err; }
+            }
           }
         } else {
           if (!finalMsg.trim()) { ok = false; err = "Mensagem vazia"; }

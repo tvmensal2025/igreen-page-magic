@@ -459,6 +459,86 @@ Deno.serve(async (req) => {
              ok = tr.ok;
              if (!tr.ok) errText = (tr as { detail?: string }).detail || (tr as { reason?: string }).reason;
           }
+        } else {
+          // Apenas texto
+          if (finalMsg) {
+            const tr = await channel.adapter.sendText(jid, finalMsg, sendCtx as any);
+            ok = tr.ok;
+            if (!tr.ok) errText = (tr as { detail?: string }).detail || (tr as { reason?: string }).reason;
+          }
+        }
+
+        if (ok) {
+          await registerSend(supabase, instance);
+          await finishOutboundEffect(supabase, eff.effectId, "sent");
+          
+          // Orquestração Multicanal (SMS/Voz)
+          if (cfg.sendSms && cfg.smsText) {
+            const smsFinal = renderText(cfg.smsText, {
+              name: t.name || undefined,
+              bill: t.vars?.bill ?? null,
+              city: t.vars?.city ?? null,
+            });
+            // Invoke server-side (sem await para não travar o loop principal)
+            supabase.functions.invoke("send-velip-sms", {
+              body: { to: t.phone, text: smsFinal, consultantId: camp.consultant_id }
+            }).catch(e => console.error("[bulk-scheduler] SMS fail:", e));
+          }
+
+          if (cfg.makeCall && cfg.callAudioClipId) {
+            supabase.functions.invoke("voice-dialer-webhook", {
+              body: { 
+                to: t.phone, 
+                audioClipId: cfg.callAudioClipId, 
+                consultantId: camp.consultant_id, 
+                source: `bulk-scheduler:${camp.id}` 
+              }
+            }).catch(e => console.error("[bulk-scheduler] Call fail:", e));
+          }
+
+        } else {
+          await finishOutboundEffect(supabase, eff.effectId, "failed_final", errText);
+        }
+      } catch (e: any) {
+        sendThrew = true;
+        errText = e?.message || "Internal Error";
+        await finishOutboundEffect(supabase, eff.effectId, "failed_final", errText);
+      }
+
+      await supabase.from("bulk_campaign_targets").update({
+        status: ok ? "sent" : "failed",
+        sent_at: new Date().toISOString(),
+        error: errText ? errText.slice(0, 500) : null,
+      }).eq("id", t.id).eq("status", "sending");
+
+      if (ok) {
+        processed++;
+        consecutiveFailures = 0;
+      } else {
+        consecutiveFailures++;
+      }
+
+      // Circuit breaker: se 5 falhas seguidas, pausa a campanha
+      if (consecutiveFailures >= 5) {
+        await supabase.from("bulk_campaign_campaigns").update({ status: "paused" }).eq("id", camp.id);
+        break;
+      }
+
+      // Delay entre contatos (respeita config)
+      const minS = Math.max(1, cfg.intervalMinS || 10);
+      const maxS = Math.max(minS, cfg.intervalMaxS || 20);
+      const delayMs = (minS + Math.random() * (maxS - minS)) * 1000;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+
+    report.push({ id: camp.id, processed, quotaBlocked });
+  }
+
+  return new Response(JSON.stringify({ ok: true, report }), {
+    headers: { ...cronCorsHeaders, "Content-Type": "application/json" },
+  });
+});
+
         } else if (finalMsg) {
           const tr = await channel.adapter.sendText(jid, finalMsg, sendCtx as any);
           ok = tr.ok;

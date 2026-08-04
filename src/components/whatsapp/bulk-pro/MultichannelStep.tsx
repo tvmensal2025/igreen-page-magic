@@ -209,12 +209,12 @@ export function MultichannelStep({ config, onChange, consultantId }: Props) {
               />
               <Button 
                 size="sm" 
-                className="w-full gap-2" 
+                className="w-full gap-2 bg-[#0d7a5f] hover:bg-[#064e3b] text-white" 
                 onClick={generateSofia}
                 disabled={generatingSofia || !sofiaText.trim()}
               >
                 {generatingSofia ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                Gerar Áudio Profissional
+                {generatingSofia ? "Gerando..." : "Gerar Áudio Profissional"}
               </Button>
             </div>
 
