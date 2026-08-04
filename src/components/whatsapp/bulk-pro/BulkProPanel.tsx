@@ -11,6 +11,8 @@ import { getConnectionState } from "@/services/evolutionApi";
 import type { BulkContact, MessageTemplate } from "@/types/whatsapp";
 import { MessageEditor } from "./MessageEditor";
 import { ScheduleStep } from "./ScheduleStep";
+import { MultichannelStep } from "./MultichannelStep";
+import { Sparkles } from "lucide-react";
 import { DEFAULT_CONFIG, type SendConfig, type PreparedMedia, type CampaignTarget } from "./types";
 import { renderFinal } from "./spintax";
 import { createCampaign, updateCampaignStatus, updateTargetStatus, listCampaigns, deleteCampaign, loadCampaignForResume, type PersistedCampaignRow } from "./useCampaignPersistence";
@@ -31,13 +33,14 @@ interface Props {
   seedContacts?: BulkContact[];
 }
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3 | 4 | 5;
 
 const STEPS: { n: Step; label: string; icon: any }[] = [
   { n: 1, label: "Contatos", icon: Users },
   { n: 2, label: "Mensagem", icon: MessageSquare },
-  { n: 3, label: "Envio", icon: Settings2 },
-  { n: 4, label: "Acompanhar", icon: Activity },
+  { n: 3, label: "Multicanal", icon: Sparkles },
+  { n: 4, label: "Envio", icon: Settings2 },
+  { n: 5, label: "Acompanhar", icon: Activity },
 ];
 
 function isValidPhone(p: string): boolean {
@@ -209,7 +212,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
     setRunning(true);
     setDone(false);
     setTargets(initialTargets);
-    setStep(4);
+    setStep(5);
 
     // Persist campaign (skip if resuming)
     if (!existingCampaignId) {
@@ -617,7 +620,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
             />
           )}
 
-          {step === 3 && (
+          {step === 5 && (
             <div className="space-y-4">
               <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
                 <label className="text-xs font-bold text-foreground mb-1.5 block">Nome da campanha</label>
@@ -656,7 +659,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
             </div>
           )}
 
-          {step === 4 && (
+          {step === 5 && (
             <div className="space-y-4">
               {waitingSchedule && (
                 <div className="rounded-xl bg-info/10 border border-info/30 p-3 text-center">
@@ -747,7 +750,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
 
 
         {/* Footer navigation */}
-        {step < 4 && !running && (
+        {step < 5 && !running && (
           <div className="flex items-center justify-between pt-2 border-t border-border/30">
             <Button
               variant="outline" disabled={step === 1}

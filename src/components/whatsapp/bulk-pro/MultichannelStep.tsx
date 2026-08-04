@@ -214,7 +214,7 @@ export function MultichannelStep({ config, onChange, consultantId }: Props) {
             </div>
 
             <div className="space-y-2">
-              <Label className="text-xs">Ou selecione um áudio/faca upload</Label>
+              <Label className="text-xs">Ou selecione um áudio salvo</Label>
               <div className="flex gap-2">
                 <Select 
                   value={config.callAudioClipId || "none"} 
@@ -231,7 +231,7 @@ export function MultichannelStep({ config, onChange, consultantId }: Props) {
                   </SelectContent>
                 </Select>
                 <label className="inline-flex">
-                  <Button variant="outline" size="icon" asChild disabled={uploading}>
+                  <Button variant="outline" size="icon" asChild disabled={uploading} type="button">
                     <span>
                       {uploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                     </span>
