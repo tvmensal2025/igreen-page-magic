@@ -156,6 +156,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
   const cancelledRef = useRef(false);
   const pausedRef = useRef(false);
   const campaignIdRef = useRef<string | null>(null);
+  const [isCleaning, setIsCleaning] = useState(false);
   const [filterStatus, setFilterStatus] = useState<"all" | "sent" | "failed">("all");
   const [history, setHistory] = useState<PersistedCampaignRow[]>([]);
   const [campaignName, setCampaignName] = useState("");
