@@ -373,11 +373,6 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
             .eq("id", t.id)
             .then(() => {});
         }
-              assigned_human_id: consultantId,
-            })
-            .eq("id", t.id)
-            .then(() => {});
-        }
       }
 
       setTargets(prev => prev.map(x => x.id === t.id ? {
