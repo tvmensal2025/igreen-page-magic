@@ -1207,7 +1207,7 @@ Deno.serve(async (req) => {
   const { data: custRows } = await supabase
     .from("customers")
     .select(
-      "id, phone_whatsapp, bot_paused, bot_paused_until, assigned_human_id, do_not_contact, customer_origin, status, is_converted, pos_venda_stage, pos_venda_recadastro_at, andamento_igreen, conversation_step, portal_submitted_at, updated_at",
+      "id, phone_whatsapp, bot_paused, bot_paused_reason, bot_paused_until, assigned_human_id, do_not_contact, customer_origin, status, is_converted, pos_venda_stage, pos_venda_recadastro_at, andamento_igreen, conversation_step, portal_submitted_at, updated_at",
     )
     .in("id", customerIds);
   const custById = new Map((custRows || []).map((c: any) => [c.id, c]));
