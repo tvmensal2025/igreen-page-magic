@@ -760,9 +760,9 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
               <ArrowLeft className="w-4 h-4" /> Voltar
             </Button>
 
-            {step < 3 ? (
+            {step < 4 ? (
               <Button
-                onClick={() => setStep((s) => Math.min(3, s + 1) as Step)}
+                onClick={() => setStep((s) => Math.min(4, s + 1) as Step)}
                 disabled={!canGoNext}
                 className="gap-1.5 rounded-xl"
               >
