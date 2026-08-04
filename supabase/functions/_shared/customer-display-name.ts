@@ -19,6 +19,7 @@ export const ADDRESSABLE_NAME_SOURCES = new Set([
   "ocr",
   "manual",
   "igreen_portal", // ficha oficial sync portal iGreen
+  "cadence", // reativado: se o sistema capturou nome na cadência, confiamos se passar no scrub
 ]);
 
 /** Nunca usar pra saudação — veio do Zap ou ainda não sabemos. */
@@ -27,7 +28,6 @@ export const NON_ADDRESSABLE_NAME_SOURCES = new Set([
   "unknown",
   "whatsapp_profile",
   "freeform_multi", // heurística de texto livre — dúvida
-  "cadence", // pode herdar push-name
 ]);
 
 /** Tokens que nunca são prenome (meme, lixo, saudação, domínio). */

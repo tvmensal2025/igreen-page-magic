@@ -292,6 +292,14 @@ async function loadStageConfig(
   // outro consultor. Se o consultor tem clip de identidade próprio
   // (consultant-identity-bootstrap), ele sobrescreve só o áudio.
   const globalCfg = await pick(null);
+  
+  // BUGFIX Video (2026-08-04): Se media_type for 'video' mas media_url for nulo/vazio, 
+  // desabilita o envio de mídia para este estágio para evitar erros ou envios fantasmas.
+  if (globalCfg && globalCfg.media_type === 'video' && !globalCfg.media_url) {
+    globalCfg.media_type = null;
+    globalCfg.media_url = null;
+  }
+
   if (!globalCfg || !consultantId) return globalCfg;
 
   const ownCfg = await pick(consultantId);

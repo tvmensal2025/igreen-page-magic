@@ -108,6 +108,12 @@ function resolveFaqReturnStep(current: DbStep, steps: DbStep[]): DbStep {
     const a3 = steps.find((s) => s.step_key === "a3_explain_with_buttons" && s.is_active !== false);
     if (a3) return a3;
   }
+  // BUGFIX Wilton (2026-08-04): Se o lead está preso em ask_bill_value (pedindo 2x),
+  // garante que ao receber o valor ele avance para o próximo passo pendente.
+  if (key === "ask_bill_value") {
+    const next = steps.find((s) => s.step_key === "ask_doc_frente_manual" && s.is_active !== false);
+    if (next) return next;
+  }
   return current;
 }
 
