@@ -1226,7 +1226,7 @@ Deno.serve(async (req) => {
           
           // F12: BLOQUEIO DEFINITIVO (requested/opt_out) nunca expira pelo timeout de 48h.
           // Handoff (ia_decidiu/human_takeover) e Bloqueio (requested) são diferentes.
-          if (pauseReason === "requested" || pauseReason === "opt_out" || pauseReason === "complaint") {
+          if (pauseReason === "requested" || pauseReason === "opt_out" || pauseReason === "complaint" || pauseReason === "blocked") {
             return true; // Bloqueio manual/definitivo: para sempre.
           }
 
