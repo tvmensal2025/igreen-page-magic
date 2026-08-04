@@ -268,6 +268,7 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
         name: c.name || c.phone_whatsapp,
         phone: c.phone_whatsapp,
         electricity_bill_value: c.electricity_bill_value,
+        city: (c as any).city || undefined, // cidade se existir no objeto
         source: "database" as const,
       }));
     onContactsChange([...contacts, ...newContacts]);
