@@ -192,12 +192,11 @@ Deno.serve(async (req) => {
     if (customer.bot_paused || customer.assigned_human_id) {
       const pReason = String(customer.bot_paused_reason || "").toLowerCase();
       const pAt = customer.bot_paused_at ? new Date(customer.bot_paused_at) : (customer.updated_at ? new Date(customer.updated_at) : new Date());
-      const isBulkPro = pReason === "bulk_pro";
       const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
 
-      // Se for bulk_pro e estiver dentro das 48h, silêncio absoluto.
-      // Se for outro motivo (ia_decidiu), o timeout de 48h também se aplica para segurança.
-      if (pAt > fortyEightHoursAgo || pReason === "requested" || pReason === "opt_out") {
+      // Se for bulk_pro, requested ou opt_out, silêncio absoluto.
+      // A IA não responde se o lead estiver em pausa por disparo em massa recente.
+      if (pAt > fortyEightHoursAgo || pReason === "requested" || pReason === "opt_out" || pReason === "bulk_pro") {
         console.log(`[ai-agent-router] blocked: customer ${customer_id} is paused (${pReason}) since ${pAt.toISOString()}`);
         return new Response(JSON.stringify({ ok: true, skipped: "bot_paused", reason: pReason }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
       }
