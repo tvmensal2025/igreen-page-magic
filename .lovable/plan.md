@@ -1,32 +1,29 @@
-# Plan: Bot Conversation Logic Fixes (Pizza/Video/Names)
+# Plano de Correção e Aprimoramento: Bulk Pro Multicanal
 
-The user reported issues with the bot's conversation logic, specifically:
-1.  **Pizza/Motor messages not responding correctly:** Mentioned leads "Rodrigo" and "Wilton" having issues with the flow.
-2.  **Video persists even after removal:** Leads continue to receive video messages even when they were supposedly removed from the flow.
-3.  **Name resolution failure:** A lead named "Wilton" was not addressed by name even though the system already had it saved.
-4.  **Rodrigo name issue:** The system is sending messages with incorrect names for the superadmin (Rodrigo).
+O usuário relatou dificuldades no uso do módulo de disparo em massa (Bulk Pro), especificamente a incapacidade de adicionar mensagens, ouvir o áudio gerado para ligações e adicionar textos de SMS. Este plano visa tornar a experiência 100% funcional, intuitiva e auditável.
 
-## Proposed Changes
+## 1. Aprimoramento do Passo "Multicanal" (`MultichannelStep.tsx`)
+- **Visualização de Áudio**: Adicionar um player de áudio (`<audio controls />`) que aparece assim que um áudio da Sofia é gerado ou um clipe salvo é selecionado.
+- **UX de SMS e Ligação**:
+  - Tornar os campos de texto para SMS e Sofia sempre visíveis (ou mais destacados) para evitar a sensação de que "não dá para adicionar".
+  - Adicionar um contador de caracteres para o SMS (limite 160).
+  - Melhorar o feedback visual de quando a opção está ativa ou inativa.
+- **Seleção de Clipe**: Mostrar claramente a URL/URL do áudio selecionado.
 
-### 1. Fix Name Resolution (`_shared/customer-display-name.ts`)
-The current logic in `safeFirstNameForAddress` only considers a source addressable if it's in a hardcoded list. I will ensure `cadence` is included if the name passes the usability check, or ensure that when a name is imported via cadence, the source is marked appropriately.
-Actually, the issue with Wilton might be that `name_source` is set to `cadence`, which is in `NON_ADDRESSABLE_NAME_SOURCES`. I will move `cadence` to `ADDRESSABLE_NAME_SOURCES` after adding a verification step to ensure it's not a push-name.
+## 2. Reforço na Orquestração (`BulkProPanel.tsx`)
+- **Testes Unitários**: Adicionar um botão "Testar Envio Multicanal" que permite enviar 1 SMS e 1 Ligação de teste para o número do próprio consultor (ou um número à escolha) antes de iniciar o disparo em massa.
+- **Persistência**: Garantir que as configurações de SMS e Ligação sejam salvas corretamente no estado local e enviadas para o worker `bulk-scheduler`.
+- **Validação**: Impedir o avanço para o passo de Envio se o usuário ativou SMS ou Ligação mas não forneceu o texto/áudio.
 
-### 2. Fix Video Persistence in Bot Flow (`evolution-webhook` and `whapi-webhook`)
-The bot flow handlers for `pos_video` and `checkin_pos_video` might be hardcoded to expect a video or have stale logic. I will update `conversational/index.ts` in both webhooks to properly check if a video is actually configured in the `bot_flow_steps` before attempting to send or transition based on it.
+## 3. UI/UX do Editor de Mensagem WhatsApp (`MessageEditor.tsx`)
+- Verificar se o `Textarea` está perdendo foco ou falhando em atualizar o estado.
+- Garantir que a pré-visualização mobile reflita mudanças instantaneamente.
 
-### 3. Fix Superadmin Name Leak (`_shared/render-vars.ts`)
-Ensure that the `representante` variable correctly resolves to "Rafael" for the superadmin account, regardless of how the lead was assigned or if there are duplicate Rodrigo records. I'll add a specific guard for the superadmin email/ID.
+## 4. Estabilidade do Worker (`bulk-scheduler`)
+- Verificar se a Edge Function `bulk-scheduler` está lendo os campos `sendSms` e `makeCall` da configuração persistida para disparar as subtarefas Velip.
 
-### 4. Database Cleanup (Action)
-I will provide a SQL snippet to merge/cleanup duplicate leads as requested by the user ("analisie pq tem 3 nome igual e nao pode").
-
-## Verification Plan
-
-### Automated Tests
-- Run `vitest` on `safeFirstNameForAddress` to ensure Wilton (source=cadence) is now addressable.
-- Run `vitest` on `renderTemplateVars` with superadmin context.
-
-### Manual Verification
-- Inspect the `bot_flow_steps` for the active flow to confirm no video is linked to the steps reported.
-- Verify conversation logs after the fix to ensure the name "Wilton" appears in the greeting.
+## Tarefas Técnicas
+1. Modificar `MultichannelStep.tsx` para incluir o player de áudio e melhorar os inputs.
+2. Modificar `BulkProPanel.tsx` para adicionar a função de teste multicanal e validações.
+3. Ajustar `types.ts` para garantir que os campos multicanal tenham valores default seguros.
+4. Validar o fluxo completo com uma simulação de disparo.
