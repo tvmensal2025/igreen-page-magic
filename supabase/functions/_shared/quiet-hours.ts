@@ -1,8 +1,12 @@
-// Janela de silêncio do bot: 21:30 → 08:00 (horário de Brasília).
-// Bloqueia envios AUTOMÁTICOS (bot/IA/cron de cadência, follow-up, reheat…).
+// Janela de silêncio do bot: 20:00 → 08:00 (horário de Brasília).
+// REGRA DURA (2026-08-04): PROIBIDO qualquer envio automático após as 20h BRT.
+// Bloqueia envios AUTOMÁTICOS (bot/IA/cron de cadência, follow-up, reheat, massa…).
 // NÃO usar em send-scheduled-messages — agenda manual do consultor envia na hora marcada.
 
-export function isQuietHourBRT(now: Date = new Date()): boolean {
+export const SEND_WINDOW_START_MIN = 8 * 60; // 08:00
+export const SEND_WINDOW_END_MIN = 20 * 60; // 20:00
+
+function minutesBRT(now: Date = new Date()): number {
   const fmt = new Intl.DateTimeFormat("en-GB", {
     timeZone: "America/Sao_Paulo",
     hour: "2-digit",
@@ -10,11 +14,19 @@ export function isQuietHourBRT(now: Date = new Date()): boolean {
     hour12: false,
   }).format(now); // "HH:MM"
   const [h, m] = fmt.split(":").map(Number);
-  const minutes = h * 60 + m;
-  const start = 21 * 60 + 30; // 21:30
-  const end = 8 * 60; // 08:00
-  return minutes >= start || minutes < end;
+  return (h % 24) * 60 + m;
 }
+
+export function isQuietHourBRT(now: Date = new Date()): boolean {
+  const minutes = minutesBRT(now);
+  return minutes >= SEND_WINDOW_END_MIN || minutes < SEND_WINDOW_START_MIN;
+}
+
+/** Alias explícito: fora da janela permitida 08:00–20:00 BRT. */
+export function isOutsideSendWindowBRT(now: Date = new Date()): boolean {
+  return isQuietHourBRT(now);
+}
+
 
 /** Hora 0–23 em America/Sao_Paulo. */
 export function hourBRT(now: Date = new Date()): number {
