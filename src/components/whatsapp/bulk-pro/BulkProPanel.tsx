@@ -830,6 +830,19 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
                 </div>
               )}
 
+              {/* Botão para iniciar nova campanha após finalizar */}
+              {done && (
+                <Button 
+                  onClick={resetAll} 
+                  variant="outline"
+                  disabled={isCleaning}
+                  className="w-full gap-2 border-primary/20 text-primary hover:bg-primary/5 rounded-xl h-10"
+                >
+                  {isCleaning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Megaphone className="w-4 h-4" />}
+                  Nova Campanha
+                </Button>
+              )}
+
               {/* Filter */}
               {targets.length > 0 && (
                 <div className="flex items-center gap-2">
