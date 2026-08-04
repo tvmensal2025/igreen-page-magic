@@ -620,7 +620,15 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
             />
           )}
 
-          {step === 5 && (
+          {step === 3 && (
+            <MultichannelStep
+              config={config}
+              onChange={setConfig}
+              consultantId={consultantId}
+            />
+          )}
+
+          {step === 4 && (
             <div className="space-y-4">
               <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
                 <label className="text-xs font-bold text-foreground mb-1.5 block">Nome da campanha</label>
