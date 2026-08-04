@@ -1,62 +1,75 @@
-export type MediaKind = "image" | "video" | "audio" | "document";
+export type SpeedPreset = "safe" | "normal" | "fast" | "custom";
 
 export interface PreparedMedia {
   url: string;
-  kind: MediaKind;
+  kind: "image" | "video" | "audio" | "document";
   fileName?: string;
-  mime?: string;
 }
-
-export type SpeedPreset = "safe" | "normal" | "fast" | "custom";
 
 export interface SendConfig {
   preset: SpeedPreset;
-  blockSize: number;
-  blockPauseMin: number;
   intervalMinS: number;
   intervalMaxS: number;
-  windowStart: string;        // "HH:mm"
-  windowEnd: string;          // "HH:mm" (se < start, janela atravessa meia-noite)
+  windowStart: string;
+  windowEnd: string;
   weekdaysOnly: boolean;
-  scheduleAt: string | null;  // "YYYY-MM-DDTHH:mm" local time
-  mediaOrder: "media_first" | "text_first" | "caption_only";
-  // Novas opções Multicanal
+  blockSize: number;
+  blockPauseMin: number;
+  mediaItems?: PreparedMedia[];
+  mediaOrder?: "text_first" | "media_first" | "caption_only";
+  scheduleAt?: string | null;
+  // Multichannel additions
   sendSms?: boolean;
   smsText?: string;
   makeCall?: boolean;
   callAudioClipId?: string;
-  mediaItems?: PreparedMedia[]; // Adicionado para suportar múltiplas mídias
+  // F12/F16: Ao disparar, o que fazer com o lead?
+  afterSendAction?: "handoff" | "grupo_a";
 }
 
 export interface CampaignTarget {
-  id: string;
+  id?: string;
   phone: string;
-  name: string;
+  name?: string;
   bill?: number;
   city?: string;
   status: "queued" | "sending" | "sent" | "failed";
   error?: string;
-  sentAt?: number;
   finalMessage?: string;
+  sentAt?: number;
 }
 
-export const PRESETS: Record<Exclude<SpeedPreset, "custom">, Pick<SendConfig, "blockSize" | "blockPauseMin" | "intervalMinS" | "intervalMaxS">> = {
-  safe:   { blockSize: 15, blockPauseMin: 15, intervalMinS: 25, intervalMaxS: 45 },
-  normal: { blockSize: 25, blockPauseMin: 10, intervalMinS: 18, intervalMaxS: 32 },
-  fast:   { blockSize: 40, blockPauseMin: 5,  intervalMinS: 10, intervalMaxS: 20 },
+export const PRESETS: Record<Exclude<SpeedPreset, "custom">, Partial<SendConfig>> = {
+  safe: {
+    blockSize: 15,
+    blockPauseMin: 15,
+    intervalMinS: 25,
+    intervalMaxS: 45,
+  },
+  normal: {
+    blockSize: 25,
+    blockPauseMin: 10,
+    intervalMinS: 18,
+    intervalMaxS: 32,
+  },
+  fast: {
+    blockSize: 40,
+    blockPauseMin: 5,
+    intervalMinS: 12,
+    intervalMaxS: 22,
+  },
 };
 
 export const DEFAULT_CONFIG: SendConfig = {
   preset: "normal",
-  ...PRESETS.normal,
+  intervalMinS: 18,
+  intervalMaxS: 32,
   windowStart: "08:00",
   windowEnd: "20:00",
-  weekdaysOnly: false,
-  scheduleAt: null,
-  mediaOrder: "media_first",
-  sendSms: false,
-  smsText: "",
-  makeCall: false,
-  callAudioClipId: "",
+  weekdaysOnly: true,
+  blockSize: 10,
+  blockPauseMin: 2,
   mediaItems: [],
+  mediaOrder: "media_first",
+  afterSendAction: "handoff",
 };

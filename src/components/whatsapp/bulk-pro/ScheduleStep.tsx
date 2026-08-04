@@ -142,6 +142,32 @@ export function ScheduleStep({ config, onChange, totalContacts }: Props) {
         </div>
       </div>
 
+      {/* Post-send action */}
+      <div className="rounded-xl border border-border/40 bg-secondary/10 p-3 space-y-3">
+        <div className="flex items-center gap-2"><Zap className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-bold">Após o envio</span></div>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            type="button" onClick={() => onChange({ ...config, afterSendAction: "handoff" })}
+            className={`px-3 py-2 rounded-lg text-left border transition-all ${config.afterSendAction !== "grupo_a" ? "border-primary/50 bg-primary/10" : "border-border/40 bg-secondary/20"}`}
+          >
+            <p className="text-xs font-bold">Aguardar Humano</p>
+            <p className="text-[10px] text-muted-foreground">Pausa o bot (Handoff 48h)</p>
+          </button>
+          <button
+            type="button" onClick={() => onChange({ ...config, afterSendAction: "grupo_a" })}
+            className={`px-3 py-2 rounded-lg text-left border transition-all ${config.afterSendAction === "grupo_a" ? "border-primary/50 bg-primary/10" : "border-border/40 bg-secondary/20"}`}
+          >
+            <p className="text-xs font-bold">Auto-Cadastro (IA)</p>
+            <p className="text-[10px] text-muted-foreground">Inicia funil Sofia Grupo A</p>
+          </button>
+        </div>
+        <p className="text-[10px] text-muted-foreground leading-tight">
+          {config.afterSendAction === "grupo_a" 
+            ? "Os leads serão direcionados para o funil automático de cadastro (Grupo A) assim que receberem a mensagem."
+            : "O robô será pausado para cada lead, permitindo que você assuma a conversa manualmente no WhatsApp."}
+        </p>
+      </div>
+
       {/* Schedule */}
       <div className="rounded-xl border border-border/40 bg-secondary/10 p-3 space-y-3">
         <div className="flex items-center gap-2"><Calendar className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-bold">Agendamento</span></div>

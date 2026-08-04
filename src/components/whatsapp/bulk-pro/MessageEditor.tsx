@@ -8,11 +8,11 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Input } from "@/components/ui/input";
 import { uploadMedia, formatFileSize } from "@/services/minioUpload";
 import { useAudioRecorder } from "@/hooks/useAudioRecorder";
-import type { PreparedMedia, MediaKind } from "./types";
+import type { PreparedMedia } from "./types";
 import type { MessageTemplate } from "@/types/whatsapp";
 import { renderFinal } from "./spintax";
 
-function inferKind(mime: string, name: string): MediaKind | null {
+function inferKind(mime: string, name: string): PreparedMedia['kind'] | null {
   if (mime.startsWith("image/")) return "image";
   if (mime.startsWith("video/")) return "video";
   if (mime.startsWith("audio/")) return "audio";
@@ -88,7 +88,7 @@ export function MessageEditor({
     setTplOpen(false);
   };
 
-  const handleUploadedBlob = useCallback(async (file: File, forcedKind?: MediaKind) => {
+  const handleUploadedBlob = useCallback(async (file: File, forcedKind?: PreparedMedia['kind']) => {
     if (file.size > 100 * 1024 * 1024) {
       toast({ title: "Arquivo muito grande", description: "Limite 100MB", variant: "destructive" });
       return;
@@ -105,7 +105,7 @@ export function MessageEditor({
         consultant_id: consultantId,
         kind,
       });
-      const newMedia: PreparedMedia = { url: res.url, kind, fileName: file.name, mime: file.type };
+      const newMedia: PreparedMedia = { url: res.url, kind, fileName: file.name };
       
       if (onMediaItemsChange) {
         onMediaItemsChange([...mediaItems, newMedia]);
