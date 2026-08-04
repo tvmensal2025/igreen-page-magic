@@ -59,7 +59,12 @@ export function phraseMatchesMessage(phraseRaw: string, messageRaw: string): boo
   const message = normalizeQaText(messageRaw);
   if (!phrase || phrase.length < 2 || !message) return false;
 
+  // F10: Match de igualdade exata tem prioridade máxima.
   if (message === phrase) return true;
+
+  // F10: Previne match acidental em respostas automáticas de outros bots/mensagens de sistema longas
+  // Se a mensagem for muito longa (>200 chars) e a phrase for curta, ignora match de substring.
+  if (message.length > 200 && phrase.length < 20) return false;
 
   const isSingleWord = !phrase.includes(" ");
 
