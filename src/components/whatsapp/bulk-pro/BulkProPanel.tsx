@@ -556,7 +556,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
   };
 
   const canGoNext = step === 1 ? deduped.length > 0
-    : step === 2 ? (text.trim().length > 0 || !!media)
+    : step === 2 ? (text.trim().length > 0 || (config.mediaItems && config.mediaItems.length > 0))
     : true;
 
   const filteredTargets = useMemo(() => {
