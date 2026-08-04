@@ -80,7 +80,7 @@ export async function isPausedByPhone(
   // antes só `phone_whatsapp = digits`, que não enxergava `55…_code`.
   let q = supabase
     .from("customers")
-    .select("bot_paused, bot_paused_reason, assigned_human_id, bot_paused_until, do_not_contact")
+    .select("bot_paused, bot_paused_reason, assigned_human_id, bot_paused_until, do_not_contact, updated_at")
     .or(`phone_whatsapp.eq.${digits},phone_whatsapp.like.${digits}\\_%,whatsapp_chat_id.eq.${digits}`)
     .limit(5);
   if (consultantId) q = q.eq("consultant_id", consultantId);
