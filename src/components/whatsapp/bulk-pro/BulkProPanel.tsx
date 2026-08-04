@@ -358,7 +358,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
               flow_variant: "A",
               conversation_step: "a1_ask_name", // Reinicia funil
               last_outbound_at: new Date().toISOString(),
-            })
+            } as any)
             .eq("id", t.id)
             .then(() => {});
         } else {
