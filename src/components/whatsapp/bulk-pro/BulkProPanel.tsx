@@ -354,7 +354,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
           supabase.from("customers")
             .update({
               bot_paused: false, // Garante bot ligado
-              bot_paused_reason: null,
+              bot_paused_reason: null as any,
               flow_variant: "A",
               conversation_step: "a1_ask_name", // Reinicia funil
               last_outbound_at: new Date().toISOString(),
@@ -366,8 +366,13 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
           supabase.from("customers")
             .update({
               bot_paused: true,
-              bot_paused_reason: "bulk_pro",
+              bot_paused_reason: "bulk_pro" as any,
               bot_paused_at: new Date().toISOString(),
+              assigned_human_id: consultantId,
+            })
+            .eq("id", t.id)
+            .then(() => {});
+        }
               assigned_human_id: consultantId,
             })
             .eq("id", t.id)
