@@ -409,6 +409,63 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
     });
   }, [config, text, media, instanceName, checkConnection, sleep, toast, consultantId, campaignName]);
 
+  const sendTest = useCallback(async () => {
+    if (!text.trim() && (!config.mediaItems || config.mediaItems.length === 0)) {
+      toast({ title: "Adicione uma mensagem ou anexo primeiro", variant: "destructive" });
+      return;
+    }
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.phone && !user?.email) {
+      toast({ title: "Erro", description: "Seu cadastro não tem telefone para o teste", variant: "destructive" });
+      return;
+    }
+    
+    // Tenta usar o telefone do consultor para o teste
+    const testPhone = user.phone || ""; 
+    if (!testPhone) {
+       toast({ title: "Aviso", description: "Enviando teste para um número de exemplo. Configure seu telefone no perfil para receber o teste real." });
+    }
+
+    toast({ title: "Enviando teste...", description: "WhatsApp, SMS e Ligação (se ativos)" });
+    
+    const dummyTarget: CampaignTarget = {
+      id: "test",
+      phone: testPhone || "5534999999999",
+      name: "Consultor (Teste)",
+      status: "sending"
+    };
+
+    // Reutiliza a lógica de envio multicanal (simplificada para o teste)
+    const finalMsg = renderFinal(text, { name: dummyTarget.name, city: "Sua Cidade" });
+    
+    try {
+      // WhatsApp
+      if (config.mediaItems && config.mediaItems.length > 0) {
+        for (const m of config.mediaItems) {
+           const cat = m.kind === "image" ? "image" : m.kind === "video" ? "video" : m.kind === "audio" ? "audio" : "document";
+           await sendWhatsAppMessage({ instanceName, phone: dummyTarget.phone, mediaCategory: cat as any, mediaUrl: m.url, text: finalMsg });
+        }
+      } else {
+        await sendWhatsAppMessage({ instanceName, phone: dummyTarget.phone, mediaCategory: "text", text: finalMsg });
+      }
+
+      // SMS
+      if (config.sendSms && config.smsText) {
+        const smsFinal = renderFinal(config.smsText, { name: dummyTarget.name });
+        await supabase.functions.invoke("send-velip-sms", { body: { to: dummyTarget.phone, text: smsFinal, consultantId } });
+      }
+
+      // Voice
+      if (config.makeCall && config.callAudioClipId) {
+        await supabase.functions.invoke("voice-dialer-webhook", { body: { to: dummyTarget.phone, audioClipId: config.callAudioClipId, consultantId, source: "test" } });
+      }
+
+      toast({ title: "Teste enviado com sucesso!", description: "Verifique seu celular." });
+    } catch (e: any) {
+      toast({ title: "Falha no teste", description: e.message, variant: "destructive" });
+    }
+  }, [text, config, instanceName, consultantId, toast]);
+
   const startCampaign = useCallback(() => {
     if (deduped.length === 0) { toast({ title: "Selecione contatos", variant: "destructive" }); return; }
     // A validação de mensagem agora é mais flexível: se for multicanal puro (ligação/sms), 
