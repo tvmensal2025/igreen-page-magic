@@ -1238,11 +1238,19 @@ Deno.serve(async (req) => {
             return true; // Bloqueio manual/definitivo: para sempre.
           }
 
-          // Busca data da última interação (no customers é simplificado; no state temos last_action_at).
-          // Usamos a flag de 48h baseada na atualização do registro como proxy de segurança.
+          // Busca data da última interação.
+          // BUGFIX 2026-08-04: bulk_pro deve ser ABSOLUTO por 48h, não expira se o registro for atualizado por outros processos.
           const lastInteraction = c.updated_at ? new Date(c.updated_at) : now;
           const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
-          if (lastInteraction > fortyEightHoursAgo) return true;
+          
+          if (pauseReason === "bulk_pro") {
+            // Para bulk_pro, usamos bot_paused_at se disponível, senão updated_at.
+            const pausedAt = c.bot_paused_at ? new Date(c.bot_paused_at) : lastInteraction;
+            if (pausedAt > fortyEightHoursAgo) return true;
+          } else {
+            // Handoff normal: expira após 48h de inatividade.
+            if (lastInteraction > fortyEightHoursAgo) return true;
+          }
         }
         
         return false;

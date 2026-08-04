@@ -190,8 +190,19 @@ Deno.serve(async (req) => {
     // 2) Se bot pausado OU humano vinculado, sair (segurança extra).
     // F14: Reforça o silêncio absoluto se o motivo for 'bulk_pro' (handoff de massa).
     if (customer.bot_paused || customer.assigned_human_id) {
-      console.log(`[ai-agent-router] skipped for customer ${customer_id}: bot_paused=${customer.bot_paused}, reason=${customer.bot_paused_reason}, human=${customer.assigned_human_id}`);
-      return new Response(JSON.stringify({ ok: true, skipped: "bot_paused", reason: customer.bot_paused_reason }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const pReason = String(customer.bot_paused_reason || "").toLowerCase();
+      const pAt = customer.bot_paused_at ? new Date(customer.bot_paused_at) : (customer.updated_at ? new Date(customer.updated_at) : new Date());
+      const isBulkPro = pReason === "bulk_pro";
+      const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+
+      // Se for bulk_pro e estiver dentro das 48h, silêncio absoluto.
+      // Se for outro motivo (ia_decidiu), o timeout de 48h também se aplica para segurança.
+      if (pAt > fortyEightHoursAgo || pReason === "requested" || pReason === "opt_out") {
+        console.log(`[ai-agent-router] blocked: customer ${customer_id} is paused (${pReason}) since ${pAt.toISOString()}`);
+        return new Response(JSON.stringify({ ok: true, skipped: "bot_paused", reason: pReason }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      }
+      
+      console.log(`[ai-agent-router] pause expired for ${customer_id} (${pReason}), proceeding...`);
     }
 
     const consultantId = customer.consultant_id;
