@@ -409,7 +409,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
       }
       return prev;
     });
-  }, [config, text, media, instanceName, checkConnection, sleep, toast, consultantId, campaignName]);
+  }, [config, text, instanceName, checkConnection, sleep, toast, consultantId, campaignName]);
 
   const sendTest = useCallback(async () => {
     if (!text.trim() && (!config.mediaItems || config.mediaItems.length === 0)) {
