@@ -200,10 +200,10 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
   const runCampaign = useCallback(async (
     initialTargets: CampaignTarget[],
     existingCampaignId?: string,
-    overrides?: { text?: string; media?: PreparedMedia | null; config?: SendConfig; name?: string },
+    overrides?: { text?: string; mediaItems?: PreparedMedia[]; config?: SendConfig; name?: string },
   ) => {
     const useText = overrides?.text ?? text;
-    const useMedia = overrides?.media !== undefined ? overrides.media : media;
+    const useMediaItems = overrides?.mediaItems ?? config.mediaItems ?? [];
     const useConfig = overrides?.config ?? config;
     const useName = overrides?.name ?? campaignName;
 
@@ -217,14 +217,17 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
 
     // Persist campaign (skip if resuming)
     if (!existingCampaignId) {
+      // Para o banco, se houver múltiplas mídias, guardamos a primeira como referência principal
+      // ou guardamos tudo no campo config (que já é persistido).
+      const primaryMedia = useMediaItems[0];
       const newId = await createCampaign({
         consultantId,
         name: useName.trim() || `Disparo ${new Date().toLocaleString("pt-BR")}`,
         messageText: useText,
-        mediaUrl: useMedia?.url ?? null,
-        mediaType: useMedia?.kind ?? null,
-        mediaFilename: useMedia?.fileName ?? null,
-        config: useConfig as any,
+        mediaUrl: primaryMedia?.url ?? null,
+        mediaType: primaryMedia?.kind ?? null,
+        mediaFilename: primaryMedia?.fileName ?? null,
+        config: { ...useConfig, mediaItems: useMediaItems } as any,
         scheduledAt: useConfig.scheduleAt,
         targets: initialTargets,
       });
