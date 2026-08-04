@@ -58,6 +58,7 @@ export interface BulkContact {
   name: string;
   phone: string;
   electricity_bill_value?: number;
+  city?: string;
   source: "database" | "pasted" | "imported";
 }
 
