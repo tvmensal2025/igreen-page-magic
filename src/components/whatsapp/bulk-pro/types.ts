@@ -20,6 +20,11 @@ export interface SendConfig {
   weekdaysOnly: boolean;
   scheduleAt: string | null;  // "YYYY-MM-DDTHH:mm" local time
   mediaOrder: "media_first" | "text_first" | "caption_only";
+  // Novas opções Multicanal
+  sendSms?: boolean;
+  smsText?: string;
+  makeCall?: boolean;
+  callAudioClipId?: string;
 }
 
 export interface CampaignTarget {
@@ -48,4 +53,8 @@ export const DEFAULT_CONFIG: SendConfig = {
   weekdaysOnly: false,
   scheduleAt: null,
   mediaOrder: "media_first",
+  sendSms: false,
+  smsText: "",
+  makeCall: false,
+  callAudioClipId: "",
 };

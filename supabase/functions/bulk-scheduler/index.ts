@@ -43,7 +43,13 @@ interface CampaignRow {
   media_url: string | null;
   media_type: string | null;
   media_filename: string | null;
-  config: any;
+  config: {
+    sendSms?: boolean;
+    smsText?: string;
+    makeCall?: boolean;
+    callAudioClipId?: string;
+    [key: string]: any;
+  } | null;
   status: string;
   total: number;
   sent: number;
@@ -471,6 +477,32 @@ Deno.serve(async (req) => {
         processed++;
         consecutiveFailures = 0;
         await registerSend(supabase, instance);
+
+        // --- Orquestração Multicanal (Reforço) ---
+        if (cfg?.sendSms && cfg?.smsText) {
+          const smsFinal = renderText(cfg.smsText, {
+            name: t.name || undefined,
+            bill: t.vars?.bill ?? null,
+            city: t.vars?.city ?? null,
+          });
+          // Dispara SMS via Velip (através da edge 'velip-sender' ou similar se disponível, 
+          // ou direto se tivermos o helper. Usaremos o edge local 'send-velip-sms' para manter o padrão)
+          supabase.functions.invoke("send-velip-sms", {
+            body: { to: t.phone, text: smsFinal, consultantId: camp.consultant_id }
+          }).catch(e => console.error("[bulk] SMS fail:", e));
+        }
+
+        if (cfg?.makeCall && cfg?.callAudioClipId) {
+          // Dispara Ligação via Velip
+          supabase.functions.invoke("voice-dialer-webhook", {
+            body: { 
+              to: t.phone, 
+              audioClipId: cfg.callAudioClipId, 
+              consultantId: camp.consultant_id,
+              source: `bulk:${camp.id}`
+            }
+          }).catch(e => console.error("[bulk] Call fail:", e));
+        }
       } else {
         consecutiveFailures++;
       }

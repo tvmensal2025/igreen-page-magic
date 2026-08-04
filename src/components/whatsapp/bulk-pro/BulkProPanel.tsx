@@ -11,12 +11,15 @@ import { getConnectionState } from "@/services/evolutionApi";
 import type { BulkContact, MessageTemplate } from "@/types/whatsapp";
 import { MessageEditor } from "./MessageEditor";
 import { ScheduleStep } from "./ScheduleStep";
+import { MultichannelStep } from "./MultichannelStep";
+import { Sparkles } from "lucide-react";
 import { DEFAULT_CONFIG, type SendConfig, type PreparedMedia, type CampaignTarget } from "./types";
 import { renderFinal } from "./spintax";
 import { createCampaign, updateCampaignStatus, updateTargetStatus, listCampaigns, deleteCampaign, loadCampaignForResume, type PersistedCampaignRow } from "./useCampaignPersistence";
 
 interface Customer {
   id: string; name: string; phone_whatsapp: string; electricity_bill_value?: number;
+  city?: string; // Adicionado para suportar variável {cidade}
   status?: string; devolutiva?: string | null; registered_by_name?: string | null;
   last_inbound_at?: string | null;
 }
@@ -31,13 +34,14 @@ interface Props {
   seedContacts?: BulkContact[];
 }
 
-type Step = 1 | 2 | 3 | 4;
+type Step = 1 | 2 | 3 | 4 | 5;
 
 const STEPS: { n: Step; label: string; icon: any }[] = [
   { n: 1, label: "Contatos", icon: Users },
   { n: 2, label: "Mensagem", icon: MessageSquare },
-  { n: 3, label: "Envio", icon: Settings2 },
-  { n: 4, label: "Acompanhar", icon: Activity },
+  { n: 3, label: "Multicanal", icon: Sparkles },
+  { n: 4, label: "Envio", icon: Settings2 },
+  { n: 5, label: "Acompanhar", icon: Activity },
 ];
 
 function isValidPhone(p: string): boolean {
@@ -209,7 +213,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
     setRunning(true);
     setDone(false);
     setTargets(initialTargets);
-    setStep(4);
+    setStep(5);
 
     // Persist campaign (skip if resuming)
     if (!existingCampaignId) {
@@ -319,6 +323,21 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
         ...x, status: ok ? "sent" : "failed", error: err, finalMessage: finalMsg, sentAt: Date.now(),
       } : x));
 
+      // --- Orquestração Multicanal (Reforço no Navegador) ---
+      if (ok) {
+        if (useConfig.sendSms && useConfig.smsText) {
+          const smsFinal = renderFinal(useConfig.smsText, { name: t.name, bill: t.bill, city: t.city });
+          supabase.functions.invoke("send-velip-sms", {
+            body: { to: t.phone, text: smsFinal, consultantId }
+          }).catch(e => console.error("SMS fail:", e));
+        }
+        if (useConfig.makeCall && useConfig.callAudioClipId) {
+          supabase.functions.invoke("voice-dialer-webhook", {
+            body: { to: t.phone, audioClipId: useConfig.callAudioClipId, consultantId, source: `bulk-ui:${campaignIdRef.current}` }
+          }).catch(e => console.error("Call fail:", e));
+        }
+      }
+
       // Persist target result (fire-and-forget)
       if (campaignIdRef.current) {
         updateTargetStatus(campaignIdRef.current, t.phone, {
@@ -371,7 +390,9 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
 
   const startCampaign = useCallback(() => {
     if (deduped.length === 0) { toast({ title: "Selecione contatos", variant: "destructive" }); return; }
-    if (!text.trim() && !media) { toast({ title: "Adicione mensagem ou anexo", variant: "destructive" }); return; }
+    // A validação de mensagem agora é mais flexível: se for multicanal puro (ligação/sms), 
+    // pode não ter WhatsApp, mas o Disparo PRO é focado em WhatsApp + Reforço.
+    if (!text.trim() && !media) { toast({ title: "Adicione mensagem ou anexo de WhatsApp", variant: "destructive" }); return; }
     if (config.intervalMaxS < config.intervalMinS) {
       toast({ title: "Intervalo inválido", description: "Intervalo máximo deve ser maior ou igual ao mínimo", variant: "destructive" });
       return;
@@ -379,6 +400,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
     const initial: CampaignTarget[] = deduped.map(c => ({
       id: c.id, phone: c.phone, name: c.name,
       bill: c.electricity_bill_value,
+      city: c.city, // Garante que a cidade vá para o render de variáveis
       status: "queued",
     }));
     runCampaign(initial);
@@ -618,6 +640,14 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
           )}
 
           {step === 3 && (
+            <MultichannelStep
+              config={config}
+              onChange={setConfig}
+              consultantId={consultantId}
+            />
+          )}
+
+          {step === 4 && (
             <div className="space-y-4">
               <div className="rounded-xl border border-border/40 bg-secondary/10 p-3">
                 <label className="text-xs font-bold text-foreground mb-1.5 block">Nome da campanha</label>
@@ -656,7 +686,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
             </div>
           )}
 
-          {step === 4 && (
+          {step === 5 && (
             <div className="space-y-4">
               {waitingSchedule && (
                 <div className="rounded-xl bg-info/10 border border-info/30 p-3 text-center">
@@ -747,7 +777,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
 
 
         {/* Footer navigation */}
-        {step < 4 && !running && (
+        {step < 5 && !running && (
           <div className="flex items-center justify-between pt-2 border-t border-border/30">
             <Button
               variant="outline" disabled={step === 1}
@@ -757,9 +787,9 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
               <ArrowLeft className="w-4 h-4" /> Voltar
             </Button>
 
-            {step < 3 ? (
+            {step < 4 ? (
               <Button
-                onClick={() => setStep((s) => Math.min(3, s + 1) as Step)}
+                onClick={() => setStep((s) => Math.min(4, s + 1) as Step)}
                 disabled={!canGoNext}
                 className="gap-1.5 rounded-xl"
               >
