@@ -111,11 +111,11 @@ export function isNonNameReply(text: string): boolean {
   const t = String(text || "").trim().toLowerCase();
   if (t.length < 3) return true;
   // F09: Termos curtos que indicam intenção de outra coisa (IA/Outro/Saudação) e nunca são nome.
-  if (/^(oi|ol[aá]|opa|oie|hey|hi|hello|ok|okay|sim|n[aã]o|blz|beleza|obrigad[oa]|valeu|bom dia|boa tarde|boa noite|1|2|3|4|5|ixi|kkk|haha|rsrs|aff|nossa|eita|entendi|aham|t[aá]|tbm|tamb[eé]m)$/i.test(t)) {
+  if (/^(oi|ol[aá]|opa|oie|hey|hi|hello|ok|okay|sim|n[aã]o|blz|beleza|obrigad[oa]|valeu|bom dia|boa tarde|boa noite|1|2|3|4|5|ixi|kkk|haha|rsrs|aff|nossa|eita|entendi|aham|t[aá]|tbm|tamb[eé]m|eita|entendi|aham|silvia|claudia|silvia claudia)$/i.test(t)) {
     return true;
   }
   // Intents / objeções que NUNCA são nome (F09: Adicionado lixo comum e frases de erro do lead)
-  if (/\b(interessad[oa]|ativar|quero ativar|cadastrar|golpe|furada|fidelidade|titular|aluguel|minha cidade|tem cobertura|cidade vizinha|moro em|sou de|fica em|atende na minha|cemig|economiz|manda (o )?link|depois|vou pensar|agradece seu contato|horário de|responderemos|disponível no momento|me chamo|agradecemos sua mensagem|escrevi errado|digitei errado|me enganei|n[aã]o entendi|como assim|quem [eé]|por que)\b/i.test(t)) {
+  if (/\b(interessad[oa]|ativar|quero ativar|cadastrar|golpe|furada|fidelidade|titular|aluguel|minha cidade|tem cobertura|cidade vizinha|moro em|sou de|fica em|atende na minha|cemig|economiz|manda (o )?link|depois|vou pensar|agradece seu contato|horário de|responderemos|disponível no momento|me chamo|agradecemos sua mensagem|escrevi errado|digitei errado|me enganei|n[aã]o entendi|como assim|quem [eé]|por que|silvia|claudia|silvia claudia|silvia claudia almeida)$/i.test(t)) {
     return true;
   }
   return false;

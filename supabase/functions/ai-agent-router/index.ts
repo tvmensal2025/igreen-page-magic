@@ -127,6 +127,17 @@ function similarity(a: string, b: string): number {
   return inter / Math.max(ta.size, tb.size);
 }
 
+// F11: Detecta mensagens repetitivas ou que parecem loop de bot
+function isLikelyLooping(history: any[], userInput: string): boolean {
+  if (!history || history.length < 3) return false;
+  const lastBotMsgs = history
+    .filter(m => m.message_direction === 'outbound')
+    .slice(0, 2)
+    .map(m => m.message_text || "");
+  
+  return lastBotMsgs.some(msg => similarity(msg, userInput) > 0.85);
+}
+
 function randInt(min: number, max: number) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -258,7 +269,7 @@ Deno.serve(async (req) => {
         if (lookup.found && lookup.text) {
           // F11: Se o match veio da Base de Conhecimento e é muito curto (confiança baixa), 
           // ou se a mensagem do usuário parece ser um spam de sistema, não responde nada ou vai p/ handoff.
-          const isSuspect = (user_input || "").length > 300 || lookup.confidence < 0.4;
+          const isSuspect = (user_input || "").length > 300 || lookup.confidence < 0.4 || isLikelyLooping(historyChrono || [], user_input || "");
           
           if (!isSuspect) {
             try {
