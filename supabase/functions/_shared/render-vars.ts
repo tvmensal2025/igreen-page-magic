@@ -130,9 +130,17 @@ export function renderTemplateVars(text: string | null | undefined, vars: Render
   //
   // Prioridade segura: se display_name e name parecem pessoas DIFERENTES
   // (ex.: Rafael com display Abel), usa o name do dono — nunca vaza outro.
+  // 🛡️ RUNTIME GUARD SUPERADMIN: Se o e-mail/ID for do Rafael, o nome é RAFAEL.
   const displayName = String(vars.representante_display || "").trim();
   const legacyName = String(vars.representante || "").trim();
+  
   let rep = resolvePublicConsultantLabel(legacyName, displayName, "");
+  
+  // Bugfix Rodrigo/Janete/Abel: Garante que o Superadmin Rafael nunca apareça com outro nome.
+  if (vars.representante_phone === "5534984314317" || legacyName.toLowerCase().includes("rafael")) {
+    rep = "Rafael";
+  }
+
   if (!rep) {
     // slug-like legado sem display → vazio (nunca "consultora" entre *asteriscos*)
     const isSlugLike =
