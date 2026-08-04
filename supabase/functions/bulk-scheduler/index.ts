@@ -344,7 +344,8 @@ Deno.serve(async (req) => {
 
       const jid = toJid(t.phone);
 
-      // F12/F16: Antes de enviar massa, pausa o bot ou joga no Grupo A.
+      // F12/F16: O áudio da Sofia (ou customizado no wizard) deve ser respeitado se configurado.
+      // O usuário solicitou que entrem em handoff por padrão.
       const action = cfg.afterSendAction || "handoff";
 
       const { data: lead } = await supabase.from("customers")
@@ -355,7 +356,7 @@ Deno.serve(async (req) => {
 
       if (lead?.id) {
         if (action === "grupo_a") {
-          // Joga no Grupo A (cadastro automático)
+          // Joga no Grupo A (IA ativa)
           await supabase.from("customers")
             .update({
               bot_paused: false,
@@ -366,15 +367,13 @@ Deno.serve(async (req) => {
             })
             .eq("id", lead.id);
         } else {
-          // Padrão: Handoff (atendimento humano)
-          // Isso evita que a IA responda ou o motor A/B/C interfira durante o disparo.
-          // O motivo 'bulk_pro' faz com que ele expire em 48h (handoff), voltando à pizza se não houver resposta.
+          // Padrão: Handoff (Pausa bot, humano responde)
           await supabase.from("customers")
             .update({
               bot_paused: true,
               bot_paused_reason: "bulk_pro" as any,
               bot_paused_at: new Date().toISOString(),
-              assigned_human_id: camp.consultant_id, // Atribui ao consultor do disparo
+              assigned_human_id: camp.consultant_id,
             })
             .eq("id", lead.id);
         }

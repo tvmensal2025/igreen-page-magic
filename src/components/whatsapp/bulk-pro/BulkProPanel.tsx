@@ -346,23 +346,22 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
       }
 
       // F12/F16: Sincroniza estado de pausa ou roteamento no banco para disparos via UI
-      if (ok && t.id && t.id.length > 10) { // Assume UUID se > 10 chars
+      if (ok && t.id && t.id.length > 10) { 
         const action = overrides?.config?.afterSendAction ?? config.afterSendAction ?? "handoff";
         
         if (action === "grupo_a") {
-          // Joga no Grupo A (cadastro)
           supabase.from("customers")
             .update({
-              bot_paused: false, // Garante bot ligado
+              bot_paused: false,
               bot_paused_reason: null as any,
               flow_variant: "A",
-              conversation_step: "a1_ask_name", // Reinicia funil
+              conversation_step: "a1_ask_name",
               last_outbound_at: new Date().toISOString(),
             } as any)
             .eq("id", t.id)
             .then(() => {});
         } else {
-          // Padrão: Handoff (atendimento humano)
+          // Padrão solicitado: Pausa bot, humano responde
           supabase.from("customers")
             .update({
               bot_paused: true,
