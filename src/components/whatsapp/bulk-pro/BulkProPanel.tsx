@@ -539,11 +539,20 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
     });
   }, [running, runCampaign, toast]);
 
-  const resetAll = () => {
-    setStep(1); setTargets([]); setDone(false); setRunning(false); setPaused(false);
-    cancelledRef.current = false; pausedRef.current = false;
-    campaignIdRef.current = null;
-    setCampaignName("");
+  const resetAll = async () => {
+    setIsCleaning(true);
+    try {
+      setStep(1); setTargets([]); setDone(false); setRunning(false); setPaused(false);
+      setText(""); 
+      setMedia(null);
+      setConfig({ ...DEFAULT_CONFIG, mediaItems: [] });
+      setCampaignName("");
+      campaignIdRef.current = null;
+      cancelledRef.current = false;
+      pausedRef.current = false;
+    } finally {
+      setIsCleaning(false);
+    }
   };
 
   const canGoNext = step === 1 ? deduped.length > 0
