@@ -368,6 +368,7 @@ Deno.serve(async (req) => {
             .eq("id", lead.id);
         } else {
           // Padrão: Handoff (Pausa bot, humano responde)
+          // F14: Força bot_paused=true e bot_paused_reason='bulk_pro' para bloquear IA e Cadência.
           await supabase.from("customers")
             .update({
               bot_paused: true,
