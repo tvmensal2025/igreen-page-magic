@@ -458,6 +458,13 @@ REGRAS DE HANDOFF: ${JSON.stringify(handoffRules)}
 CONHECIMENTO iGREEN:
 ${conhecimentoFocado}${(knowledge || []).map((k: any) => `## ${k.title}\n${k.content}`).join("\n\n").slice(0, 4000)}
 
+DADOS DO CONSULTOR (VOCÊ É ESTE CONSULTOR):
+${JSON.stringify({
+  consultant_name: (customer as any).consultant_name || "Rafael",
+  consultant_whatsapp: (customer as any).consultant_whatsapp,
+  consultant_license: (customer as any).consultant_license,
+}, null, 2)}
+
 DADOS DO CLIENTE:
 ${JSON.stringify({
   name: customer.name, name_source: (customer as any).name_source, cidade: customer.address_city, uf: customer.address_state,
@@ -468,7 +475,7 @@ ${JSON.stringify({
 BIBLIOTECA DE MÍDIAS DISPONÍVEIS PARA ESTA ETAPA (use o id em media_to_send_ids):
 ${relevantMedia.map((m: any) => `- id=${m.id} kind=${m.kind} label="${m.label}" intent_tags=${JSON.stringify(m.intent_tags || [])}${m.transcript ? ` transcript="${(m.transcript || "").slice(0, 120)}"` : ""}`).join("\n") || "(nenhuma)"}
 
-ÁUDIOS DO CONSULTOR (slots fixos da biblioteca — preencha "audio_slot_key" com o slot_key apropriado quando o gatilho bater; deixe vazio se nenhum se aplica). NUNCA cite o nome "Rafael" (ou qualquer outro nome de consultor) no reply_text — use apenas o nome do consultor atual quando ele estiver disponível no contexto. Slots marcados com 🎬 enviam um vídeo automaticamente logo após o áudio:
+ÁUDIOS DO CONSULTOR (slots fixos da biblioteca — preencha "audio_slot_key" com o slot_key apropriado quando o gatilho bater; deixe vazio se nenhum se aplica). Slots marcados com 🎬 enviam um vídeo automaticamente logo após o áudio:
 ${slots.map((s: any) => `- slot_key=${s.slot_key} (${s.label})${s.video_url ? " 🎬+vídeo" : ""}: ${s.trigger_hint || ""}`).join("\n") || "(nenhum)"}
 
 RESPONDA APENAS com o JSON do schema. reply_text deve ser CURTO (1-3 frases). Se for enviar áudio/vídeo, geralmente reply_text fica vazio ou bem curto. Se houver um slot_key apropriado, prefira "audio_slot_key" em vez de "media_to_send_ids".`;

@@ -1804,6 +1804,13 @@ Deno.serve(async (req) => {
           } else {
             await markEffectSending(supabase, eff.effectId);
             let res: DispatchResult;
+            // 4. Estabilidade: Cleanup duplicates before processing each row
+            try {
+              await supabase.rpc('cleanup_customer_duplicates', { p_customer_id: row.customer_id });
+            } catch (err) {
+              console.warn(`[cadence-tick] cleanup_customer_duplicates failed for ${row.customer_id}:`, err);
+            }
+
             if (def.channel === "whatsapp") res = await dispatchWhatsApp(supabase, env, row, stage, cfg, loadAvail);
             else if (def.channel === "voice") {
               res = await dispatchVoiceCall(supabase, row, stage, cfg);
