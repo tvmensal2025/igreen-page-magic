@@ -665,8 +665,8 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
               consultantId={consultantId}
               text={text}
               onTextChange={setText}
-              media={media}
-              onMediaChange={setMedia}
+              mediaItems={config.mediaItems || []}
+              onMediaItemsChange={(m) => setConfig(prev => ({ ...prev, mediaItems: m }))}
               previewName={deduped[0]?.name}
               previewBill={deduped[0]?.electricity_bill_value}
               templates={templates}
@@ -707,7 +707,11 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
                         onClick={() => {
                           setText(t.content);
                           if (t.media_url && t.media_type && t.media_type !== "text") {
-                            setMedia({ url: t.media_url, kind: t.media_type as any, fileName: t.name });
+                            const newMedia: PreparedMedia = { url: t.media_url, kind: t.media_type as any, fileName: t.name };
+                            setConfig(prev => ({ 
+                              ...prev, 
+                              mediaItems: [...(prev.mediaItems || []), newMedia] 
+                            }));
                           }
                           toast({ title: "Template carregado", description: t.name });
                         }}
