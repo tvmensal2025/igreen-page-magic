@@ -21,12 +21,12 @@ export interface PausableCustomer {
 
 export function isCustomerPausedByHuman(c: PausableCustomer | null | undefined): boolean {
   if (!c) return false;
-  // Opt-out / reclamação: nunca responder automático (mesmo se bot_paused foi zerado por engano).
-  if (c.do_not_contact === true) return true;
+  // Opt-out / reclamação / bloqueio solicitado: nunca responder automático (mesmo se bot_paused foi zerado por engano).
+  const reason = String(c.bot_paused_reason || "").toLowerCase();
+  if (c.do_not_contact === true || reason === "requested" || reason === "opt_out" || reason === "complaint") return true;
   // Humano vinculado SEMPRE silencia.
   if (c.assigned_human_id) return true;
   // Modo Captação assistido NÃO silencia o bot — OCR/capture handlers precisam rodar.
-  const reason = String(c.bot_paused_reason || "").toLowerCase();
   if (c.bot_paused === true && reason !== "manual_capture") return true;
   if (c.bot_paused_until) {
     try {
