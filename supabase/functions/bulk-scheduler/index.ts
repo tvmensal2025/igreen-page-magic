@@ -43,7 +43,13 @@ interface CampaignRow {
   media_url: string | null;
   media_type: string | null;
   media_filename: string | null;
-  config: any;
+  config: {
+    sendSms?: boolean;
+    smsText?: string;
+    makeCall?: boolean;
+    callAudioClipId?: string;
+    [key: string]: any;
+  } | null;
   status: string;
   total: number;
   sent: number;
