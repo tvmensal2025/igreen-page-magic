@@ -70,15 +70,20 @@ export function StepCreative({ state, patch, patchFn, creative, consultantId }: 
           <div>
             <Label className="flex items-center gap-1.5"><ImageIcon className="w-3.5 h-3.5 text-[hsl(var(--ads-emerald-2))]" /> Formato do anúncio</Label>
             <p className="text-[11px] text-[hsl(var(--ads-muted))] mt-1 mb-1">
-              Padrão: <strong className="text-foreground">Stories / Reels (1080×1920)</strong> — escolha até 4 fotos na biblioteca.
+              {state.filesByFormat.story.length > 0 ? (
+                <>Padrão: <strong className="text-foreground">Stories / Reels (1080×1920)</strong> — ideal para parcerias.</>
+              ) : (
+                <>Escolha <strong className="text-foreground">Stories / Reels</strong> para anúncios de parceria.</>
+              )}
             </p>
             <div className="grid grid-cols-3 gap-2 mt-2">
               {(Object.keys(FORMAT_SPEC) as AdFormat[]).map((k) => (
                 <button key={k} type="button" onClick={() => patch({ format: k })}
-                  className={`ads-select-card text-xs ${format === k ? "is-active" : ""}`}>
+                  className={`ads-select-card text-xs ${format === k ? "is-active" : ""} ${k !== "story" ? "opacity-60 hover:opacity-100" : ""}`}>
                   <div className="font-bold">{FORMAT_SPEC[k].label}</div>
                   <div className="text-[10px] text-[hsl(var(--ads-muted))] mt-0.5">{FORMAT_SPEC[k].desc}</div>
                   <div className="text-[10px] mt-1 font-bold text-[hsl(var(--ads-emerald-2))]">{state.filesByFormat[k].length}/{PER_FORMAT_LIMIT} foto(s)</div>
+                  {k === "story" && <div className="text-[9px] bg-primary/10 text-primary px-1 rounded mt-1 inline-block">Recomendado Story</div>}
                 </button>
               ))}
             </div>

@@ -157,11 +157,10 @@ export function StepRegion({ state, patch, region, consultantId }: Props) {
         <AddressRadiusPicker value={state.radiusPoints} onChange={(v) => patch({ radiusPoints: v })} />
       ) : (
         <>
-          {/* Busca de cidade — interação principal */}
           <div>
             <Label className="text-sm flex items-center gap-1.5 text-[hsl(var(--ads-text))]">
               <Search className="w-3.5 h-3.5 text-[hsl(var(--ads-emerald))]" /> Onde quer anunciar?
-              <span className="text-[hsl(var(--ads-muted))] font-normal">({state.cities.length}/2 cidades · 1 é o ideal)</span>
+              <span className="text-[hsl(var(--ads-muted))] font-normal">({state.cities.length}/1 cidade ideal para parceria)</span>
             </Label>
             <div className="relative mt-1.5">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[hsl(var(--ads-muted))]" />
