@@ -1232,23 +1232,21 @@ Deno.serve(async (req) => {
           const pauseReason = String(c.bot_paused_reason || "").toLowerCase();
           
           // F12: BLOQUEIO DEFINITIVO (requested/opt_out) nunca expira pelo timeout de 48h.
-          // Handoff (ia_decidiu/human_takeover), Bloqueio (requested) e Massa (bulk_pro) são tratados.
-          // bulk_pro expira em 48h para devolver à pizza se o lead não responder.
           if (pauseReason === "requested" || pauseReason === "opt_out" || pauseReason === "complaint" || pauseReason === "blocked") {
-            return true; // Bloqueio manual/definitivo: para sempre.
+            return true;
           }
 
-          // Busca data da última interação.
-          // BUGFIX 2026-08-04: bulk_pro deve ser ABSOLUTO por 48h, não expira se o registro for atualizado por outros processos.
-          const lastInteraction = c.updated_at ? new Date(c.updated_at) : now;
           const fortyEightHoursAgo = new Date(now.getTime() - 48 * 60 * 60 * 1000);
           
           if (pauseReason === "bulk_pro") {
-            // Para bulk_pro, usamos bot_paused_at se disponível, senão updated_at.
-            const pausedAt = c.bot_paused_at ? new Date(c.bot_paused_at) : lastInteraction;
+            // BUGFIX 2026-08-04: PARA BULK_PRO O BLOQUEIO É ABSOLUTO E TOTAL.
+            // Ignoramos qualquer sinal de "atividade" (updated_at) e usamos bot_paused_at
+            // ou data do disparo. O lead NÃO PODE receber nada da cadência.
+            const pausedAt = c.bot_paused_at ? new Date(c.bot_paused_at) : (c.updated_at ? new Date(c.updated_at) : now);
             if (pausedAt > fortyEightHoursAgo) return true;
           } else {
             // Handoff normal: expira após 48h de inatividade.
+            const lastInteraction = c.updated_at ? new Date(c.updated_at) : now;
             if (lastInteraction > fortyEightHoursAgo) return true;
           }
         }
