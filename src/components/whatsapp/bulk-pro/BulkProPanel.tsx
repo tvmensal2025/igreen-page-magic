@@ -347,7 +347,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
 
       // F12/F16: Sincroniza estado de pausa ou roteamento no banco para disparos via UI
       if (ok && t.id && t.id.length > 10) { // Assume UUID se > 10 chars
-        const action = config.afterSendAction || "handoff";
+        const action = overrides?.config?.afterSendAction ?? config.afterSendAction ?? "handoff";
         
         if (action === "grupo_a") {
           // Joga no Grupo A (cadastro)
