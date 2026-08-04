@@ -345,6 +345,19 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
         ok = false; err = e?.message || "Erro desconhecido";
       }
 
+      // F12/F16: Sincroniza estado de pausa no banco para disparos via UI
+      if (ok && t.id && t.id.length > 10) { // Assume UUID se > 10 chars
+        supabase.from("customers")
+          .update({
+            bot_paused: true,
+            bot_paused_reason: "bulk_pro",
+            bot_paused_at: new Date().toISOString(),
+            assigned_human_id: consultantId,
+          })
+          .eq("id", t.id)
+          .then(() => {});
+      }
+
       setTargets(prev => prev.map(x => x.id === t.id ? {
         ...x, status: ok ? "sent" : "failed", error: err, finalMessage: finalMsg, sentAt: Date.now(),
       } : x));

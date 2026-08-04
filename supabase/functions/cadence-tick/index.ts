@@ -1226,7 +1226,8 @@ Deno.serve(async (req) => {
           const pauseReason = String(c.bot_paused_reason || "").toLowerCase();
           
           // F12: BLOQUEIO DEFINITIVO (requested/opt_out) nunca expira pelo timeout de 48h.
-          // Handoff (ia_decidiu/human_takeover) e Bloqueio (requested) são diferentes.
+          // Handoff (ia_decidiu/human_takeover), Bloqueio (requested) e Massa (bulk_pro) são tratados.
+          // bulk_pro expira em 48h para devolver à pizza se o lead não responder.
           if (pauseReason === "requested" || pauseReason === "opt_out" || pauseReason === "complaint" || pauseReason === "blocked") {
             return true; // Bloqueio manual/definitivo: para sempre.
           }

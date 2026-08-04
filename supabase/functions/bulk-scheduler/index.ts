@@ -343,6 +343,27 @@ Deno.serve(async (req) => {
       });
 
       const jid = toJid(t.phone);
+
+      // F12/F16: Antes de enviar massa, pausa o bot do lead se ele existir.
+      // Isso evita que a IA responda ou o motor A/B/C interfira durante o disparo.
+      // O motivo 'bulk_pro' faz com que ele expire em 48h (handoff), voltando à pizza se não houver resposta.
+      const { data: lead } = await supabase.from("customers")
+        .select("id")
+        .eq("phone_whatsapp", tDigits)
+        .eq("consultant_id", camp.consultant_id)
+        .maybeSingle();
+
+      if (lead?.id) {
+        await supabase.from("customers")
+          .update({
+            bot_paused: true,
+            bot_paused_reason: "bulk_pro",
+            bot_paused_at: new Date().toISOString(),
+            assigned_human_id: camp.consultant_id, // Atribui ao consultor do disparo
+          })
+          .eq("id", lead.id);
+      }
+
       // Efeito por target: reconcile sending→queued não reenvia se já sent/unknown.
       const bulkKey = `bulk:${t.id}`;
       const eff = await reserveOutboundEffect(supabase, {
