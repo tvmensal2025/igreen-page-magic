@@ -1164,6 +1164,7 @@ Deno.serve(async (req) => {
   const { data: claimedRows, error: claimErr } = await supabase.rpc("claim_due_cadence", {
     p_limit: 100,
   });
+  // No RPC claim_due_cadence, o bot_paused_reason deve estar incluso no retorno.
   if (!claimErr && Array.isArray(claimedRows)) {
     due = claimedRows;
   } else {
@@ -1172,7 +1173,7 @@ Deno.serve(async (req) => {
     }
     const { data: selected, error } = await supabase
       .from("lead_cadence_state")
-      .select("id, customer_id, consultant_id, stage, stage_sequence, attempts_by_channel, paused_until, paused_reason, last_action_at, last_response_at, next_action_at, claim_token")
+      .select("id, customer_id, consultant_id, stage, stage_sequence, attempts_by_channel, paused_until, paused_reason, last_action_at, last_response_at, next_action_at, claim_token, bot_paused_reason")
       .lte("next_action_at", now.toISOString())
       .not("stage", "eq", "WON")
       .order("next_action_at", { ascending: true })
@@ -1207,7 +1208,7 @@ Deno.serve(async (req) => {
   const { data: custRows } = await supabase
     .from("customers")
     .select(
-      "id, phone_whatsapp, bot_paused, bot_paused_reason, bot_paused_until, assigned_human_id, do_not_contact, customer_origin, status, is_converted, pos_venda_stage, pos_venda_recadastro_at, andamento_igreen, conversation_step, portal_submitted_at, updated_at",
+      "id, phone_whatsapp, bot_paused, bot_paused_reason, bot_paused_until, assigned_human_id, do_not_contact, customer_origin, status, is_converted, pos_venda_stage, pos_venda_recadastro_at, andamento_igreen, conversation_step, portal_submitted_at, updated_at"
     )
     .in("id", customerIds);
   const custById = new Map((custRows || []).map((c: any) => [c.id, c]));
@@ -1226,7 +1227,7 @@ Deno.serve(async (req) => {
           
           // F12: BLOQUEIO DEFINITIVO (requested/opt_out) nunca expira pelo timeout de 48h.
           // Handoff (ia_decidiu/human_takeover) e Bloqueio (requested) são diferentes.
-          if (pauseReason === "requested" || pauseReason === "opt_out" || pauseReason === "complaint") {
+          if (pauseReason === "requested" || pauseReason === "opt_out" || pauseReason === "complaint" || pauseReason === "blocked") {
             return true; // Bloqueio manual/definitivo: para sempre.
           }
 
@@ -1324,6 +1325,9 @@ Deno.serve(async (req) => {
   for (const row of due) {
     let stage = row.stage as Stage;
     const claimToken = row.claim_token as string | null | undefined;
+
+    // 4) Estabilidade do Motor: Limpeza de duplicados antes de processar
+    await cleanupDuplicatedLeads(supabase, row.customer_id);
 
     const cust = custById.get(row.customer_id);
 

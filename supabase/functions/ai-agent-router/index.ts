@@ -266,10 +266,13 @@ Deno.serve(async (req) => {
         const { wrapSenderWithGuard } = await import("../_shared/sender-guard.ts");
         const sender = wrapSenderWithGuard(_raw, { supabase, instanceName: instance_name });
 
+        const { isNonNameReply } = await import("../_shared/bot/cadastro-fixes.ts");
+        const isBadName = isNonNameReply(user_input || "");
+
         if (lookup.found && lookup.text) {
           // F11: Se o match veio da Base de Conhecimento e é muito curto (confiança baixa), 
           // ou se a mensagem do usuário parece ser um spam de sistema, não responde nada ou vai p/ handoff.
-          const isSuspect = (user_input || "").length > 300 || lookup.confidence < 0.4 || isLikelyLooping(historyChrono || [], user_input || "");
+          const isSuspect = (user_input || "").length > 300 || (lookup.confidence < 0.6 && !isBadName) || isLikelyLooping(historyChrono || [], user_input || "");
           
           if (!isSuspect) {
             try {
@@ -299,7 +302,57 @@ Deno.serve(async (req) => {
           );
         }
 
-        // Sem match → handoff. Mensagem fixa (sem LLM).
+        // Sem match ou confiança baixa → Tentar LLM com Personalidade iGreen antes do handoff
+        // Se a confiança for entre 0.3 e 0.6, ou se não houver match mas o kbOnlyMode permitir fallback.
+        // Aqui assumimos que se chegou aqui é porque o match determinístico falhou.
+
+        // Injeta contexto de personalidade e dados do consultor no prompt
+        const systemPrompt = `Você é ${assistantName}, assistente ${artigoRep} ${representanteNome}.
+Sua personalidade é prestativa, técnica e profissional. 
+Responda de forma humanizada, curta e objetiva.
+
+Use estes dados se precisar:
+Consultor: ${representanteNome}
+WhatsApp: ${customer.phone_whatsapp || "não informado"}
+
+Se não souber a resposta técnica sobre a iGreen, diga que vai verificar com o time.
+Nunca invente informações sobre preços ou prazos que não estejam no histórico.`;
+
+        try {
+          const llmResponse = await geminiGenerate({
+            prompt: user_input || "",
+            systemPrompt,
+            history: historyChrono,
+            schema: DECISION_SCHEMA
+          });
+
+          if (llmResponse && llmResponse.confidence > 0.7 && !llmResponse.handoff) {
+            const reply = sanitizeHumanReply(llmResponse.reply_text, customer.conversation_step || "welcome", user_input || "");
+            if (reply) {
+              await sender.sendText(remote_jid, reply);
+              
+              await supabase.from("ai_agent_logs").insert({
+                consultant_id: consultantId,
+                customer_id,
+                phone: customer.phone_whatsapp,
+                step_before: customer.conversation_step,
+                step_after: llmResponse.next_step || customer.conversation_step,
+                llm_output: llmResponse,
+                handoff: false,
+                latency_ms: Date.now() - t0,
+              });
+
+              return new Response(
+                JSON.stringify({ ok: true, mode: "llm_fallback", intent: llmResponse.detected_intent }),
+                { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+              );
+            }
+          }
+        } catch (e) {
+          console.warn("[ai-agent-router/fallback] LLM generation failed:", e.message);
+        }
+
+        // Se LLM também falhar ou decidir handoff → Handoff definitivo
         try {
           await sender.sendText(remote_jid, "Vou pedir para alguém do time te explicar essa parte 🙌");
         } catch (e: any) {
