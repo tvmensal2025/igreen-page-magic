@@ -374,7 +374,9 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
 
   const startCampaign = useCallback(() => {
     if (deduped.length === 0) { toast({ title: "Selecione contatos", variant: "destructive" }); return; }
-    if (!text.trim() && !media) { toast({ title: "Adicione mensagem ou anexo", variant: "destructive" }); return; }
+    // A validação de mensagem agora é mais flexível: se for multicanal puro (ligação/sms), 
+    // pode não ter WhatsApp, mas o Disparo PRO é focado em WhatsApp + Reforço.
+    if (!text.trim() && !media) { toast({ title: "Adicione mensagem ou anexo de WhatsApp", variant: "destructive" }); return; }
     if (config.intervalMaxS < config.intervalMinS) {
       toast({ title: "Intervalo inválido", description: "Intervalo máximo deve ser maior ou igual ao mínimo", variant: "destructive" });
       return;
@@ -382,6 +384,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
     const initial: CampaignTarget[] = deduped.map(c => ({
       id: c.id, phone: c.phone, name: c.name,
       bill: c.electricity_bill_value,
+      city: c.city, // Garante que a cidade vá para o render de variáveis
       status: "queued",
     }));
     runCampaign(initial);
