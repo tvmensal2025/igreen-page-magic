@@ -323,6 +323,21 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
         ...x, status: ok ? "sent" : "failed", error: err, finalMessage: finalMsg, sentAt: Date.now(),
       } : x));
 
+      // --- Orquestração Multicanal (Reforço no Navegador) ---
+      if (ok) {
+        if (useConfig.sendSms && useConfig.smsText) {
+          const smsFinal = renderFinal(useConfig.smsText, { name: t.name, bill: t.bill, city: t.city });
+          supabase.functions.invoke("send-velip-sms", {
+            body: { to: t.phone, text: smsFinal, consultantId }
+          }).catch(e => console.error("SMS fail:", e));
+        }
+        if (useConfig.makeCall && useConfig.callAudioClipId) {
+          supabase.functions.invoke("voice-dialer-webhook", {
+            body: { to: t.phone, audioClipId: useConfig.callAudioClipId, consultantId, source: `bulk-ui:${campaignIdRef.current}` }
+          }).catch(e => console.error("Call fail:", e));
+        }
+      }
+
       // Persist target result (fire-and-forget)
       if (campaignIdRef.current) {
         updateTargetStatus(campaignIdRef.current, t.phone, {
