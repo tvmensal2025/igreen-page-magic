@@ -114,6 +114,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
   const [text, setText] = useState("");
   // Estado legado removido - migrado para config.mediaItems
   const [uploading, setUploading] = useState(false);
+  const [media, setMedia] = useState<PreparedMedia | null>(null); // Re-adicionado para compatibilidade com legados no código que não limpei ainda
   const [config, setConfig] = useState<SendConfig>(DEFAULT_CONFIG);
 
   // Live last-inbound enrichment (kept from original panel for ContactImporter compatibility)
