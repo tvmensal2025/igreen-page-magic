@@ -111,7 +111,7 @@ export function isNonNameReply(text: string): boolean {
   const t = String(text || "").trim().toLowerCase();
   if (t.length < 3) return true;
   // F09: Termos curtos que indicam intenção de outra coisa (IA/Outro/Saudação) e nunca são nome.
-  if (/^(oi|ol[aá]|opa|oie|hey|hi|hello|ok|okay|sim|n[aã]o|blz|beleza|obrigad[oa]|valeu|bom dia|boa tarde|boa noite|1|2|3|4|5|ixi|kkk|haha|rsrs|aff|nossa|eita|entendi|aham|t[aá]|tbm|tamb[eé]m|silvia|claudia|silvia claudia|silvia claudia almeida|rafael)$/i.test(t)) {
+  if (/^(oi|ol[aá]|opa|oie|hey|hi|hello|ok|okay|sim|n[aã]o|blz|beleza|obrigad[oa]|valeu|bom dia|boa tarde|boa noite|1|2|3|4|5|ixi|kkk|haha|rsrs|aff|nossa|eita|entendi|aham|t[aá]|tbm|tamb[eé]m|silvia|claudia|silvia claudia|silvia claudia almeida|rafael|rafa|fala|bora|ajuda)$/i.test(t)) {
     return true;
   }
   // Intents / objeções que NUNCA são nome (F09: Adicionado lixo comum e frases de erro do lead)
