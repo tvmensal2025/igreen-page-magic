@@ -6,11 +6,11 @@
  * caso o Brasil volte a ter horário de verão.
  */
 
-export const NUDGE_QUIET_START_HOUR = 21;
-export const NUDGE_QUIET_START_MIN = 30;
+export const NUDGE_QUIET_START_HOUR = 20;
+export const NUDGE_QUIET_START_MIN = 0;
 export const NUDGE_QUIET_END_HOUR = 8;
 
-/** Retorna true se `at` cai na janela 21:30–08:00 BRT. */
+/** Retorna true se `at` cai na janela 20:00–08:00 BRT. */
 export function isQuietHoursBRT(at: Date = new Date()): boolean {
   const fmt = new Intl.DateTimeFormat("en-GB", {
     timeZone: "America/Sao_Paulo",

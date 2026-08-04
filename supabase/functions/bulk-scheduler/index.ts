@@ -90,23 +90,29 @@ function renderText(tpl: string, vars: { name?: string; bill?: number | null; ci
 }
 
 function inWindow(cfg: any, at: Date = new Date()): boolean {
-  if (!cfg) return true;
   // Horário oficial de Brasília via Intl (não assume offset fixo).
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: "America/Sao_Paulo",
     hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short",
   }).formatToParts(at).reduce<Record<string, string>>((a, p) => ((a[p.type] = p.value), a), {});
+  const cur = (Number(parts.hour) % 24) * 60 + Number(parts.minute);
+
+  // REGRA DURA: nada sai antes das 08:00 nem a partir das 20:00 BRT.
+  const HARD_START = 8 * 60;
+  const HARD_END = 20 * 60;
+  if (cur < HARD_START || cur >= HARD_END) return false;
+
+  if (!cfg) return true;
   if (cfg.weekdaysOnly && (parts.weekday === "Sat" || parts.weekday === "Sun")) return false;
-  const start = cfg.windowStart || "00:00";
-  const end = cfg.windowEnd || "23:59";
+  const start = cfg.windowStart || "08:00";
+  const end = cfg.windowEnd || "20:00";
   const [sH, sM] = String(start).split(":").map(Number);
   const [eH, eM] = String(end).split(":").map(Number);
-  const startMin = sH * 60 + sM;
-  const endMin = eH * 60 + eM;
-  const cur = (Number(parts.hour) % 24) * 60 + Number(parts.minute);
-  if (endMin < startMin) return cur >= startMin || cur <= endMin;
-  return cur >= startMin && cur <= endMin;
+  const startMin = Math.max(HARD_START, sH * 60 + (sM || 0));
+  const endMin = Math.min(HARD_END, eH * 60 + (eM || 0));
+  return cur >= startMin && cur < endMin;
 }
+
 
 function toJid(phone: string): string {
   const digits = phone.replace(/\D/g, "");

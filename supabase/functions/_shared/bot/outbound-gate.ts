@@ -14,6 +14,8 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isBotGloballyEnabled } from "./global-flag.ts";
 import { assertCanContact } from "../contact-suppression.ts";
 import { isTestPhone } from "../test-mode.ts";
+import { isOutsideSendWindowBRT } from "../quiet-hours.ts";
+
 
 const DEFAULT_E2E_ALLOWLIST = [
   "5511989000650",
@@ -68,12 +70,20 @@ export async function assertBotOutboundAllowed(
     customerId?: string | null;
     phone?: string | null;
     consultantId?: string | null;
+    /** Transacional (OTP/cadastro em andamento) — ignora a janela 08–20. */
+    allowOutsideWindow?: boolean;
   },
 ): Promise<{ allowed: boolean; reason: string | null }> {
+  // REGRA DURA: nenhum envio automático fora de 08:00–20:00 BRT.
+  if (!input.allowOutsideWindow && isOutsideSendWindowBRT()) {
+    return { allowed: false, reason: "outside_send_window_brt" };
+  }
+
   const globalOn = await isBotGloballyEnabled(supabase);
   if (!globalOn) {
     return { allowed: false, reason: "bot_globally_disabled" };
   }
+
   const suppression = await assertCanContact(supabase, {
     customerId: input.customerId,
     phone: input.phone,
