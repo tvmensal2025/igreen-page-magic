@@ -112,6 +112,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [seedKey]);
   const [text, setText] = useState("");
+  // Estado legado removido - migrado para config.mediaItems
   const [media, setMedia] = useState<PreparedMedia | null>(null);
   const [config, setConfig] = useState<SendConfig>(DEFAULT_CONFIG);
 
@@ -412,7 +413,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
     if (deduped.length === 0) { toast({ title: "Selecione contatos", variant: "destructive" }); return; }
     // A validação de mensagem agora é mais flexível: se for multicanal puro (ligação/sms), 
     // pode não ter WhatsApp, mas o Disparo PRO é focado em WhatsApp + Reforço.
-    if (!text.trim() && !media) { toast({ title: "Adicione mensagem ou anexo de WhatsApp", variant: "destructive" }); return; }
+    if (!text.trim() && (!config.mediaItems || config.mediaItems.length === 0)) { toast({ title: "Adicione mensagem ou anexo de WhatsApp", variant: "destructive" }); return; }
     if (config.intervalMaxS < config.intervalMinS) {
       toast({ title: "Intervalo inválido", description: "Intervalo máximo deve ser maior ou igual ao mínimo", variant: "destructive" });
       return;
@@ -424,7 +425,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
       status: "queued",
     }));
     runCampaign(initial);
-  }, [deduped, text, media, config, runCampaign, toast]);
+  }, [deduped, text, config, runCampaign, toast]);
 
   const handlePause = () => { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); };
   const handleCancel = () => { cancelledRef.current = true; pausedRef.current = false; setPaused(false); };
@@ -450,17 +451,30 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
     } else {
       setMedia(null);
     }
-    const restored: SendConfig = { ...DEFAULT_CONFIG, ...(payload.config || {}), scheduleAt: null };
+    const restored: SendConfig = { 
+      ...DEFAULT_CONFIG, 
+      ...(payload.config || {}), 
+      scheduleAt: null,
+    };
+    
+    // Suporte para campanhas antigas (single media) vs novas (mediaItems)
+    const mediaItems: PreparedMedia[] = restored.mediaItems || [];
+    if (mediaItems.length === 0 && payload.mediaUrl && payload.mediaType && payload.mediaType !== "text") {
+      mediaItems.push({
+        url: payload.mediaUrl,
+        kind: payload.mediaType as any,
+        fileName: payload.mediaFilename || undefined
+      });
+    }
+    
+    restored.mediaItems = mediaItems;
     setConfig(restored);
     setCampaignName(payload.name);
     toast({ title: "Retomando disparo", description: `${payload.queuedTargets.length} contatos na fila` });
-    // Passa overrides para não depender da propagação de setState
-    const mediaOverride: PreparedMedia | null = payload.mediaUrl && payload.mediaType && payload.mediaType !== "text"
-      ? { url: payload.mediaUrl, kind: payload.mediaType as any, fileName: payload.mediaFilename || undefined }
-      : null;
+    
     runCampaign(payload.queuedTargets, payload.id, {
       text: payload.messageText,
-      media: mediaOverride,
+      mediaItems: mediaItems,
       config: restored,
       name: payload.name,
     });
