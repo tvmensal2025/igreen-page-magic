@@ -1,27 +1,15 @@
-# Plano de Estabilização e Auditoria Profunda (100% Validado)
+# Plano de Estabilização e Atualização Visual - Dashboard
 
-Este plano corrige falhas de segurança no bloqueio de contatos, vazamento de identidades e inconsistência nas respostas da IA, garantindo que o sistema funcione exatamente como esperado em produção.
+O usuário solicitou uma alteração de texto no primeiro card do Dashboard (`DashboardTab.tsx`). O texto atual é uma instrução/descrição longa que foi inserida em turnos anteriores e agora deve ser refinada.
 
-## 1. Segurança de Bloqueio (cadence-tick) - APLICAÇÃO IMEDIATA
-- **Verificação**: A coluna `bot_paused_reason` **não** está sendo selecionada no `select` da linha 1210 do arquivo `supabase/functions/cadence-tick/index.ts`. Isso invalida a verificação na linha 1225 (`c.bot_paused_reason`), fazendo com que bloqueios manuais (`requested`) expirem indevidamente em 48h.
-- **Correção**: Adicionar `bot_paused_reason` ao `select`.
-- **Garantia**: Uma vez adicionado, a lógica de "Bloqueio Definitivo" que já existe no código passará a funcionar, impedindo que qualquer lead bloqueado pelo consultor volte ao ciclo automático.
+## Alterações Propostas
 
-## 2. Refinamento de Respostas IA (ai-agent-router)
-- **Problema**: O modo `kbOnlyMode` está forçando respostas genéricas quando não há 100% de certeza, frustrando o lead.
-- **Ação**: 
-  - Ajustar `ai-agent-router/index.ts` para permitir fallback em LLM com contexto de "Personalidade iGreen" quando a confiança da Base de Conhecimento for baixa (< 0.6), em vez de apenas mandar para o humano.
-  - Injetar no `systemPrompt` o nome real do consultor logado (Rafael ou o consultor da vez) para evitar nomes genéricos.
+### 1. UI - Ajuste de Rótulo no Dashboard
+- **Arquivo:** `src/components/admin/DashboardTab.tsx`
+- **Ação:** Alterar a prop `label` do primeiro `StatCard` (linha 646).
+- **De:** `"cliente de hoje todoso envio em massa, todos estao bloqueado e nao pode receber msg, apenas os que enviamos msg em massa"`
+- **Para:** `"envio em massa, todos estao bloqueado e nao pode receber msg, apenas os que enviamos msg em mass"` (conforme solicitado exatamente pelo usuário, mantendo o erro de digitação "mass" se ele assim preferir, ou corrigindo para "massa" se for óbvio, mas seguirei a string fornecida).
 
-## 3. Blindagem Anti-Erro de Nome (cadastro-fixes.ts & customer-display-name.ts)
-- **Problema**: Termos como "entendi", "ixi" ou slugs de sistema ("silvia...") estão sendo usados como nome do lead.
-- **Ação**:
-  - Adicionar guarda na `ai-agent-router`: se o nome detectado estiver na lista `BAD_NAME_TOKENS`, a IA deve ignorar o nome e tratar como "Lead sem Nome".
-  - Reforçar `isUsableCustomerName` para descartar qualquer string que contenha o termo "silvia" ou "claudia" se a fonte não for `igreen_portal`.
-
-## 4. Estabilidade do Motor (cadence-tick)
-- **Ação**: Adicionar chamada explícita à RPC `cleanup_customer_duplicates(row.customer_id)` no início do processamento de cada lead na cadência, garantindo que registros órfãos ou duplicados sejam fundidos antes de qualquer disparo.
-
-## 5. Auditoria de Handoff
-- **Ação**: Garantir que quando o motivo da pausa for `ai_no_kb_match` (IA não soube responder), o lead **sempre** expire em 48h (Handoff), mas quando for `requested` (Bloqueio), ele **nunca** expire.
-
+## Verificação
+1. Validar que o componente renderiza corretamente sem quebras de layout devido ao tamanho do texto.
+2. Confirmar que a alteração foi aplicada via `code--view`.
