@@ -14,6 +14,8 @@ import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isBotGloballyEnabled } from "./global-flag.ts";
 import { assertCanContact } from "../contact-suppression.ts";
 import { isTestPhone } from "../test-mode.ts";
+import { isOutsideSendWindowBRT } from "../quiet-hours.ts";
+
 
 const DEFAULT_E2E_ALLOWLIST = [
   "5511989000650",
