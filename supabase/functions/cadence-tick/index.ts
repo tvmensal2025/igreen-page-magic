@@ -197,6 +197,27 @@ async function countOutreachTouchesToday(
   return { b: b.size, c: c.size, ok: true };
 }
 
+/** Verifica duplicados de leads no mesmo estágio e consolida se necessário. */
+async function cleanupDuplicatedLeads(supabase: any, customerId: string) {
+  try {
+    const { data: lead } = await supabase
+      .from("customers")
+      .select("phone_whatsapp, consultant_id")
+      .eq("id", customerId)
+      .maybeSingle();
+    
+    if (lead?.phone_whatsapp) {
+      // Chama a RPC de limpeza para garantir que não haja duplicados ativos para este número
+      await supabase.rpc("cleanup_customer_duplicates", {
+        p_phone: lead.phone_whatsapp,
+        p_consultant_id: lead.consultant_id
+      });
+    }
+  } catch (e) {
+    console.warn("[cadence-tick] cleanupDuplicatedLeads failed:", (e as Error).message);
+  }
+}
+
 /** Lead engajou desde o último toque da cadência? (anti-spam: skip SMS/call). */
 async function hasEngagedSinceLastAction(
   supabase: any,
@@ -437,6 +458,13 @@ function scrubMissingConsultantPhone(tpl: string): string {
 function ensureSmsWaLink(text: string, consultorPhone: string): string {
   let t = String(text || "").trim();
   if (!t) return t;
+  
+  // BUGFIX (2026-08-04): Se o texto for igual ao nome da Silvia (slug vazado), bloqueia o envio.
+  if (/silviaclaudiaalmeida/i.test(t)) {
+    console.warn("[cadence-tick] blocked message containing consultant slug:", t);
+    return "";
+  }
+
   if (!/wa\.me\//i.test(t) && !/\{\{\s*consultor_phone\s*\}\}/i.test(t) && !/\{\{\s*link_wa\s*\}\}/i.test(t)) {
     t = `${t} https://wa.me/{{consultor_phone}}`;
   }

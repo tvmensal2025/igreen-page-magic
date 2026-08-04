@@ -32,6 +32,8 @@ export const NON_ADDRESSABLE_NAME_SOURCES = new Set([
 
 /** Tokens que nunca são prenome (meme, lixo, saudação, domínio). */
 const BAD_NAME_TOKENS = new Set([
+  // consultor (slugs vazados)
+  "silviaclaudiaalmeida", "silvia", "claudia", "silvia claudia", "silvia claudia almeida",
   // meme / risada / interjeição
   "ixi", "kkk", "kkkk", "kkkkk", "haha", "hahaha", "rsrs", "rsrsrs", "hehe",
   "aff", "nossa", "caramba", "puts", "poxa", "eita", "opa", "ops", "entendi",
