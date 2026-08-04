@@ -334,9 +334,18 @@ export function ContactImporter({ customers, contacts, onContactsChange, disable
           const name = (row.nome || row.Nome || row.name || row.Name || "").toString().trim();
           const rawPhone = (row.telefone || row.Telefone || row.phone || row.Phone || row.celular || row.Celular || "").toString().trim();
           const phone = rawPhone.replace(/\D/g, "");
+          const bill = parseFloat(String(row.conta || row.valor || row.bill || 0));
+          const city = (row.cidade || row.City || row.city || "").toString().trim();
           if (phone.length >= 10 && !existing.has(phone)) {
             existing.add(phone);
-            parsed.push({ id: `import-${phone}`, name: name || phone, phone, source: "imported" });
+            parsed.push({ 
+              id: `import-${phone}`, 
+              name: name || phone, 
+              phone, 
+              source: "imported",
+              electricity_bill_value: bill > 0 ? bill : undefined,
+              city: city || undefined
+            });
           }
         }
         onContactsChange([...contacts, ...parsed]);
