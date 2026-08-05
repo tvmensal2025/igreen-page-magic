@@ -156,8 +156,21 @@ type OutboundSender = {
   sendMedia?: (jid: string, mediaUrl: string, caption: string, mediatype: string) => Promise<unknown>;
   sendPresence?: (...args: unknown[]) => Promise<unknown>;
   downloadMedia?: (...args: unknown[]) => Promise<unknown>;
+  // deno-lint-ignore no-explicit-any
+  sendTextDetailed?: (...args: any[]) => Promise<unknown>;
+  // deno-lint-ignore no-explicit-any
+  sendButtonsDetailed?: (...args: any[]) => Promise<unknown>;
   [key: string]: unknown;
 };
+
+/** Resultado "não enviei" no formato `SendResult` dos senders detalhados. */
+const BLOCKED_SEND_RESULT = {
+  ok: false,
+  pending: false,
+  messageId: null,
+  status: 0,
+  error: "paused_by_human",
+} as const;
 
 /**
  * Re-lê o DB antes de CADA outbound. Corta corrida: consultor mandou msg no
@@ -220,6 +233,24 @@ export function wrapSenderWithLivePauseGuard<T extends OutboundSender>(
       ? async (jid: string, mediaUrl: string, caption: string, mediatype: string) => {
           if (!(await allowSpeak())) return false;
           return base.sendMedia!(jid, mediaUrl, caption, mediatype);
+        }
+      : undefined,
+    // Variantes "Detailed" (Evolution e adapter de canal) mandam a resposta
+    // principal do turno. Sem wrapping elas passavam por fora do guard e o bot
+    // falava depois do consultor assumir. Bloqueio devolve `SendResult` com
+    // ok=false — o caller já sabe tratar isso como falha de envio.
+    sendTextDetailed: base.sendTextDetailed
+      // deno-lint-ignore no-explicit-any
+      ? async (...args: any[]) => {
+          if (!(await allowSpeak())) return { ...BLOCKED_SEND_RESULT };
+          return base.sendTextDetailed!(...args);
+        }
+      : undefined,
+    sendButtonsDetailed: base.sendButtonsDetailed
+      // deno-lint-ignore no-explicit-any
+      ? async (...args: any[]) => {
+          if (!(await allowSpeak())) return { ...BLOCKED_SEND_RESULT };
+          return base.sendButtonsDetailed!(...args);
         }
       : undefined,
   } as T;

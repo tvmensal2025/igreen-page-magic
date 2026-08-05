@@ -31,7 +31,10 @@ Isolamento e concorrência:
   módulo — dois inbounds simultâneos no mesmo isolate não se contaminam.
   Se o runtime não suportar `enterWith`, cai no objeto compartilhado antigo.
 - `wrapSenderWithLivePauseGuard` re-lê o lead antes de cada outbound e é
-  fail-closed: leitura com erro não libera o bot.
+  fail-closed: leitura com erro não libera o bot. Cobre `sendText`,
+  `sendButtons`, `sendMedia` e também `sendTextDetailed`/`sendButtonsDetailed`
+  — é por essa variante que o `evolution-webhook` manda a resposta principal
+  do turno, e sem o wrapping ela escapava do guard.
 - Envio proativo (`cadence-tick`) passa `respectInboundTurn: true` em
   `assertBotOutboundAllowed`; com turno inbound em andamento ou fila pendente
   recente (< 5 min), o toque é adiado para o próximo tick. Marcador pendente

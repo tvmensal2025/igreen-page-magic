@@ -23,6 +23,8 @@ function makeSender() {
     sendText: vi.fn(async () => true),
     sendButtons: vi.fn(async () => true),
     sendMedia: vi.fn(async () => true),
+    sendTextDetailed: vi.fn(async () => ({ ok: true, pending: false, messageId: "m1", status: 200 })),
+    sendButtonsDetailed: vi.fn(async () => ({ ok: true, pending: false, messageId: "m2", status: 200 })),
   };
 }
 
@@ -67,6 +69,29 @@ describe("wrapSenderWithLivePauseGuard", () => {
     const { base, wrapped } = guard({ error: { message: "connection reset" } });
     await expect(wrapped.sendText("jid", "oi")).resolves.toBe(false);
     expect(base.sendText).not.toHaveBeenCalled();
+  });
+
+  // Evolution manda a resposta principal do turno por `sendTextDetailed`.
+  // Sem wrapping, ela passava por fora do guard (bot falando depois do humano).
+  it("bloqueia sendTextDetailed — resposta principal do Evolution", async () => {
+    const { base, wrapped } = guard({ data: { assigned_human_id: "user-1" } });
+    const r = await (wrapped as any).sendTextDetailed("jid", "oi", {});
+    expect(r).toMatchObject({ ok: false, messageId: null, error: "paused_by_human" });
+    expect(base.sendTextDetailed).not.toHaveBeenCalled();
+  });
+
+  it("bloqueia sendButtonsDetailed", async () => {
+    const { base, wrapped } = guard({ data: { do_not_contact: true } });
+    const r = await (wrapped as any).sendButtonsDetailed("jid", "msg", []);
+    expect(r).toMatchObject({ ok: false, error: "paused_by_human" });
+    expect(base.sendButtonsDetailed).not.toHaveBeenCalled();
+  });
+
+  it("lead normal continua usando sendTextDetailed sem alteração", async () => {
+    const { base, wrapped } = guard({ data: { bot_paused: false } });
+    const r = await (wrapped as any).sendTextDetailed("jid", "oi", {});
+    expect(r).toMatchObject({ ok: true, messageId: "m1" });
+    expect(base.sendTextDetailed).toHaveBeenCalled();
   });
 
   it("modo captação manual continua respondendo (OCR precisa rodar)", async () => {
