@@ -499,6 +499,38 @@ Deno.serve(async (req) => {
         v2_flag: v2Flag,
         rate_limited: true,
       });
+      // Anti-flood segue valendo (não processamos o turno agora), mas a
+      // mensagem não pode sumir: grava o inbound e marca como pendente para
+      // o turno em voo drenar antes de soltar o lock.
+      try {
+        const flooded = await findCustomerForInboundPhone(supabase, superAdminConsultantId, phone);
+        if (flooded?.id) {
+          const floodedText = String(messageText || (isFile ? "[arquivo]" : "")).slice(0, 2000);
+          await supabase.from("conversations").insert({
+            customer_id: flooded.id,
+            message_direction: "inbound",
+            message_text: floodedText,
+            message_type: isFile ? "image" : isButton ? "button" : "text",
+            conversation_step: (flooded as any).conversation_step ?? null,
+            external_message_id: messageId || null,
+          });
+          await supabase.rpc("enqueue_pending_inbound", {
+            _customer_id: flooded.id,
+            _message_id: messageId || `noid-${Date.now()}`,
+          });
+          jsonLog("info", "rate_limited_inbound_preserved", {
+            customer_id: flooded.id,
+            phone,
+            channel: "whapi",
+          });
+        }
+      } catch (e) {
+        jsonLog("warn", "rate_limited_inbound_preserve_failed", {
+          phone,
+          channel: "whapi",
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
       return new Response(JSON.stringify({ ok: true, msg: "rate_limited" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -2515,6 +2547,9 @@ Deno.serve(async (req) => {
     }
 
     // ─── Log inbound (audio: marcamos como [áudio] e atualizamos depois com a transcrição) ──
+    // Marca o início do turno: tudo que entrar em `conversations` a partir
+    // daqui é rajada e precisa ser drenado antes de soltar o lock.
+    const turnWindowStartIso = new Date().toISOString();
     const inboundMeta = inboundConvMeta();
     const { data: inboundLog } = await supabase.from("conversations").insert({
       customer_id: customer.id,
@@ -2525,6 +2560,10 @@ Deno.serve(async (req) => {
       conversation_step: customer.conversation_step,
       external_message_id: messageId || null,
     }).select("id").maybeSingle();
+    // Identidade do inbound deste turno — o drain usa para não reprocessar
+    // a própria mensagem (`messageId` é reatribuído durante o replay).
+    const primaryInboundMessageId = messageId || null;
+    const primaryInboundConversationId = (inboundLog as any)?.id ? String((inboundLog as any).id) : null;
 
     // Stop rule: resposta HUMANA pausa/realinha a cadência (sem envio).
     // Clique CTWA / initial_message da campanha NÃO pausa 72h.
@@ -3924,6 +3963,10 @@ Deno.serve(async (req) => {
               hasAudio: false,
               messageId: replay.messageId,
             });
+          }, 3, {
+            since: turnWindowStartIso,
+            excludeMessageIds: primaryInboundMessageId ? [primaryInboundMessageId] : [],
+            excludeConversationIds: primaryInboundConversationId ? [primaryInboundConversationId] : [],
           });
           if (drained > 0) console.log(`[pending-drain fluxo-b] ${drained} turn(s) customer=${customer.id}`);
         } catch (e) {
@@ -3969,6 +4012,10 @@ Deno.serve(async (req) => {
           console.log(`[pending-drain] replay customer=${customer.id} text="${String(messageText).slice(0, 80)}"`);
           const drainResult = await runEngine();
           await applyTurnResult(drainResult.reply, drainResult.updates, drainStepBefore);
+        }, 3, {
+          since: turnWindowStartIso,
+          excludeMessageIds: primaryInboundMessageId ? [primaryInboundMessageId] : [],
+          excludeConversationIds: primaryInboundConversationId ? [primaryInboundConversationId] : [],
         });
         if (drained > 0) console.log(`[pending-drain] ${drained} turn(s) customer=${customer.id}`);
       } catch (e) {
