@@ -648,6 +648,8 @@ async function dispatchWhatsApp(
     customerId: row.customer_id,
     phone: cust.phone_whatsapp,
     consultantId: row.consultant_id,
+    // Turno inbound em andamento manda: o toque proativo espera o próximo tick.
+    respectInboundTurn: true,
   });
   if (!gate.allowed) return { ok: false, detail: `suppressed:${gate.reason}` };
 
@@ -969,6 +971,8 @@ async function dispatchVoiceCall(
     customerId: row.customer_id,
     phone: cust.phone_whatsapp,
     consultantId: row.consultant_id,
+    // Turno inbound em andamento manda: o toque proativo espera o próximo tick.
+    respectInboundTurn: true,
   });
   if (!gate.allowed) return { ok: false, detail: `suppressed:${gate.reason}` };
 
@@ -1070,6 +1074,8 @@ async function dispatchSMS(
     customerId: row.customer_id,
     phone: cust.phone_whatsapp,
     consultantId: row.consultant_id,
+    // Turno inbound em andamento manda: o toque proativo espera o próximo tick.
+    respectInboundTurn: true,
   });
   if (!gate.allowed) return { ok: false, detail: `suppressed:${gate.reason}` };
 

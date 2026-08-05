@@ -1,5 +1,45 @@
 # Arquitetura operacional
 
+## Turno inbound do Grupo A (Whapi)
+
+Fluxo oficial: Whapi → Grupo A determinístico → FAQ/atalhos → texto e áudio →
+pizza/cadências → portal. Fluxo B e motor V3 permanecem desligados.
+
+Ordem canônica de um turno (2026-08):
+
+1. **Dedupe** por `message_id` (`webhook_message_dedup`).
+2. **Anti-flood** por telefone. Quando barra, o inbound ainda é gravado em
+   `conversations` e marcado em `pending_inbound_message_id` — anti-flood
+   adia, nunca descarta.
+3. **Log do inbound** em `conversations`. O instante desse log é a janela do
+   turno usada pelo drain.
+4. **Lock** por lead (`bot_processing_until`, RPC `try_lock_customer_processing`).
+   Mensagem que chega com o lock ocupado vai para a fila pendente.
+5. **Motor** (Grupo A determinístico / FAQ / atalhos).
+6. **Commit do turno** — `_shared/bot/outbound-commit.ts`:
+   **enviar → persistir estado → gravar histórico**. Envio recusado pelo canal
+   (`false`, `{ok:false}`, exceção) não avança `conversation_step`, não marca
+   `last_bot_reply_at` e não entra em `conversations`.
+7. **Drain da rajada** — `_shared/bot/pending-inbound.ts` reprocessa todos os
+   inbounds da janela do turno, em ordem, sem repetir a mensagem já tratada.
+8. **Release do lock**.
+
+Isolamento e concorrência:
+
+- O contexto do turno no handler conversacional (pergunta do passo, vars, id
+  do lead, texto recebido) vive em `AsyncLocalStorage`, não em variável de
+  módulo — dois inbounds simultâneos no mesmo isolate não se contaminam.
+  Se o runtime não suportar `enterWith`, cai no objeto compartilhado antigo.
+- `wrapSenderWithLivePauseGuard` re-lê o lead antes de cada outbound e é
+  fail-closed: leitura com erro não libera o bot.
+- Envio proativo (`cadence-tick`) passa `respectInboundTurn: true` em
+  `assertBotOutboundAllowed`; com turno inbound em andamento ou fila pendente,
+  o toque é adiado para o próximo tick. Envio manual do consultor não usa esse
+  gate.
+- FAQ/atalhos dentro de cadastro rodam com `keepStep: true` e não alteram
+  `conversation_step`; a regra comercial de fechamento (`is_closing`) continua
+  valendo apenas fora dos passos de cadastro (`NO_QA_STEPS`).
+
 ## Retomada após atendimento humano
 
 Quando o consultor assume uma conversa, todos os caminhos devem manter as duas

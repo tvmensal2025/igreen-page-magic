@@ -64,6 +64,37 @@ export function isPhoneAllowedForE2eStrict(phone: string | null | undefined): bo
   return false;
 }
 
+/**
+ * `true` enquanto o webhook está processando um turno deste lead
+ * (`bot_processing_until` no futuro) ou há rajada inbound na fila.
+ *
+ * Auditoria 2026-08: sem isto a cadência disparava por cima da resposta que o
+ * lead acabou de pedir — duas mensagens diferentes no mesmo instante. O lock
+ * tem TTL curto, então o pior caso é adiar o toque para o próximo tick.
+ * Nunca lança: erro de leitura libera o envio (comportamento anterior).
+ */
+export async function isInboundTurnInProgress(
+  supabase: SupabaseClient,
+  customerId: string,
+): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from("customers")
+      .select("bot_processing_until, pending_inbound_message_id")
+      .eq("id", customerId)
+      .maybeSingle();
+    if (error || !data) return false;
+    const row = data as { bot_processing_until?: string | null; pending_inbound_message_id?: string | null };
+    if (String(row.pending_inbound_message_id || "").trim()) return true;
+    if (row.bot_processing_until) {
+      return new Date(row.bot_processing_until).getTime() > Date.now();
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export async function assertBotOutboundAllowed(
   supabase: SupabaseClient,
   input: {
@@ -72,6 +103,11 @@ export async function assertBotOutboundAllowed(
     consultantId?: string | null;
     /** Transacional (OTP/cadastro em andamento) — ignora a janela 08–20. */
     allowOutsideWindow?: boolean;
+    /**
+     * Envio proativo (cadência/cron): não fala por cima de um turno inbound
+     * em andamento. Opt-in — envio manual do consultor NUNCA usa isto.
+     */
+    respectInboundTurn?: boolean;
   },
 ): Promise<{ allowed: boolean; reason: string | null }> {
   // REGRA DURA: nenhum envio automático fora de 08:00–20:00 BRT.
@@ -92,6 +128,11 @@ export async function assertBotOutboundAllowed(
   });
   if (!suppression.allowed) {
     return { allowed: false, reason: suppression.reason };
+  }
+
+  if (input.respectInboundTurn && input.customerId) {
+    const busy = await isInboundTurnInProgress(supabase, input.customerId);
+    if (busy) return { allowed: false, reason: "inbound_turn_in_progress" };
   }
 
   if (isE2eStrictOutboundEnabled()) {
