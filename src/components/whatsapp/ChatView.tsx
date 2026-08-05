@@ -19,6 +19,10 @@ import { useCaptureSession, isRegisteredPortalClient } from "@/hooks/useCaptureS
 import { useIsLgDown } from "@/hooks/use-mobile";
 import { useViewportWidth } from "@/hooks/useViewportWidth";
 import { AttendanceStatusBar } from "./AttendanceStatusBar";
+import {
+  pauseCadenceForHandoff,
+  resumeCadenceFromHandoff,
+} from "@/lib/handoffReturnToPizza";
 
 import { useCaptureAttach, type CaptureDocKey } from "@/hooks/useCaptureAttach";
 import { CloseCaptureDialog } from "@/components/captacao/CloseCaptureDialog";
@@ -305,6 +309,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           if (invErr || (res as any)?.error) {
             throw new Error((res as any)?.message || (res as any)?.error || invErr?.message || error?.message || "Não foi possível desligar o bot");
           }
+        } else {
+          await pauseCadenceForHandoff(customerId);
         }
         setBotPaused(true);
         toast({ title: "🤖 Bot desligado neste cliente interessado", description: "A IA não vai responder mais este número." });
@@ -330,6 +336,8 @@ export function ChatView({ instanceName, chat, templates, consultantId, initialM
           if (invErr || (res as any)?.error) {
             throw new Error((res as any)?.message || (res as any)?.error || invErr?.message || error?.message || "Não foi possível ligar o bot");
           }
+        } else {
+          await resumeCadenceFromHandoff(customerId);
         }
         setBotPaused(false);
         if (!globalAiEnabled) setBotForceEnabled(true);

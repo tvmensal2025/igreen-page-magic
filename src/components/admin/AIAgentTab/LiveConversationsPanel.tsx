@@ -26,6 +26,10 @@ import { Loader2, Pause, Play, RefreshCw, ChevronDown, RotateCcw, Send, PowerOff
 import { formatDistanceToNow } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { resetLeadConversation } from "@/services/resetConversation";
+import {
+  pauseCadenceForHandoff,
+  resumeCadenceFromHandoff,
+} from "@/lib/handoffReturnToPizza";
 import { ManualStepDialog } from "./ManualStepDialog";
 import WinningConversationButton from "@/components/admin/WinningConversationButton";
 
@@ -127,29 +131,32 @@ export function LiveConversationsPanel({ userId }: { userId: string }) {
 
   async function setPaused(id: string, paused: boolean) {
     // 1) tenta update direto (rápido, sob RLS do dono)
-    const { error } = await supabase.from("customers").update({
+    const { data: updated, error } = await supabase.from("customers").update({
       bot_paused: paused,
       bot_paused_reason: paused ? "humano_assumiu" : null,
       bot_paused_at: paused ? new Date().toISOString() : null,
       bot_paused_until: null,
       assigned_human_id: paused ? userId : null,
-    }).eq("id", id);
+    }).eq("id", id).select("id").maybeSingle();
 
-    if (error) {
+    if (error || !updated) {
       console.warn("[setPaused] update direto falhou, tentando edge customer-takeover:", error);
       // 2) fallback via edge (cobre super admin agindo em customer de outro consultor)
       const { data, error: invErr } = await supabase.functions.invoke("customer-takeover", {
         body: { customerId: id, paused },
       });
       if (invErr || (data as any)?.error) {
-        const msg = (data as any)?.message || (data as any)?.error || invErr?.message || error.message;
         toast({
           title: "Erro ao alterar atendimento",
-          description: `${msg}${error.code ? ` (code=${error.code})` : ""}`,
+          description: "Não foi possível alterar o responsável pela conversa. Tente novamente.",
           variant: "destructive",
         });
         return;
       }
+    } else if (paused) {
+      await pauseCadenceForHandoff(id);
+    } else {
+      await resumeCadenceFromHandoff(id);
     }
     toast({ title: paused ? "🤝 Você assumiu — a IA não vai mais mandar nada" : "🤖 IA reativada" });
     load();
@@ -179,8 +186,13 @@ export function LiveConversationsPanel({ userId }: { userId: string }) {
       updated_at: new Date().toISOString(),
     };
     if (stepValue !== null) update.conversation_step = stepValue;
-    const { error } = await supabase.from("customers").update(update).eq("id", row.id);
-    if (error) {
+    const { data: updated, error } = await supabase
+      .from("customers")
+      .update(update)
+      .eq("id", row.id)
+      .select("id")
+      .maybeSingle();
+    if (error || !updated) {
       // fallback via edge para casos de RLS
       const { data, error: invErr } = await supabase.functions.invoke("customer-takeover", {
         body: { customerId: row.id, paused: false },
@@ -188,7 +200,7 @@ export function LiveConversationsPanel({ userId }: { userId: string }) {
       if (invErr || (data as any)?.error) {
         toast({
           title: "Erro ao devolver",
-          description: (data as any)?.message || error.message,
+          description: "Não foi possível devolver a conversa para a automação. Tente novamente.",
           variant: "destructive",
         });
         return;
@@ -196,6 +208,8 @@ export function LiveConversationsPanel({ userId }: { userId: string }) {
       if (stepValue) {
         await supabase.from("customers").update({ conversation_step: stepValue }).eq("id", row.id);
       }
+    } else {
+      await resumeCadenceFromHandoff(row.id);
     }
 
     if (stepValue) {

@@ -3,6 +3,7 @@
 // usando service_role.
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
+import { handoffResumeAtIso } from "../_shared/bot/handoff-resume.ts";
 
 interface Body {
   customerId: string;
@@ -84,7 +85,7 @@ Deno.serve(async (req) => {
         .from("lead_cadence_state")
         .update({
           paused_reason: "handoff_humano",
-          next_action_at: null,
+          next_action_at: handoffResumeAtIso(),
         })
         .eq("customer_id", body.customerId)
         .neq("stage", "WON");

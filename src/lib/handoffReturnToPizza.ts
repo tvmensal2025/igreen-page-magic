@@ -26,6 +26,11 @@ const CUSTOMER_HANDOFF_SELECT =
   "id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, assigned_human_id, name_source, last_inbound_media_url, last_inbound_media_kind, do_not_contact, customer_origin, status, is_converted, pos_venda_stage, andamento_igreen, pos_venda_recadastro_at";
 
 export const HANDOFF_PAUSE_REASON = "handoff_humano";
+export const HANDOFF_RECHECK_HOURS = 48;
+
+export function handoffRecheckAtIso(from: Date = new Date()): string {
+  return new Date(from.getTime() + HANDOFF_RECHECK_HOURS * 3_600_000).toISOString();
+}
 
 export type BlockedCategory = "handoff" | "security" | "other";
 
@@ -421,12 +426,28 @@ export async function pauseCadenceForHandoff(customerId: string): Promise<void> 
     .from("lead_cadence_state")
     .update({
       paused_reason: HANDOFF_PAUSE_REASON,
-      next_action_at: null,
+      next_action_at: handoffRecheckAtIso(),
     } as never)
     .eq("customer_id", customerId)
     .neq("stage", "WON");
   if (error) {
     console.warn("[pauseCadenceForHandoff]", error.message);
+  }
+}
+
+export async function resumeCadenceFromHandoff(customerId: string): Promise<void> {
+  if (!customerId) return;
+  const { error } = await supabase
+    .from("lead_cadence_state")
+    .update({
+      paused_reason: null,
+      paused_until: null,
+      next_action_at: new Date().toISOString(),
+    } as never)
+    .eq("customer_id", customerId)
+    .eq("paused_reason", HANDOFF_PAUSE_REASON);
+  if (error) {
+    console.warn("[resumeCadenceFromHandoff]", error.message);
   }
 }
 
