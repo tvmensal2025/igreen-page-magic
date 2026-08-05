@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const FN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../supabase/functions");
-const CONVERSATIONAL = path.join(FN, "whapi-webhook/handlers/conversational/index.ts");
+const CHANNELS = ["whapi-webhook", "evolution-webhook"] as const;
 
 describe("escopo de turno isolado", () => {
   it("dois turnos concorrentes não compartilham contexto", async () => {
@@ -51,12 +51,17 @@ describe("escopo de turno isolado", () => {
   });
 });
 
-describe("guarda estática — handler conversacional Whapi", () => {
-  const src = readFileSync(CONVERSATIONAL, "utf8");
+describe.each(CHANNELS)("guarda estática — handler conversacional %s", (channel) => {
+  const src = readFileSync(path.join(FN, channel, "handlers/conversational/index.ts"), "utf8");
 
   it("usa AsyncLocalStorage para o contexto do turno", () => {
     expect(src).toContain('from "node:async_hooks"');
     expect(src).toContain("_turnStorage.enterWith");
+  });
+
+  it("abre o escopo do turno além de declará-lo", () => {
+    const calls = src.match(/_beginTurnScope\(/g) ?? [];
+    expect(calls.length).toBeGreaterThanOrEqual(2);
   });
 
   it("não tem mais variáveis de turno em escopo de módulo", () => {

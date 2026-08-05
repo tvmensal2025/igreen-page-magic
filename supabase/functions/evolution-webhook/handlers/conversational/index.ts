@@ -3,6 +3,7 @@
 // and decides the next step from there. Falls back to the legacy hardcoded
 // state machine if the consultant has no flow configured.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { BotContext, BotResult } from "../types.ts";
 import { CONVERSATIONAL_STEPS, decideTransition, type ConversationalStep } from "./state-machine.ts";
 import { classifyIntent } from "./intent-classifier.ts";
@@ -842,13 +843,47 @@ async function sendStepMedia(
 // evitando silêncio total quando o lead manda algo fora do esperado.
 // IMPORTANTE: guardamos também as `vars` p/ renderizar {{nome}}, {{valor_conta}},
 // etc. antes de enviar ao lead. Sem isso, o lead recebia placeholder cru.
-let _currentTurnStepQuestion: string = "";
-// deno-lint-ignore no-explicit-any
-let _currentTurnVars: any = {};
+// Escopo por requisição: em módulo global, dois turnos concorrentes no mesmo
+// isolate compartilhavam pergunta e vars — o lead A recebia a reentrada
+// renderizada com {{nome}}/{{valor_conta}} do lead B. Paridade Whapi.
+type TurnScope = {
+  stepQuestion: string;
+  // deno-lint-ignore no-explicit-any
+  vars: any;
+};
+
+const _turnStorage = new AsyncLocalStorage<TurnScope>();
+const _turnFallback: TurnScope = { stepQuestion: "", vars: {} };
+let _turnScopeIsolated = true;
+
+function _turn(): TurnScope {
+  try {
+    return _turnStorage.getStore() ?? _turnFallback;
+  } catch {
+    return _turnFallback;
+  }
+}
+
+function _beginTurnScope() {
+  const scope: TurnScope = { stepQuestion: "", vars: {} };
+  try {
+    _turnStorage.enterWith(scope);
+    if (!_turnStorage.getStore()) throw new Error("enterWith no-op");
+  } catch (e) {
+    if (_turnScopeIsolated) {
+      _turnScopeIsolated = false;
+      console.warn(`[conversational] AsyncLocalStorage indisponível — turno em escopo compartilhado: ${(e as Error)?.message}`);
+    }
+    _turnFallback.stepQuestion = "";
+    _turnFallback.vars = {};
+  }
+}
+
 // deno-lint-ignore no-explicit-any
 function _setTurnStepQuestion(q: string, vars?: any) {
-  _currentTurnStepQuestion = (q || "").trim();
-  _currentTurnVars = vars || {};
+  const scope = _turn();
+  scope.stepQuestion = (q || "").trim();
+  scope.vars = vars || {};
 }
 function _extractTail(t: string): string {
   if (!t) return "";
@@ -866,8 +901,9 @@ function _finalize(stepKey: string, r: BotResult): BotResult {
   const reply = (r.reply || "").trim();
   const hasMedia = r.updates?.__inline_sent === true;
   if (!reply && !hasMedia) {
-    const rawTail = _extractTail(_currentTurnStepQuestion);
-    let tail = rawTail ? renderTemplate(rawTail, _currentTurnVars || {}) : "";
+    const scope = _turn();
+    const rawTail = _extractTail(scope.stepQuestion);
+    let tail = rawTail ? renderTemplate(rawTail, scope.vars || {}) : "";
     tail = tail.replace(/\{\{\s*[^}]+\s*\}\}/g, "").replace(/\s{2,}/g, " ").trim();
     if (!tail) {
       console.warn(`[conversational] 🤫 reply vazio em passo sem pergunta → silencioso step=${stepKey}`);
@@ -880,6 +916,7 @@ function _finalize(stepKey: string, r: BotResult): BotResult {
 }
 
 export async function runConversationalFlow(ctx: BotContext): Promise<BotResult> {
+  _beginTurnScope();
   // PARIDADE WHAPI — LGPD opt-out: palavra-chave SAIR/PARAR encerra contato.
   const optOut = String(ctx.messageText || "").trim().toUpperCase();
   if (optOut === "SAIR" || optOut === "PARAR" || optOut === "STOP" || optOut === "CANCELAR") {
