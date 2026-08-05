@@ -46,6 +46,13 @@ import {
 } from "../_shared/outbound-delivery-reconcile.ts";
 import { decideAckAction } from "../_shared/cadence-ack-policy.ts";
 import {
+  type CapValues,
+  decideOutreachCap,
+  type OutreachUsage,
+  resolveCapValues,
+  usageBucketKey,
+} from "../_shared/outreach-caps.ts";
+import {
   normalizeWaPhoneDigits,
   resolveConsultantConnectedWaPhone,
 } from "../_shared/consultant-wa-phone.ts";
@@ -129,26 +136,40 @@ const DEFAULT_CAP_B = 150;
 const DEFAULT_CAP_C = 50;
 const DEFAULT_CAP_GLOBAL_OUTREACH = 200;
 
-interface OutreachCaps { capB: number; capC: number; capGlobal: number; }
+type OutreachCaps = CapValues;
 
-/** Caps por grupo (A=∞, B=reengajamento cap fixo configurável, C=RECALL_*, Global=B+C anti-ban). */
-async function loadOutreachCaps(supabase: any): Promise<OutreachCaps> {
+/**
+ * Caps de disparo. A linha `global` dá o padrão de cada consultor E o teto do
+ * número compartilhado; uma linha `id = <uuid do consultor>` sobrescreve a cota
+ * daquele consultor. Sem linha própria, o comportamento é o de antes.
+ */
+async function loadOutreachCaps(
+  supabase: any,
+  consultantIds: string[],
+): Promise<{ platform: OutreachCaps; byConsultant: Map<string, OutreachCaps> }> {
+  const byConsultant = new Map<string, OutreachCaps>();
+  let platform: OutreachCaps = {
+    capB: DEFAULT_CAP_B,
+    capC: DEFAULT_CAP_C,
+    capGlobal: DEFAULT_CAP_GLOBAL_OUTREACH,
+  };
   try {
+    const ids = ["global", ...consultantIds.filter(Boolean)];
     const { data } = await supabase
       .from("daily_reheat_settings")
-      .select("cap_b, cap_c, cap_global_outreach, daily_whapi_cap")
-      .limit(1)
-      .maybeSingle();
-    const capB = Math.floor(Number(data?.cap_b));
-    const capC = Math.floor(Number(data?.cap_c));
-    const capG = Math.floor(Number(data?.cap_global_outreach));
-    return {
-      capB: Number.isFinite(capB) && capB > 0 ? capB : DEFAULT_CAP_B,
-      capC: Number.isFinite(capC) && capC > 0 ? capC : DEFAULT_CAP_C,
-      capGlobal: Number.isFinite(capG) && capG > 0 ? capG : DEFAULT_CAP_GLOBAL_OUTREACH,
-    };
-  } catch { /* fallback */ }
-  return { capB: DEFAULT_CAP_B, capC: DEFAULT_CAP_C, capGlobal: DEFAULT_CAP_GLOBAL_OUTREACH };
+      .select("id, cap_b, cap_c, cap_global_outreach")
+      .in("id", ids);
+    const rows = (data || []) as Array<Record<string, unknown>>;
+    const globalRow = rows.find((r) => String(r.id) === "global") ?? null;
+    platform = resolveCapValues(globalRow as any, platform);
+    for (const id of consultantIds) {
+      const own = rows.find((r) => String(r.id) === id) ?? null;
+      // Sem linha própria: herda os valores da global (cota individual, não
+      // o teto do chip — este continua aplicado por cima).
+      byConsultant.set(id, resolveCapValues(own as any, platform));
+    }
+  } catch { /* fallback nos defaults */ }
+  return { platform, byConsultant };
 }
 
 const B_STAGES = [
@@ -166,9 +187,46 @@ const C_STAGES = [
 ];
 
 /** Pessoas distintas tocadas hoje (BRT) por grupo B e C. Grupo A não é contado. */
+/**
+ * Uso do dia separado por dono. `platform` é a soma (teto do número
+ * compartilhado); `byConsultant` é a cota individual. Envio sem consultor
+ * conhecido cai no balde `usageBucketKey(null)`.
+ */
 async function countOutreachTouchesToday(
   supabase: any,
-): Promise<{ b: number; c: number; ok: boolean }> {
+): Promise<{
+  platform: OutreachUsage;
+  byConsultant: Map<string, OutreachUsage>;
+  ok: boolean;
+}> {
+  const byConsultant = new Map<string, OutreachUsage>();
+  const stages = [...B_STAGES, ...C_STAGES];
+  const bump = (key: string, grp: "B" | "C", n: number) => {
+    const cur = byConsultant.get(key) ?? { b: 0, c: 0 };
+    if (grp === "C") cur.c += n;
+    else cur.b += n;
+    byConsultant.set(key, cur);
+  };
+
+  const { data, error } = await supabase.rpc("outreach_touches_today", {
+    p_stages: stages,
+  });
+  if (!error && Array.isArray(data)) {
+    let b = 0, c = 0;
+    for (const r of data as Array<{ consultant_id: string | null; stage_group: string; leads: number }>) {
+      const grp = r.stage_group === "C" ? "C" : "B";
+      const n = Number(r.leads) || 0;
+      bump(usageBucketKey(r.consultant_id), grp, n);
+      if (grp === "C") c += n;
+      else b += n;
+    }
+    return { platform: { b, c }, byConsultant, ok: true };
+  }
+  if (error) {
+    console.warn("[cadence-tick] outreach_touches_today indisponível — fallback SELECT", error.message);
+  }
+
+  // Fallback (migration ainda não aplicada): SELECT amplo e contagem em memória.
   const fmt = new Intl.DateTimeFormat("en-CA", {
     timeZone: "America/Sao_Paulo",
     year: "numeric", month: "2-digit", day: "2-digit",
@@ -177,25 +235,33 @@ async function countOutreachTouchesToday(
   const startIso = new Date(`${day}T00:00:00-03:00`).toISOString();
   // Limite alto explícito: o default do PostgREST (1000) truncaria a contagem
   // em dias cheios e o cap anti-ban passaria a contar menos do que foi enviado.
-  const { data, error } = await supabase
+  const { data: rows, error: selErr } = await supabase
     .from("cadence_action_log")
-    .select("customer_id, stage")
+    .select("customer_id, stage, consultant_id")
     .eq("status", "sent")
     .gte("created_at", startIso)
-    .in("stage", [...B_STAGES, ...C_STAGES])
+    .in("stage", stages)
     .limit(20000);
-  if (error) {
+  if (selErr) {
     // Fail-closed: sem contagem confiável NÃO liberamos outreach (risco de ban).
-    console.warn("[cadence-tick] count_outreach_failed (fail-closed):", error.message);
-    return { b: 0, c: 0, ok: false };
+    console.warn("[cadence-tick] count_outreach_failed (fail-closed):", selErr.message);
+    return { platform: { b: 0, c: 0 }, byConsultant, ok: false };
   }
-  const b = new Set<string>();
-  const c = new Set<string>();
-  for (const r of (data || []) as { customer_id: string; stage: string }[]) {
-    if (stageGroup(r.stage) === "C") c.add(r.customer_id);
-    else b.add(r.customer_id);
+  const seen = new Map<string, Set<string>>();
+  const platformB = new Set<string>();
+  const platformC = new Set<string>();
+  for (const r of (rows || []) as Array<{ customer_id: string; stage: string; consultant_id: string | null }>) {
+    const grp = stageGroup(r.stage) === "C" ? "C" : "B";
+    const key = `${usageBucketKey(r.consultant_id)}|${grp}`;
+    const set = seen.get(key) ?? new Set<string>();
+    if (!set.has(r.customer_id)) {
+      set.add(r.customer_id);
+      seen.set(key, set);
+      bump(usageBucketKey(r.consultant_id), grp, 1);
+    }
+    (grp === "C" ? platformC : platformB).add(r.customer_id);
   }
-  return { b: b.size, c: c.size, ok: true };
+  return { platform: { b: platformB.size, c: platformC.size }, byConsultant, ok: true };
 }
 
 /** Verifica duplicados de leads no mesmo estágio e consolida se necessário. */
@@ -1129,11 +1195,21 @@ Deno.serve(async (req) => {
 
   const now = new Date();
   const loadAvail = createAvailabilityLoader(supabase);
-  const caps = await loadOutreachCaps(supabase);
+  // Teto do número compartilhado (linha `global`). A cota de cada consultor é
+  // carregada depois do claim, quando sabemos quem está na fila.
+  let caps = (await loadOutreachCaps(supabase, [])).platform;
+  let capsByConsultant = new Map<string, OutreachCaps>();
   const touchedToday = await countOutreachTouchesToday(supabase);
   const capCountReliable = touchedToday.ok;
-  let touchedB = touchedToday.b;
-  let touchedC = touchedToday.c;
+  let touchedB = touchedToday.platform.b;
+  let touchedC = touchedToday.platform.c;
+  const usageByConsultant = touchedToday.byConsultant;
+  function usageFor(consultantId: string | null | undefined): OutreachUsage {
+    const key = usageBucketKey(consultantId);
+    const cur = usageByConsultant.get(key) ?? { b: 0, c: 0 };
+    usageByConsultant.set(key, cur);
+    return cur;
+  }
   const alertedThresholds = new Set<string>(); // ex: "B:60", "C:100", "G:85"
   async function maybeAlertCap(kind: "B" | "C" | "G", used: number, limit: number) {
     if (limit <= 0) return;
@@ -1209,6 +1285,15 @@ Deno.serve(async (req) => {
   if (!due || due.length === 0) {
     await finishAutomationRun(supabase, runId, "completed", { processed: 0 });
     return json({ processed: 0, caps, touched_today: { b: touchedB, c: touchedC } });
+  }
+
+  {
+    const consultantIds = [
+      ...new Set(due.map((r) => String(r.consultant_id || "")).filter(Boolean)),
+    ];
+    const loaded = await loadOutreachCaps(supabase, consultantIds);
+    caps = loaded.platform;
+    capsByConsultant = loaded.byConsultant;
   }
 
   const customerIds = due.map((r) => r.customer_id).filter(Boolean);
@@ -1514,12 +1599,30 @@ Deno.serve(async (req) => {
           });
           deferred++; continue;
         }
-        const usedGlobal = touchedB + touchedC;
-        const overGlobal = usedGlobal >= caps.capGlobal;
-        const overGroup = grp === "B" ? touchedB >= caps.capB : touchedC >= caps.capC;
-        if (overGroup || overGlobal) {
-          await maybeAlertCap(grp, grp === "B" ? touchedB : touchedC, grp === "B" ? caps.capB : caps.capC);
-          await maybeAlertCap("G", usedGlobal, caps.capGlobal);
+        const consultantCaps = capsByConsultant.get(String(row.consultant_id || "")) ?? caps;
+        const consultantUsage = usageFor(row.consultant_id);
+        const verdict = decideOutreachCap({
+          group: grp,
+          consultantUsage,
+          consultantCaps,
+          platformUsage: { b: touchedB, c: touchedC },
+          platformCaps: caps,
+        });
+        if (!verdict.allowed) {
+          const used = grp === "B" ? consultantUsage.b : consultantUsage.c;
+          const limit = grp === "B" ? consultantCaps.capB : consultantCaps.capC;
+          await maybeAlertCap(grp, used, limit);
+          await maybeAlertCap("G", touchedB + touchedC, caps.capGlobal);
+          await logSkipped(supabase, "outreach_cap_reached", {
+            blocked_by: verdict.blockedBy,
+            group: grp,
+            consultant_id: row.consultant_id,
+            customer_id: row.customer_id,
+            consultant_used: consultantUsage,
+            consultant_caps: consultantCaps,
+            platform_used: { b: touchedB, c: touchedC },
+            platform_cap: caps.capGlobal,
+          });
           await finishRow(row.id, claimToken, { next_action_at: tomorrowMorningBRT() });
           deferred++; continue;
         }
@@ -1872,10 +1975,16 @@ Deno.serve(async (req) => {
               sent++;
               {
                 const grp = stageGroup(stage);
-                if (grp === "B") touchedB++;
-                else if (grp === "C") touchedC++;
+                const usage = usageFor(row.consultant_id);
+                if (grp === "B") { touchedB++; usage.b++; }
+                else if (grp === "C") { touchedC++; usage.c++; }
                 if (grp !== "A") {
-                  await maybeAlertCap(grp, grp === "B" ? touchedB : touchedC, grp === "B" ? caps.capB : caps.capC);
+                  const consultantCaps = capsByConsultant.get(String(row.consultant_id || "")) ?? caps;
+                  await maybeAlertCap(
+                    grp,
+                    grp === "B" ? usage.b : usage.c,
+                    grp === "B" ? consultantCaps.capB : consultantCaps.capC,
+                  );
                   await maybeAlertCap("G", touchedB + touchedC, caps.capGlobal);
                 }
               }
@@ -2011,6 +2120,7 @@ Deno.serve(async (req) => {
     cliente_blocked: clienteBlocked,
     caps,
     touched_today: { b: touchedB, c: touchedC, global: touchedB + touchedC },
+    touched_by_consultant: Object.fromEntries(usageByConsultant),
     ms: Date.now() - bootTs,
   };
   console.info("[cadence-tick] done", summary);
