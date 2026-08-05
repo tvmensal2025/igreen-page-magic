@@ -44,6 +44,7 @@ import {
   isAckOk,
   isPendingStale,
 } from "../_shared/outbound-delivery-reconcile.ts";
+import { decideAckAction } from "../_shared/cadence-ack-policy.ts";
 import {
   normalizeWaPhoneDigits,
   resolveConsultantConnectedWaPhone,
@@ -1712,27 +1713,50 @@ Deno.serve(async (req) => {
               // Envio já ocorreu. WhatsApp: só avança se ACK ok; senão espera ou reabre retry (com teto).
               if (def.channel === "whatsapp") {
                 const ack = await loadCadenceWaAck(supabase, row.customer_id, stage);
-                if (isAckOk(ack.delivery_status) || eff.status === "delivered") {
+                // Fail-closed: se não ler attempt_count, assume teto (não reabre).
+                let attempts = OUTBOUND_EFFECT_MAX_RETRYABLE_ATTEMPTS;
+                try {
+                  const { data: effRow } = await supabase
+                    .from("outbound_effects")
+                    .select("attempt_count")
+                    .eq("id", eff.effectId)
+                    .maybeSingle();
+                  attempts = Number((effRow as { attempt_count?: number } | null)?.attempt_count || 0);
+                } catch {
+                  /* mantém teto → ack_max_attempts_advance */
+                }
+                const ackAction = decideAckAction({
+                  deliveryStatus: ack.delivery_status,
+                  externalMessageId: ack.external_message_id,
+                  acked: isAckOk(ack.delivery_status) || eff.status === "delivered",
+                  stale: !!(ack.created_at && isPendingStale(ack.created_at)),
+                  attempts,
+                  maxAttempts: OUTBOUND_EFFECT_MAX_RETRYABLE_ATTEMPTS,
+                });
+
+                if (ackAction === "advance_acked") {
                   detail = { ...detail, dispatch: "effect_already_sent_acked", effect_id: eff.effectId };
                   status = "sent";
-                } else if (
-                  ack.delivery_status === "failed" ||
-                  (ack.created_at && isPendingStale(ack.created_at))
-                ) {
-                  // Fail-closed: se não ler attempt_count, assume teto (não reabre).
-                  let attempts = OUTBOUND_EFFECT_MAX_RETRYABLE_ATTEMPTS;
+                } else if (ackAction === "advance_unverifiable") {
+                  // Provedor aceitou mas não devolveu id: nenhum ACK vai casar.
+                  // Reenviar mandaria a mesma mensagem de novo ao lead.
                   try {
-                    const { data: effRow } = await supabase
+                    await supabase
                       .from("outbound_effects")
-                      .select("attempt_count")
+                      .update({ status: "delivered", error_code: "ack_unverifiable_no_id" })
                       .eq("id", eff.effectId)
-                      .maybeSingle();
-                    attempts = Number((effRow as { attempt_count?: number } | null)?.attempt_count || 0);
-                  } catch {
-                    /* mantém teto → ack_max_attempts_advance */
-                  }
-
-                  if (attempts >= OUTBOUND_EFFECT_MAX_RETRYABLE_ATTEMPTS) {
+                      .eq("status", "sent");
+                  } catch { /* best-effort */ }
+                  detail = {
+                    ...detail,
+                    dispatch: "no_message_id_advance",
+                    effect_id: eff.effectId,
+                    delivery_status: ack.delivery_status,
+                    attempt_count: attempts,
+                  };
+                  status = "sent";
+                } else if (ackAction !== "wait") {
+                  if (ackAction === "advance_max_attempts") {
                     // Teto: não reabre. Fecha efeito e avança escada (WA → SMS/voz).
                     try {
                       await supabase
