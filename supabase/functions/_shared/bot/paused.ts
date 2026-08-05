@@ -178,11 +178,18 @@ export function wrapSenderWithLivePauseGuard<T extends OutboundSender>(
   const allowSpeak = async (): Promise<boolean> => {
     const customerId = opts.getCustomerId?.() || null;
     if (customerId) {
-      const { data } = await opts.supabase
+      const { data, error } = await opts.supabase
         .from("customers")
         .select("bot_paused, bot_paused_reason, assigned_human_id, bot_paused_until, do_not_contact")
         .eq("id", customerId)
         .maybeSingle();
+      // Fail-closed: sem leitura confiável não dá para afirmar que o humano
+      // NÃO assumiu. Melhor ficar mudo neste turno (o próximo inbound repete
+      // o passo) do que atropelar o consultor ou um lead em opt-out/DNC.
+      if (error) {
+        console.warn(`🔇 [pause-guard] leitura falhou customer=${customerId} — abortando outbound: ${(error as any)?.message}`);
+        return false;
+      }
       if (isCustomerPausedByHuman(data as PausableCustomer | null)) {
         console.log(`🔇 [pause-guard] abort outbound customer=${customerId} — humano assumiu`);
         return false;
