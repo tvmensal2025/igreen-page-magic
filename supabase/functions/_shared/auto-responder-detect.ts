@@ -76,6 +76,25 @@ const SIGNALS: Array<{ id: string; re: RegExp }> = [
   { id: "transferir_atendimento", re: /posso\s+te\s+transferir|transferir\s+(agora\s+)?(mesmo\s+)?para/i },
   // "Seu atendimento será encerrado por inatividade nos próximos minutos"
   { id: "encerrado_inatividade", re: /encerrad[oa]\s+por\s+inatividade|por\s+inatividade\s+nos?\s+pr[óo]xim/i },
+
+  // ─── 3ª rodada (replay de 3.485 mensagens, 2026-08-05) ───────────────────
+  // Divulgação ativa de OUTRA empresa caindo no nosso número: não é URA de
+  // ausência, é oferta comercial. O bot respondia normalmente e queimava cota.
+  // Todos exigem marca que um lead de energia nunca escreve.
+
+  // "Para efetuar seu pedido clique no link abaixo"
+  { id: "pedido_link", re: /para\s+(efetuar|finalizar|concluir|fazer)\s+(o\s+)?seu\s+pedido/i },
+  { id: "clique_link_abaixo", re: /clique\s+n[oa]\s+link\s+abaixo/i },
+  // "Somos a MP Empréstimos Pouso Alegre. Trabalhamos com Empréstimos no Cartão…"
+  {
+    id: "divulgacao_empresa",
+    re: /\bsomos\s+(a|o)\s+\S[^,.!?\n]{2,50}[\s\S]{0,150}\btrabalhamos\s+com\b/i,
+  },
+  // Oferta de crédito/consórcio — o lead pede desconto na luz, não oferece crédito.
+  {
+    id: "oferta_credito",
+    re: /\btrabalhamos\s+com\b[\s\S]{0,100}(empr[ée]stimo|consignado|fgts|cart[ãa]o\s+de\s+cr[ée]dito|cons[óo]rcio|financiamento)/i,
+  },
 ];
 
 export type AutoResponderVerdict =

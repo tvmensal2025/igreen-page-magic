@@ -116,6 +116,33 @@ Deno.test("texto curto e vazio nunca é robô", () => {
   assertEquals(isAutoResponderText("bem vindo"), false); // curto, sem empresa
 });
 
+Deno.test("divulgação comercial de outra empresa (3ª rodada, casos reais)", () => {
+  const casos: Array<[string, string]> = [
+    [
+      "Olá tudo bem ?\nPara efetuar seu pedido clique no link abaixo, se tiver alguma dúvida estamos a disposição!",
+      "pedido_link",
+    ],
+    [
+      "Olá.. tudo bem? Somos a MP Empréstimos Pouso Alegre.\n\nTrabalhamos com Empréstimos no Cartão de Crédito, saque aniversário FGTS e consignado.",
+      "divulgacao_empresa",
+    ],
+  ];
+  for (const [texto, sinal] of casos) {
+    const v = detectAutoResponder(texto);
+    assertEquals(v.isAutoResponder, true, `deveria detectar robô: ${texto}`);
+    if (v.isAutoResponder) assertEquals(v.signal, sinal);
+  }
+});
+
+Deno.test("lead que fala de crédito/link NÃO vira robô", () => {
+  // A guarda é a marca de quem OFERECE, não a palavra solta.
+  assertEquals(isAutoResponderText("posso pagar no cartão de crédito?"), false);
+  assertEquals(isAutoResponderText("tenho empréstimo consignado, isso atrapalha?"), false);
+  assertEquals(isAutoResponderText("o link que você mandou não abriu aqui"), false);
+  assertEquals(isAutoResponderText("me manda o link do cadastro por favor"), false);
+  assertEquals(isAutoResponderText("somos a família Silva, moramos os dois aqui"), false);
+});
+
 Deno.test("variantes URA: bem-vindo (a) e 'pelo o seu contato'", () => {
   assertEquals(
     detectAutoResponder("Olá! Seja bem-vindo (a) à Clínica XYZ. Aguarde.").isAutoResponder,
