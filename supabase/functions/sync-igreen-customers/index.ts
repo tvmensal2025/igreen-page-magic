@@ -621,6 +621,202 @@ async function persistSyncRunBackgroundExtras(
   }).eq("id", targetId);
 }
 
+/** Saltos encadeados de enrich por conta em um único clique de Sincronizar. */
+const ENRICH_MAX_HOPS = 15;
+
+/** Estado do encadeamento de enrich (anti-loop entre invocações). */
+interface EnrichChainState {
+  hop: number;
+  prevRemaining: number | null;
+}
+
+/** Código do licenciado dono da conta iGreen (quem enxerga o celular do cliente). */
+// deno-lint-ignore no-explicit-any
+async function resolveAccountConsultorId(supabase: any, igreenAccountId: string | null): Promise<string> {
+  if (!igreenAccountId) return "";
+  const { data } = await supabase
+    .from("igreen_portal_accounts")
+    .select("igreen_consultor_id")
+    .eq("id", igreenAccountId)
+    .maybeSingle();
+  return data?.igreen_consultor_id != null ? String(data.igreen_consultor_id) : "";
+}
+
+/**
+ * Fila de enriquecimento de uma conta: quem ainda não tem ficha, mais os
+ * placeholders de telefone que ESTA conta consegue resolver.
+ *
+ * O portal só mostra o celular de quem a própria conta cadastrou. Cliente de
+ * outro licenciado da rede volta `sem_celular_` para sempre — mantê-lo na fila
+ * fazia o enrich reprocessar centenas de códigos a cada sync, sem nunca mudar
+ * nada. Ele fica de fora até a conta daquele licenciado ser cadastrada aqui.
+ */
+// deno-lint-ignore no-explicit-any
+async function fetchEnrichQueue(
+  supabase: any,
+  consultantId: string | null,
+  igreenAccountId: string | null,
+  limit: number,
+): Promise<Array<{ igreen_code: string }>> {
+  if (!consultantId) return [];
+  const accountConsultorId = await resolveAccountConsultorId(supabase, igreenAccountId);
+
+  let q = supabase
+    .from("customers")
+    .select("igreen_code, phone_whatsapp, last_enriched_at, registered_by_igreen_id, igreen_account_id")
+    .eq("consultant_id", consultantId)
+    .in("customer_origin", ["igreen_sync", "igreen_extension"])
+    .not("igreen_code", "is", null)
+    .or("last_enriched_at.is.null,phone_whatsapp.like.sem_celular_%")
+    .limit(limit * 3);
+  if (!igreenAccountId) q = q.limit(limit);
+
+  const { data } = await q;
+  const rows = (data || []) as Array<{
+    igreen_code: string;
+    phone_whatsapp: string | null;
+    last_enriched_at: string | null;
+    registered_by_igreen_id: string | null;
+    igreen_account_id: string | null;
+  }>;
+
+  const usable = igreenAccountId
+    ? rows.filter((r) => {
+      const isPlaceholder = String(r.phone_whatsapp || "").startsWith("sem_celular_");
+      const cadastradoAqui = !!accountConsultorId &&
+        String(r.registered_by_igreen_id || "") === accountConsultorId;
+      // Sem ficha ainda: tenta pela conta que já é dona da linha.
+      if (!r.last_enriched_at && r.igreen_account_id === igreenAccountId) return true;
+      // Placeholder: só quem cadastrou o cliente enxerga o celular.
+      if (isPlaceholder && cadastradoAqui) return true;
+      return false;
+    })
+    : rows;
+
+  return usable.slice(0, limit).map((r) => ({ igreen_code: String(r.igreen_code) }));
+}
+
+/** Quantos a conta ainda consegue enriquecer (0 = terminou o que dá para fazer). */
+// deno-lint-ignore no-explicit-any
+async function countEnrichPending(
+  supabase: any,
+  consultantId: string | null,
+  igreenAccountId: string | null,
+): Promise<number> {
+  const queue = await fetchEnrichQueue(supabase, consultantId, igreenAccountId, 5000);
+  return queue.length;
+}
+
+/**
+ * Continua o enriquecimento numa nova invocação da própria edge. Cada salto
+ * ganha um orçamento de tempo limpo, então UM clique em "Sincronizar" termina
+ * a fila inteira mesmo quando ela não cabe em uma execução só.
+ */
+async function chainEnrichHop(params: {
+  consultantId: string | null;
+  igreenAccountId: string | null;
+  portalEmail: string;
+  portalPassword: string;
+  hop: number;
+  prevRemaining: number | null;
+}): Promise<boolean> {
+  const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
+  const srk = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+  if (!base || !srk || !params.consultantId) return false;
+  try {
+    // Respiro entre logins no portal (proxy residencial não gosta de rajada).
+    await new Promise((r) => setTimeout(r, 3000));
+    const resp = await fetch(`${base}/functions/v1/sync-igreen-customers`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${srk}`,
+        apikey: srk,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        consultant_id: params.consultantId,
+        account_id: params.igreenAccountId,
+        portal_email: params.portalEmail,
+        portal_password: params.portalPassword,
+        mode: "enrich_only",
+        source: "enrich_chain",
+        enrich_hop: params.hop,
+        enrich_prev_remaining: params.prevRemaining,
+      }),
+    });
+    console.log(`[enrich-chain] hop=${params.hop} account=${params.igreenAccountId || "-"} → ${resp.status}`);
+    return resp.ok;
+  } catch (e) {
+    console.warn("[enrich-chain] falhou:", e instanceof Error ? e.message : String(e));
+    return false;
+  }
+}
+
+/**
+ * Recalcula o pós-venda depois que os dados do portal chegaram. Só aqui as
+ * datas (validado/ativo/cadastro) existem — sem elas `compute_pos_venda_stage`
+ * devolve `espera` e o cliente novo nunca entra na régua.
+ */
+// deno-lint-ignore no-explicit-any
+async function settlePosVendaAfterSync(
+  supabase: any,
+  consultantId: string | null,
+): Promise<Record<string, unknown>> {
+  const out: Record<string, unknown> = {};
+  try {
+    const { error: rpcErr } = await supabase.rpc("recompute_pos_venda_stages");
+    out.pos_venda_recompute = rpcErr ? { error: rpcErr.message } : { ok: true };
+    if (rpcErr) return out;
+
+    const auto = await supabase.rpc("auto_confirm_pending_pos_venda", {
+      _consultant_id: consultantId || null,
+    });
+    out.pos_venda_auto_confirm = auto.error ? { error: auto.error.message } : auto.data;
+    if (!consultantId || auto.error) return out;
+
+    const { getConsultantAutomationPrefs, isConsultantAutoAllowed } = await import(
+      "../_shared/consultant-automation-prefs.ts"
+    );
+    const { isAutomationEnabled } = await import("../_shared/automation-gate.ts");
+    const prefs = await getConsultantAutomationPrefs(supabase, consultantId);
+    const globalOn = await isAutomationEnabled(supabase, "pos_venda_auto_messages");
+    if (!globalOn || !isConsultantAutoAllowed(prefs, "pos_venda") || !prefs?.pos_venda_auto_validate) {
+      out.pos_venda_dispatch = {
+        triggered: false,
+        reason: !globalOn
+          ? "global_toggle_off"
+          : !isConsultantAutoAllowed(prefs, "pos_venda")
+          ? "consultant_pref_off"
+          : "auto_validate_off",
+      };
+      return out;
+    }
+
+    const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
+    const srk = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
+    if (base && srk) {
+      void fetch(`${base}/functions/v1/pos-venda-auto-progress`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${srk}`,
+          apikey: srk,
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      }).then(async (resp) => {
+        const txt = await resp.text().catch(() => "");
+        console.log(`[sync-all] pos-venda-auto-progress → ${resp.status} ${txt.slice(0, 200)}`);
+      }).catch((e) => {
+        console.warn("[sync-all] pos-venda trigger:", e instanceof Error ? e.message : String(e));
+      });
+      out.pos_venda_dispatch = { triggered: true };
+    }
+  } catch (e) {
+    out.pos_venda_recompute = { error: e instanceof Error ? e.message : String(e) };
+  }
+  return out;
+}
+
 // Fase B do sync_all: extras + enriquecimento. Nunca é pré-requisito para o
 // cliente aparecer na carteira; a Fase A já persistiu todos do Kanban.
 // deno-lint-ignore no-explicit-any
@@ -808,65 +1004,26 @@ async function runSyncAllBackgroundPhase(
       stopped_reason: out.details_stopped_reason || null,
     };
 
-    // Pós-venda: só carteira (igreen_sync). Respeita pos_venda_manual; não rebaixa.
-    try {
-      const { error: rpcErr } = await supabase.rpc("recompute_pos_venda_stages");
-      out.pos_venda_recompute = rpcErr ? { error: rpcErr.message } : { ok: true };
-      if (!rpcErr) {
-        const auto = await supabase.rpc("auto_confirm_pending_pos_venda", {
-          _consultant_id: consultantId || null,
-        });
-        out.pos_venda_auto_confirm = auto.error
-          ? { error: auto.error.message }
-          : auto.data;
-
-        if (consultantId && !auto.error) {
-          try {
-            const { getConsultantAutomationPrefs, isConsultantAutoAllowed } =
-              await import("../_shared/consultant-automation-prefs.ts");
-            const { isAutomationEnabled } = await import("../_shared/automation-gate.ts");
-            const prefs = await getConsultantAutomationPrefs(supabase, consultantId);
-            const globalOn = await isAutomationEnabled(supabase, "pos_venda_auto_messages");
-            if (globalOn && prefs && isConsultantAutoAllowed(prefs, "pos_venda") && prefs?.pos_venda_auto_validate) {
-              const base = (Deno.env.get("SUPABASE_URL") || "").replace(/\/$/, "");
-              const srk = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
-              if (base && srk) {
-                void fetch(`${base}/functions/v1/pos-venda-auto-progress`, {
-                  method: "POST",
-                  headers: {
-                    Authorization: `Bearer ${srk}`,
-                    apikey: srk,
-                    "Content-Type": "application/json",
-                  },
-                  body: "{}",
-                }).then(async (resp) => {
-                  const txt = await resp.text().catch(() => "");
-                  console.log(`[sync-all] pos-venda-auto-progress → ${resp.status} ${txt.slice(0, 200)}`);
-                }).catch((e) => {
-                  console.warn("[sync-all] pos-venda trigger:", e instanceof Error ? e.message : String(e));
-                });
-                out.pos_venda_dispatch = { triggered: true };
-              }
-            } else {
-              out.pos_venda_dispatch = {
-                triggered: false,
-                reason: !globalOn
-                  ? "global_toggle_off"
-                  : !isConsultantAutoAllowed(prefs, "pos_venda")
-                  ? "consultant_pref_off"
-                  : "auto_validate_off",
-              };
-            }
-          } catch (e) {
-            out.pos_venda_dispatch = {
-              error: e instanceof Error ? e.message : String(e),
-            };
-          }
-        }
-      }
-    } catch (e) {
-      out.pos_venda_recompute = { error: e instanceof Error ? e.message : String(e) };
+    // A fila de enrich quase nunca cabe no orçamento de tempo desta execução.
+    // Em vez de parar pela metade (o cliente novo ficava sem CPF/telefone/datas
+    // e o pós-venda travava em `espera`), o clique continua sozinho: cada salto
+    // é uma nova invocação em enrich_only até a fila zerar.
+    const pendingAfter = await countEnrichPending(supabase, consultantId, igreenAccountId);
+    out.enrich_pending_after = pendingAfter;
+    if (pendingAfter > 0) {
+      out.enrich_chain_started = await chainEnrichHop({
+        consultantId,
+        igreenAccountId,
+        portalEmail: emailNorm,
+        portalPassword: passwordNorm,
+        hop: 1,
+        prevRemaining: null,
+      });
     }
+
+    // Pós-venda: só carteira (igreen_sync). Respeita pos_venda_manual; não rebaixa.
+    // Roda aqui e de novo no fim da cadeia de enrich, quando as datas chegam.
+    Object.assign(out, await settlePosVendaAfterSync(supabase, consultantId));
 
     await supabase.from("settings").upsert({ key: "last_igreen_sync_background", value: new Date().toISOString() }, { onConflict: "key" });
   } catch (err) {
@@ -2072,6 +2229,7 @@ async function syncOneConsultant(
   igreenAccountId: string | null = null,
   syncRunId: string | null = null,
   expectedAccountIds: string[] | null = null,
+  enrichChain: EnrichChainState | null = null,
 ): Promise<Record<string, unknown>> {
   const emailNorm = String(portalEmail || "").trim().toLowerCase();
   const passwordNorm = String(portalPassword || "");
@@ -2174,53 +2332,21 @@ async function syncOneConsultant(
   if (mode === "enrich_only") {
     console.log(`[worker] enrich-only for ${emailNorm}`);
     const enrichCap = 120; // 4 lotes de 30 por chamada
-    // Fila: nunca enriquecidos OU ainda sem_celular (re-tenta com credencial
-    // da subconta — Conta principal mascara celular da rede).
-    let pendQuery = supabase
-      .from("customers")
-      .select("igreen_code, phone_whatsapp, last_enriched_at, registered_by_igreen_id, igreen_account_id")
-      .eq("consultant_id", consultantId)
-      .in("customer_origin", ["igreen_sync", "igreen_extension"])
-      .not("igreen_code", "is", null)
-      .or("last_enriched_at.is.null,phone_whatsapp.like.sem_celular_%")
-      .limit(enrichCap * 3); // sobra para filtrar por conta abaixo
-
-    const { data: pendRaw } = await pendQuery;
-    let pendRows = (pendRaw || []) as Array<{
-      igreen_code: string;
-      phone_whatsapp: string | null;
-      last_enriched_at: string | null;
-      registered_by_igreen_id: string | null;
-      igreen_account_id: string | null;
-    }>;
-
-    if (igreenAccountId) {
-      const { data: acc } = await supabase
-        .from("igreen_portal_accounts")
-        .select("igreen_consultor_id")
-        .eq("id", igreenAccountId)
-        .maybeSingle();
-      const consultorId = acc?.igreen_consultor_id != null ? String(acc.igreen_consultor_id) : "";
-      pendRows = pendRows.filter((r) => {
-        if (r.igreen_account_id === igreenAccountId) return true;
-        // Placeholder na Conta principal mas licenciado = esta subconta
-        if (
-          consultorId &&
-          String(r.registered_by_igreen_id || "") === consultorId &&
-          String(r.phone_whatsapp || "").startsWith("sem_celular_")
-        ) {
-          return true;
-        }
-        return false;
-      });
-    }
-
-    const codes = pendRows
-      .map((c) => String(c.igreen_code))
-      .filter(Boolean)
-      .slice(0, enrichCap);
+    // Fila: sem ficha ainda + placeholders que ESTA conta consegue resolver
+    // (o portal só devolve o celular de quem a própria conta cadastrou).
+    const codes = (await fetchEnrichQueue(supabase, consultantId, igreenAccountId, enrichCap))
+      .map((c) => c.igreen_code)
+      .filter(Boolean);
     if (codes.length === 0) {
-      return { success: true, mode: "enrich_only", details_applied: 0, pending_remaining: 0, message: "nada a enriquecer" };
+      const settled = await settlePosVendaAfterSync(supabase, consultantId);
+      return {
+        success: true,
+        mode: "enrich_only",
+        details_applied: 0,
+        pending_remaining: 0,
+        message: "nada a enriquecer",
+        ...settled,
+      };
     }
     const startedEnrich = Date.now();
     let applied = 0, received = 0;
@@ -2240,15 +2366,43 @@ async function syncOneConsultant(
       const res = await applyCustomerDetails(supabase, consultantId, details, igreenAccountId);
       applied += Number(res.details_applied || 0);
     }
-    let remainingQuery = supabase
-      .from("customers")
-      .select("id", { count: "exact", head: true })
-      .eq("consultant_id", consultantId)
-      .in("customer_origin", ["igreen_sync", "igreen_extension"])
-      .or("last_enriched_at.is.null,phone_whatsapp.like.sem_celular_%");
-    if (igreenAccountId) remainingQuery = remainingQuery.eq("igreen_account_id", igreenAccountId);
-    const { count: remaining } = await remainingQuery;
-    return { success: true, mode: "enrich_only", details_received: received, details_applied: applied, pending_remaining: remaining ?? null };
+    const remaining = await countEnrichPending(supabase, consultantId, igreenAccountId);
+    const hop = enrichChain?.hop ?? 0;
+    const prevRemaining = enrichChain?.prevRemaining ?? null;
+    // Só continua enquanto a fila ANDA. Cliente que o portal nunca devolve
+    // (ficha inexistente) ficaria eterno na fila e faria a cadeia girar sem fim.
+    const progressed = prevRemaining === null || remaining < prevRemaining;
+    let chained = false;
+    if (remaining > 0 && applied > 0 && progressed && hop < ENRICH_MAX_HOPS) {
+      chained = await chainEnrichHop({
+        consultantId,
+        igreenAccountId,
+        portalEmail: emailNorm,
+        portalPassword: passwordNorm,
+        hop: hop + 1,
+        prevRemaining: remaining,
+      });
+    }
+    const tail = chained ? {} : await settlePosVendaAfterSync(supabase, consultantId);
+    return {
+      success: true,
+      mode: "enrich_only",
+      details_received: received,
+      details_applied: applied,
+      pending_remaining: remaining,
+      enrich_hop: hop,
+      enrich_chained: chained,
+      enrich_chain_stopped: chained
+        ? null
+        : remaining === 0
+        ? "fila_zerada"
+        : applied === 0
+        ? "sem_ficha_no_portal"
+        : !progressed
+        ? "fila_parada"
+        : "max_hops",
+      ...tail,
+    };
   }
 
   // === SYNC METRICS MODE ===
@@ -2998,6 +3152,8 @@ Deno.serve(async (req) => {
     let credsFromBody = false;
     /** Sync de uma subconta só (UI: botão por card). */
     let onlyAccountId: string | null = null;
+    /** Continuação automática do enrich do clique anterior (self-invoke). */
+    let enrichChain: EnrichChainState | null = null;
 
     try {
       const body = await req.json();
@@ -3008,6 +3164,12 @@ Deno.serve(async (req) => {
       if (body.source) source = body.source;
       if (body.account_id) onlyAccountId = String(body.account_id);
       else if (body.igreen_account_id) onlyAccountId = String(body.igreen_account_id);
+      if (body.enrich_hop != null) {
+        enrichChain = {
+          hop: Number(body.enrich_hop) || 0,
+          prevRemaining: body.enrich_prev_remaining != null ? Number(body.enrich_prev_remaining) : null,
+        };
+      }
     } catch (_) { /* sem body */ }
 
 
@@ -3231,7 +3393,9 @@ Deno.serve(async (req) => {
     // Executa em background e responde imediato (evita IDLE_TIMEOUT de 150s).
     const accountFilter = onlyAccountId;
     const runOne = async () => {
-      const runId = await logSyncStart(supabase, consultantId, mode);
+      // Salto encadeado não abre run próprio: a UI observa o run mais recente
+      // do consultor e um run novo a cada salto faria o poll encerrar cedo.
+      const runId = enrichChain ? null : await logSyncStart(supabase, consultantId, mode);
       let r: Record<string, unknown> = { success: false, error: "unknown" };
       try {
         // MULTI-CONTA: quando há consultant_id e não veio credencial explícita
@@ -3244,7 +3408,7 @@ Deno.serve(async (req) => {
           )
           : await syncOneConsultant(
             supabase, worker, portalEmail!, portalPassword!, consultantId, mode, accountFilter, runId,
-            accountFilter ? [accountFilter] : null,
+            accountFilter ? [accountFilter] : null, enrichChain,
           );
         if (accountFilter) r.account_id = accountFilter;
         console.log(`[bg] sync single done:`, JSON.stringify(r).slice(0, 300));
