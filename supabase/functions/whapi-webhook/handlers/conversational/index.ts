@@ -3,6 +3,7 @@
 // and decides the next step from there. Falls back to the legacy hardcoded
 // state machine if the consultant has no flow configured.
 
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { BotContext, BotResult } from "../types.ts";
 import { CONVERSATIONAL_STEPS, decideTransition, type ConversationalStep } from "./state-machine.ts";
 import { classifyIntent } from "./intent-classifier.ts";
@@ -822,15 +823,55 @@ async function sendStepMedia(
 // evitando silêncio total quando o lead manda algo fora do esperado.
 // IMPORTANTE: guardamos também as `vars` p/ renderizar {{nome}}, {{valor_conta}},
 // etc. antes de enviar ao lead. Sem isso, o lead recebia placeholder cru.
-let _currentTurnStepQuestion: string = "";
-// deno-lint-ignore no-explicit-any
-let _currentTurnVars: any = {};
-let _currentTurnCustomerId: string | null = null;
-let _currentTurnMessageText: string = "";
+//
+// ⚠️ Isolamento por turno (auditoria 2026-08): estas variáveis eram módulo-
+// globais. Duas requisições concorrentes no mesmo isolate se sobrescreviam e
+// o `_finalize` de um lead podia usar a pergunta/vars/nome de OUTRO lead.
+// Agora cada turno roda no seu próprio escopo (AsyncLocalStorage). Se o
+// runtime não suportar `enterWith`, cai no objeto compartilhado — exatamente
+// o comportamento anterior, nunca pior.
+type TurnScope = {
+  stepQuestion: string;
+  // deno-lint-ignore no-explicit-any
+  vars: any;
+  customerId: string | null;
+  messageText: string;
+};
+
+const _turnStorage = new AsyncLocalStorage<TurnScope>();
+const _turnFallback: TurnScope = { stepQuestion: "", vars: {}, customerId: null, messageText: "" };
+let _turnScopeIsolated = true;
+
+function _turn(): TurnScope {
+  try {
+    return _turnStorage.getStore() ?? _turnFallback;
+  } catch {
+    return _turnFallback;
+  }
+}
+
+function _beginTurnScope(customerId: string | null, messageText: string) {
+  const scope: TurnScope = { stepQuestion: "", vars: {}, customerId, messageText };
+  try {
+    _turnStorage.enterWith(scope);
+    if (!_turnStorage.getStore()) throw new Error("enterWith no-op");
+  } catch (e) {
+    if (_turnScopeIsolated) {
+      _turnScopeIsolated = false;
+      console.warn(`[conversational] AsyncLocalStorage indisponível — turno em escopo compartilhado: ${(e as Error)?.message}`);
+    }
+    _turnFallback.stepQuestion = "";
+    _turnFallback.vars = {};
+    _turnFallback.customerId = customerId;
+    _turnFallback.messageText = messageText;
+  }
+}
+
 // deno-lint-ignore no-explicit-any
 function _setTurnStepQuestion(q: string, vars?: any) {
-  _currentTurnStepQuestion = (q || "").trim();
-  _currentTurnVars = vars || {};
+  const scope = _turn();
+  scope.stepQuestion = (q || "").trim();
+  scope.vars = vars || {};
 }
 
 // Detecta saudação no texto do lead e devolve o prefixo correspondente
@@ -867,7 +908,8 @@ function _finalize(stepKey: string, r: BotResult): BotResult {
 
   // Saudação contextual: se o lead cumprimentou ("bom dia", "boa noite", etc.),
   // prefixa a resposta no mesmo tom. Não altera o fluxo — só cortesia.
-  const greet = greetingPrefix(_currentTurnMessageText);
+  const turn = _turn();
+  const greet = greetingPrefix(turn.messageText);
   const applyGreet = (text: string): string => {
     if (!greet) return text;
     const t = (text || "").trim();
@@ -878,10 +920,10 @@ function _finalize(stepKey: string, r: BotResult): BotResult {
   };
 
   if (!reply && !hasMedia) {
-    const rawTail = _extractTail(_currentTurnStepQuestion);
+    const rawTail = _extractTail(turn.stepQuestion);
     // ✅ Renderiza variáveis ({{nome}}, {{valor_conta}}, etc.) e remove
     // qualquer {{...}} residual pra não vazar placeholder cru pro lead.
-    let tail = rawTail ? renderTemplate(rawTail, _currentTurnVars || {}) : "";
+    let tail = rawTail ? renderTemplate(rawTail, turn.vars || {}) : "";
     tail = tail.replace(/\{\{\s*[^}]+\s*\}\}/g, "").replace(/\s{2,}/g, " ").trim();
     tail = tail.replace(/^[,;:\-\s]+/, "").trim();
 
@@ -895,7 +937,7 @@ function _finalize(stepKey: string, r: BotResult): BotResult {
     }
 
     // Suprime repetição da mesma reentrada em curto intervalo.
-    const cid = _currentTurnCustomerId;
+    const cid = turn.customerId;
     if (cid) {
       const prev = _lastReentryByCustomer.get(cid);
       const now = Date.now();
@@ -952,8 +994,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // restart reemite o a3 sem casar "Quero ativar" (BUG-SOFIA-A3).
   const { stripPrefix: _stripStep } = await import("../../../_shared/bot/step-namespace.ts");
   let stepKey = _stripStep(ctx.customer.conversation_step || "welcome");
-  _currentTurnCustomerId = (ctx.customer?.id as string) || null;
-  _currentTurnMessageText = (ctx.messageText as string) || "";
+  _beginTurnScope((ctx.customer?.id as string) || null, (ctx.messageText as string) || "");
 
 
   // Cadastro steps are NEVER handled here — defensive guard
