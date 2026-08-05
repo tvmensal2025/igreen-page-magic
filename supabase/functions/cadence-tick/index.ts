@@ -704,6 +704,7 @@ async function dispatchWhatsApp(
   try {
     const mtype = cfg.media_type || "text";
     let r;
+    let buttonsRendered: "buttons" | "numbered_list" | null = null;
     if (mtype === "audio" && cfg.media_url) {
       r = await ch.adapter.sendMedia(jid, { kind: "audio", url: cfg.media_url, ptt: true } as any, sendCtx);
     } else if ((mtype === "image" || mtype === "video") && cfg.media_url) {
@@ -713,11 +714,27 @@ async function dispatchWhatsApp(
       // Dual-read: botões do painel Multicanal (cadence_stage_config.buttons)
       // quando válidos; fallback hardcoded quando null/inválido.
       const stageButtons = resolveStageButtons(cfg.buttons, stage);
-      const adapterWithButtons = ch.adapter as typeof ch.adapter & {
-        sendButtons?: (jid: string, text: string, buttons: unknown, ctx: unknown) => Promise<unknown>;
-      };
-      if (stageButtons.length > 0 && typeof adapterWithButtons.sendButtons === "function") {
-        r = await adapterWithButtons.sendButtons(jid, text, stageButtons, { ...sendCtx, supabase } as any);
+      if (stageButtons.length > 0) {
+        // Bug 2026-08-05: aqui se procurava `adapter.sendButtons`, que nenhum
+        // adapter expõe — a interface é `sendChoice`. A condição nunca era
+        // verdadeira, então TODA mensagem de cadência caía em texto puro e o
+        // lead recebia "Qual faixa está sua conta hoje?" sem faixa nenhuma
+        // para escolher. `sendChoice` decide botão real (≤3) ou lista
+        // numerada, preservando as opções nos dois casos.
+        r = await ch.adapter.sendChoice(
+          jid,
+          text,
+          { preferred: "button", options: stageButtons },
+          { ...sendCtx, supabase } as any,
+        );
+        // `downgraded` = enviado como lista numerada porque o canal não
+        // renderiza botão. A mensagem chegou com as opções: é sucesso.
+        if (!(r as any)?.ok && (r as any)?.reason === "downgraded") {
+          r = { ok: true, messageId: null, detail: "numbered_list" } as any;
+          buttonsRendered = "numbered_list";
+        } else if ((r as any)?.ok) {
+          buttonsRendered = "buttons";
+        }
       } else {
         r = await ch.adapter.sendText(jid, text, { ...sendCtx, supabase } as any);
       }
@@ -744,7 +761,7 @@ async function dispatchWhatsApp(
     const themeTag = themeId ? `:theme_${themeId}` : "";
     return {
       ok: true,
-      detail: `sent_via_${ch.kind}${themeTag}`,
+      detail: `sent_via_${ch.kind}${themeTag}${buttonsRendered ? `:${buttonsRendered}` : ""}`,
       theme_id: themeId,
       message_body: bodyForLog || undefined,
       with_name: !!firstName,

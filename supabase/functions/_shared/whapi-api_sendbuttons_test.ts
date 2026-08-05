@@ -20,6 +20,67 @@ function mockWhapiContactsOk(body: string): Response {
   });
 }
 
+Deno.test("whapi sendButtonsDetailed: devolve o id da mensagem (ACK casa)", async () => {
+  // Sem id, o webhook de status não casa o ACK e o motor trata a entrega como
+  // não verificável. Botão precisa devolver id igual ao texto.
+  _clearWhatsAppChatIdMemoryCacheForTests();
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/contacts")) return mockWhapiContactsOk(String(init?.body ?? ""));
+    return new Response(JSON.stringify({ message: { id: "wamid.interactive" } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  try {
+    const sender = createWhapiSender("fake-token", "https://gate.whapi.cloud");
+    const r = await sender.sendButtonsDetailed(
+      "5511999999999@s.whatsapp.net",
+      "Qual faixa está sua conta hoje?",
+      [
+        { id: "bill_low", title: "Até R$300" },
+        { id: "bill_mid", title: "R$300 a R$700" },
+        { id: "bill_high", title: "Acima de R$700" },
+      ],
+    );
+    assertEquals(r.ok, true);
+    assertEquals(r.messageId, "wamid.interactive");
+  } finally {
+    globalThis.fetch = origFetch;
+    _clearWhatsAppChatIdMemoryCacheForTests();
+  }
+});
+
+Deno.test("whapi sendButtonsDetailed: id também vem do fallback numerado", async () => {
+  _clearWhatsAppChatIdMemoryCacheForTests();
+  const origFetch = globalThis.fetch;
+  globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/contacts")) return mockWhapiContactsOk(String(init?.body ?? ""));
+    if (url.includes("/messages/interactive")) return new Response("fail", { status: 500 });
+    return new Response(JSON.stringify({ message: { id: "wamid.fallback" } }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  }) as typeof fetch;
+
+  try {
+    const sender = createWhapiSender("fake-token", "https://gate.whapi.cloud");
+    const r = await sender.sendButtonsDetailed(
+      "5511999999999@s.whatsapp.net",
+      "Escolha",
+      [{ id: "a", title: "Opção A" }],
+    );
+    assertEquals(r.ok, true);
+    assertEquals(r.messageId, "wamid.fallback");
+  } finally {
+    globalThis.fetch = origFetch;
+    _clearWhatsAppChatIdMemoryCacheForTests();
+  }
+});
+
 Deno.test("whapi sendButtons: fallback usa formato *N.* numerado", async () => {
   _clearWhatsAppChatIdMemoryCacheForTests();
   const calls: Array<{ url: string; body: string }> = [];

@@ -88,8 +88,8 @@ export function createWhapiAdapter(input: CreateWhapiAdapterInput): ChannelAdapt
       if (canUseButtons) {
         try {
           const idem = idempotencyFromCtx(ctx, `${prompt}|${allOptions.map((o) => o.id).join(",")}`);
-          const ok = await sender.sendButtons(jid, prompt, allOptions, idem);
-          return toResult(ok);
+          const r = await sender.sendButtonsDetailed(jid, prompt, allOptions, idem);
+          return toResult(r.ok, r.messageId);
         } catch (e: any) {
           return { ok: false, reason: "network", detail: e?.message ?? String(e) };
         }

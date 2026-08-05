@@ -239,7 +239,23 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     buttons: WhapiButton[],
     idempotency?: WhapiIdempotencyOptions,
   ): Promise<boolean> {
-    return withIdempotency("send_buttons", idempotency, async () => {
+    const r = await sendButtonsDetailed(remoteJid, message, buttons, idempotency);
+    return r.ok;
+  }
+
+  /**
+   * Igual a `sendButtons`, mas devolve o id da mensagem. Sem ele o webhook de
+   * status não casa o ACK e o motor de cadência trata a entrega como não
+   * verificável (ver `cadence-ack-policy.ts`).
+   */
+  async function sendButtonsDetailed(
+    remoteJid: string,
+    message: string,
+    buttons: WhapiButton[],
+    idempotency?: WhapiIdempotencyOptions,
+  ): Promise<{ ok: boolean; messageId: string | null }> {
+    let messageId: string | null = null;
+    const ok = await withIdempotency("send_buttons", idempotency, async () => {
       const to = await resolveDestination(remoteJid, idempotency);
       if (!to) return false;
       await awaitWhapiSendSlot(to, { kind: "send_buttons", supabase: idempotency?.supabase });
@@ -266,14 +282,18 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
       );
 
       if (r.ok) {
+        messageId = r.messageId;
         console.log(`✅ [whapi:sendButtons] botões entregues id=${r.messageId ?? "-"}`);
         return true;
       }
 
       console.warn(`⚠️ [whapi:sendButtons] FALHOU -> caindo para texto numerado`);
       const textWithOptions = `${message}\n\n${buttons.map((b, i) => `*${i + 1}.* ${b.title}`).join("\n")}\n\n_Digite o número da opção desejada._`;
-      return sendText(to, textWithOptions);
+      const fb = await sendTextDetailed(to, textWithOptions);
+      messageId = fb.messageId;
+      return fb.ok;
     });
+    return { ok, messageId };
   }
 
   async function sendMedia(
@@ -556,7 +576,15 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     return null;
   }
 
-  return { sendText, sendTextDetailed, sendButtons, downloadMedia, sendMedia, sendPresence };
+  return {
+    sendText,
+    sendTextDetailed,
+    sendButtons,
+    sendButtonsDetailed,
+    downloadMedia,
+    sendMedia,
+    sendPresence,
+  };
 }
 
 /**
