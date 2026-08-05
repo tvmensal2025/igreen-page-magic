@@ -4,6 +4,7 @@
 import { parseMoneyBR, MONEY_NUM_SRC } from "./parse-money.ts";
 import { isUsableCustomerName } from "./customer-display-name.ts";
 import { toNationalPhoneDigits } from "./portal-phone.ts";
+import { isAutoResponderText } from "./auto-responder-detect.ts";
 
 const MONEY_NUM_RE = new RegExp(`(${MONEY_NUM_SRC})`);
 const MONEY_BARE_RE = new RegExp(
@@ -335,6 +336,11 @@ export interface ExtractNomeOpts {
 
 export function extractNome(text: string, opts: ExtractNomeOpts = {}): string | null {
   if (!text) return null;
+  // Hard-block (auditoria 2026-08-05): auto-resposta de empresa nunca é nome de
+  // lead. Sem isto, "Agradecemos sua mensagem" virava o cliente
+  // "Sílvia Agradeço Seu" e "Sou Leandro Nunes, corretor de imóveis" era
+  // gravado como `self_introduced` — 20 conversas contaminadas em 7 dias.
+  if (isAutoResponderText(text)) return null;
   // Hard-block: frases de indicação (QR do Horacio etc.) — "te recomendou", "me indicou".
   // Não tentamos extrair nome quando o texto contém esses padrões; nome do lead vem
   // depois, do OCR da conta ou pergunta explícita "qual seu nome?".

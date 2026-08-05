@@ -50,9 +50,15 @@ export function evalNumberPauseRows(rows: PausableCustomer[]): boolean {
   if (!rows || rows.length === 0) return false;
   const humanTakeover = rows.some((r) => {
     if (!r) return false;
-    // DNC ou Bloqueio definitivo sempre pausam.
+    // Opt-out explícito da PESSOA vale para o número inteiro.
+    // `do_not_contact` NÃO entra aqui de propósito: uma linha sombra do sync
+    // (`55…_igreen_code`) marcada como DNC não pode silenciar o cliente vivo
+    // que divide o mesmo Zap — regressão detectada em 2026-08-05, o teste
+    // "sombra DNC não derruba cliente vivo" existe exatamente para isso
+    // (armadilha #42/#43). O bloqueio por DNC fica no `every` do fim, que só
+    // pausa quando TODAS as linhas são DNC, e por customer no assertCanContact.
     const reason = String(r.bot_paused_reason || "").toLowerCase();
-    if (r.do_not_contact === true || reason === "requested" || reason === "opt_out" || reason === "complaint") return true;
+    if (reason === "requested" || reason === "opt_out" || reason === "complaint") return true;
     
     // Humano vinculado.
     if (r.assigned_human_id) return true;

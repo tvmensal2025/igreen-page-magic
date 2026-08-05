@@ -1474,17 +1474,74 @@ app.post('/confirm-otp', authRequired, async (req, res) => {
 });
 
 
+// ─── Espelho Node de `supabase/functions/_shared/portal-otp-status.ts` ───────
+// O worker é Node e não importa o módulo Deno. Ao mudar a regra, mude nos dois.
+// Motivo (incidente 2026-08-04): o portal é a fonte da verdade do OTP; nossa
+// coluna `portal2_otp_validated_at` só era escrita pelo /confirm-otp.
+const OTP_VALIDATED_SET = new Set(['used', 'completed', 'complete', 'validated', 'success']);
+const OTP_PENDING_SET = new Set(['to-validate', 'to_validate', 'tovalidate', 'pending', 'waiting']);
+const LOCAL_CONCLUDED_SET = new Set([
+  'contract_completed', 'otp_validated', 'already_registered', 'complete',
+]);
+
+function classifyPortalOtpStatus(raw) {
+  const s = String(raw ?? '').trim().toLowerCase();
+  if (!s) return 'open';
+  if (OTP_VALIDATED_SET.has(s)) return 'validated';
+  if (OTP_PENDING_SET.has(s)) return 'pending';
+  return 'open';
+}
+
+function isPortalContractDone(raw) {
+  const s = String(raw ?? '').trim().toLowerCase();
+  return s === 'completed' || s === 'complete' || s === 'signed';
+}
+
+function isLocalPortalConcluded(portal2Status) {
+  return LOCAL_CONCLUDED_SET.has(String(portal2Status ?? '').trim().toLowerCase());
+}
+
+function shouldGenerateOtpForResend({ portalOtpStatus, portalContractStatus, localPortalStatus }) {
+  if (isLocalPortalConcluded(localPortalStatus)) return { allowed: false, reason: 'local_concluded' };
+  if (isPortalContractDone(portalContractStatus)) return { allowed: false, reason: 'contract_done' };
+  const state = classifyPortalOtpStatus(portalOtpStatus);
+  if (state === 'validated') return { allowed: false, reason: 'otp_already_validated' };
+  if (state === 'pending') return { allowed: false, reason: 'otp_pending' };
+  return { allowed: true };
+}
+
+/** Lê OTP + contrato no portal (somente leitura). Falha vira null → gate local decide. */
+async function readPortalOtpTruth(client, idcliente) {
+  const out = { otpStatus: null, contractStatus: null };
+  try {
+    const otp = await client.getVerificationCodeStatus(idcliente);
+    out.otpStatus = otp?.status ?? null;
+  } catch (e) {
+    console.warn(`  ⚠ readPortalOtpTruth otp idcliente=${idcliente}: ${e.message}`);
+  }
+  try {
+    const ct = await client.getContractGenerated(idcliente);
+    out.contractStatus = ct?.status ?? null;
+  } catch (e) {
+    console.warn(`  ⚠ readPortalOtpTruth contrato idcliente=${idcliente}: ${e.message}`);
+  }
+  return out;
+}
+
 /** Reenvia OTP da iGreen (WhatsApp do cliente) — usado após código inválido/expirado. */
 app.post('/resend-otp', authRequired, async (req, res) => {
   const body = req.body || {};
   let { idconsultor, idcliente, customer_id } = body;
-  if ((!idconsultor || !idcliente) && customer_id && supabase) {
+  // `portal2_status` sempre que houver customer_id: é o gate local do cadeado.
+  let localPortalStatus = null;
+  if (customer_id && supabase) {
     try {
       const { data: cust } = await supabase
         .from('customers')
-        .select('portal2_idcliente, consultants:consultant_id(igreen_id)')
+        .select('portal2_idcliente, portal2_status, consultants:consultant_id(igreen_id)')
         .eq('id', customer_id)
         .maybeSingle();
+      localPortalStatus = cust?.portal2_status ?? null;
       if (!idcliente && cust?.portal2_idcliente) idcliente = Number(cust.portal2_idcliente);
       if (!idconsultor && cust?.consultants?.igreen_id) idconsultor = Number(cust.consultants.igreen_id);
     } catch (e) {
@@ -1496,14 +1553,47 @@ app.post('/resend-otp', authRequired, async (req, res) => {
   }
   try {
     const c = new Portal2Client({ idconsultor });
+
+    // ─── Cadeado (2026-08-04): não reabrir OTP de quem já concluiu ───────────
+    // O portal é a fonte da verdade. Validação feita pelo link / na mão não
+    // grava `portal2_otp_validated_at`, então o watchdog pedia código novo a
+    // quem já tinha assinado o contrato (caso JOSE LUIZ, idcliente 1698948).
+    // Também evita invalidar um código que o cliente está digitando agora.
+    const truth = await readPortalOtpTruth(c, idcliente);
+    const gate = shouldGenerateOtpForResend({
+      portalOtpStatus: truth.otpStatus,
+      portalContractStatus: truth.contractStatus,
+      localPortalStatus: localPortalStatus,
+    });
+    if (!gate.allowed) {
+      console.log(`↩ /resend-otp BLOQUEADO idcliente=${idcliente} motivo=${gate.reason}`);
+      // Quando o portal confirma que já foi usado/assinado, aproveita e
+      // reconcilia o flag que nunca foi escrito — tira o lead do loop.
+      if (supabase && customer_id && (gate.reason === 'otp_already_validated' || gate.reason === 'contract_done')) {
+        await supabase.from('customers').update({
+          portal2_otp_validated_at: new Date().toISOString(),
+          otp_code: null,
+          otp_received_at: null,
+          last_otp_dispatch_error: null,
+        }).eq('id', customer_id).then(() => {}, () => {});
+      }
+      return res.json({ ok: true, resent: false, skipped: gate.reason, idcliente });
+    }
+
     await c.generateVerificationCode(idcliente);
     if (supabase && customer_id) {
-      await supabase.from('customers').update({
+      // Só rebobina status/step de quem REALMENTE está aguardando OTP.
+      // Antes isso sobrescrevia cliente aprovado/concluído com 'awaiting_otp'.
+      const patch = {
         portal2_otp_sent_at: new Date().toISOString(),
-        status: 'awaiting_otp',
-        conversation_step: 'aguardando_otp',
+        last_otp_dispatch_at: new Date().toISOString(),
         last_otp_dispatch_error: null,
-      }).eq('id', customer_id).then(() => {}, () => {});
+      };
+      if (!isLocalPortalConcluded(localPortalStatus)) {
+        patch.status = 'awaiting_otp';
+        patch.conversation_step = 'aguardando_otp';
+      }
+      await supabase.from('customers').update(patch).eq('id', customer_id).then(() => {}, () => {});
     }
     console.log(`✓ /resend-otp idcliente=${idcliente} customer=${customer_id || '-'}`);
     return res.json({ ok: true, resent: true, idcliente });

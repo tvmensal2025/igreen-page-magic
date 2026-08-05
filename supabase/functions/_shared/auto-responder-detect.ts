@@ -1,0 +1,79 @@
+/**
+ * Detector de auto-resposta corporativa no INBOUND (robô de outra empresa).
+ *
+ * Por que existe (auditoria 2026-08-05): 20 das 151 conversas dos últimos 7
+ * dias (13%) não eram leads — eram URAs de outras empresas (imobiliárias,
+ * despachantes, barbearia, pet shop, academia, clínica, contadora, corretoras).
+ * O nosso bot respondia a elas, entrava no funil, gravava o nome da empresa
+ * como nome do cliente e chegou a escalar um robô para atendimento humano.
+ *
+ * Caso extremo real (Conexão Corretora De Seguros, 2026-08-04):
+ *   robô deles "selecione uma das opções" → nosso bot "informe seu primeiro nome"
+ *   → robô deles "Não entendi, escolha uma das opções" → nosso bot "Sem pressa 🙂"
+ *   → robô deles pediu nota de NPS → nosso bot mandou a abertura pela 3ª vez.
+ *
+ * Custo: queima cota anti-ban (o recurso mais escasso — cap global 200/dia),
+ * polui a pizza do CRM e consome tempo do consultor.
+ *
+ * Regra de ouro deste módulo: preferir DEIXAR PASSAR a errar contra um lead
+ * real. Só marcamos como robô com sinal corporativo inequívoco.
+ */
+
+/** Sinais inequívocos de auto-resposta corporativa. */
+const SIGNALS: Array<{ id: string; re: RegExp }> = [
+  // "A Farnese Seguros agradece seu contato", "LS DESPACHANTE agradece seu contato"
+  { id: "agradece_contato", re: /agradec\w*\s+(o\s+)?seu\s+contato/i },
+  // "Agradecemos sua mensagem. Não estamos disponíveis no momento"
+  { id: "agradece_mensagem", re: /agradecemos\s+(a\s+)?sua\s+mensagem/i },
+  { id: "indisponivel", re: /n[ãa]o\s+estamos\s+dispon[íi]ve/i },
+  { id: "excesso_demanda", re: /n[ãa]o\s+podemos\s+atend[êe]?-?l[oa]/i },
+  // Menus de URA
+  { id: "menu_opcoes", re: /(selecione|escolha|digite)\s+(uma\s+)?d[ao]s?\s+op[çc][õo]es/i },
+  { id: "menu_nao_entendi", re: /n[ãa]o\s+entendi,\s*escolha/i },
+  // Pesquisa de satisfação (o robô deles avaliando o nosso bot)
+  { id: "nps", re: /de\s+0\s+a\s+10\s+como\s+voc[êe]\s+avalia/i },
+  { id: "nps_nota", re: /digite\s+uma\s+nota\s+v[áa]lida/i },
+  // Boas-vindas de empresa: "Seja bem vindo a Prime Investimentos Imobiliários"
+  { id: "boas_vindas_empresa", re: /seja\s+(muito\s+)?bem[-\s]?vind[oa](\(a\))?\s+(a|ao|à|à\s+recep[çc][ãa]o\s+d[ae])\s+\S/i },
+  // "bem vindo(a)" com gênero entre parênteses é marca de texto automatizado —
+  // nenhum lead escreve isso ao nos procurar.
+  { id: "bem_vindo_parenteses", re: /bem[-\s]?vind[oa]\(a\)/i },
+  // "Sou Leandro Nunes, corretor de imóveis" / "Sou a Kelly, consultora" —
+  // apresentação profissional em auto-reply. Também evita que o extrator de
+  // nome grave isso como `self_introduced` do lead.
+  {
+    id: "apresentacao_profissional",
+    re: /\bsou\s+(a\s+|o\s+)?[A-ZÁ-Ú][^,.!?]{1,40},?\s*(corretor|corretora|despachante|contador|contadora|advogad|consultor|consultora|atendente|recepcionista)/i,
+  },
+  { id: "horario_atendimento", re: /hor[áa]rio\s+de\s+atendimento/i },
+  { id: "fora_horario", re: /fora\s+do\s+(nosso\s+)?hor[áa]rio/i },
+  { id: "retornaremos", re: /retornaremos\s+(o\s+)?seu\s+contato/i },
+  { id: "aguarde_atendimento", re: /aguarde\s+que\s+j[áa]\s+(vou|ir[ei])\s+l?h?e?\s*atend/i },
+  { id: "responderemos_breve", re: /responderemos\s+(o\s+)?(sua|seu|em)\s+/i },
+  { id: "msg_automatica", re: /(esta|essa)\s+[ée]\s+uma\s+mensagem\s+autom[áa]tica|mensagem\s+autom[áa]tica/i },
+];
+
+export type AutoResponderVerdict =
+  | { isAutoResponder: false }
+  | { isAutoResponder: true; signal: string };
+
+/**
+ * Classifica um texto de INBOUND. Só usar em mensagem recebida — o nosso
+ * próprio outbound tem frases parecidas de boas-vindas.
+ */
+export function detectAutoResponder(text: string | null | undefined): AutoResponderVerdict {
+  const t = String(text ?? "").trim();
+  if (t.length < 12) return { isAutoResponder: false };
+  for (const s of SIGNALS) {
+    if (s.re.test(t)) return { isAutoResponder: true, signal: s.id };
+  }
+  return { isAutoResponder: false };
+}
+
+/** Atalho booleano para gates. */
+export function isAutoResponderText(text: string | null | undefined): boolean {
+  return detectAutoResponder(text).isAutoResponder;
+}
+
+/** Razão canônica de pausa — use sempre esta string para dar para rastrear. */
+export const AUTO_RESPONDER_PAUSE_REASON = "auto_responder_detected";

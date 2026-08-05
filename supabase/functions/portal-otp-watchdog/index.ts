@@ -27,6 +27,10 @@ import {
 import { checkSendQuota, registerSend } from "../_shared/anti-ban.ts";
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
+import {
+  classifyPortalOtpStatus,
+  isPortalContractDone,
+} from "../_shared/portal-otp-status.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -43,6 +47,39 @@ function backoffOk(retryCount: number, lastAt: string | null): boolean {
   // exponencial: 30s, 60s, 120s, 240s, ... cap 10min
   const waitMs = Math.min(30_000 * Math.pow(2, Math.max(0, retryCount - 1)), 600_000);
   return Date.now() - lastMs >= waitMs;
+}
+
+/**
+ * Lê o estado REAL do OTP/contrato no Portal 2 (somente leitura).
+ *
+ * Existe porque a validação feita fora do nosso fluxo (link do portal ou o
+ * consultor validando na mão) nunca grava `portal2_otp_validated_at` — e sem
+ * isso o bucketB reabria o OTP de quem já tinha assinado (incidente 2026-08-04).
+ * Devolve null quando não conseguimos ler: aí o chamador mantém o gate local.
+ */
+async function fetchPortalOtpTruth(
+  url: string,
+  secret: string,
+  idcliente: number | string,
+  idconsultor: number | string,
+): Promise<{ otp: ReturnType<typeof classifyPortalOtpStatus>; contractDone: boolean } | null> {
+  try {
+    const res = await fetch(
+      `${url.replace(/\/$/, "")}/lead/${idcliente}/status?idconsultor=${idconsultor}`,
+      { headers: { "Authorization": `Bearer ${secret}` }, signal: AbortSignal.timeout(20_000) },
+    );
+    if (!res.ok) return null;
+    const d = await res.json().catch(() => null) as
+      | { otp_status?: { status?: string }; contract?: { status?: string } }
+      | null;
+    if (!d) return null;
+    return {
+      otp: classifyPortalOtpStatus(d.otp_status?.status),
+      contractDone: isPortalContractDone(d.contract?.status),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function isWorkerTransient(status: number, body: string): boolean {
@@ -210,6 +247,9 @@ async function bucketB(supabase: any) {
     .eq("do_not_contact", false)
     .lt("otp_received_at", cutoff)
     .not("status", "in", '("cadastro_concluido","complete","registered_igreen","abandoned","automation_failed")')
+    // Cadeado 1 (2026-08-04): quem já concluiu no portal NUNCA volta pra fila de
+    // OTP. Sem isso, cliente com contrato assinado recebia código novo.
+    .not("portal2_status", "in", '("contract_completed","otp_validated","already_registered","complete")')
     .neq("conversation_step", "otp_confirmar")
     .order("otp_received_at", { ascending: true })
     .limit(BATCH_LIMIT);
@@ -223,6 +263,7 @@ async function bucketB(supabase: any) {
 
   let sent = 0;
   let expired = 0;
+  let reconciled = 0;
   for (const r of rows ?? []) {
     const retries = Number(r.portal_retry_count || 0);
     if (retries >= MAX_RETRIES) continue;
@@ -237,6 +278,40 @@ async function bucketB(supabase: any) {
     }
     const resolved = await resolveWorker(supabase, r.id).catch(() => null);
     if (!resolved) continue;
+
+    // ─── Cadeado 2 (2026-08-04): reconcilia com o PORTAL antes de agir ───────
+    // A validação pelo link do portal / feita na mão não grava
+    // `portal2_otp_validated_at`. Sem checar a fonte da verdade, o watchdog
+    // tentava validar um código morto, concluía "expirado" e pedia um NOVO
+    // código para quem já tinha assinado o contrato.
+    const truth = await fetchPortalOtpTruth(
+      resolved.url,
+      resolved.secret,
+      idcliente,
+      idconsultor,
+    );
+    if (truth && (truth.otp === "validated" || truth.contractDone)) {
+      await supabase.from("customers").update({
+        portal2_otp_validated_at: new Date().toISOString(),
+        otp_code: null,
+        otp_received_at: null,
+        last_otp_dispatch_at: new Date().toISOString(),
+        last_otp_dispatch_error: null,
+        portal_retry_count: 0,
+      }).eq("id", r.id);
+      reconciled++;
+      console.log(
+        `[watchdog B] customer=${r.id} reconciliado pelo portal ` +
+        `(otp=${truth.otp} contrato=${truth.contractDone}) — sem reenvio`,
+      );
+      continue;
+    }
+    if (truth && truth.otp === "pending") {
+      // Existe código válido em trânsito. Gerar outro invalidaria justamente o
+      // que o cliente está digitando — deixa o confirm-otp seguir sem resend.
+      console.log(`[watchdog B] customer=${r.id} portal com código pendente — não pede novo`);
+    }
+
     try {
       const res = await fetch(`${resolved.url}/confirm-otp`, {
         method: "POST",
@@ -352,7 +427,7 @@ async function bucketB(supabase: any) {
       }).eq("id", r.id);
     }
   }
-  return { scanned: rows?.length ?? 0, sent, expired };
+  return { scanned: rows?.length ?? 0, sent, expired, reconciled };
 }
 
 async function bucketC(supabase: any) {

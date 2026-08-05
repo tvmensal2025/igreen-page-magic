@@ -22,7 +22,7 @@ fileMatchPattern:
 | Edge | Papel |
 |---|---|
 | `whapi-webhook` | Inbound **primário** (~3801 index + bot-flow **7140** + conversational/index **3630**) |
-| `evolution-webhook` | Legado / paridade (~3636 + bot-flow **6753** + conversational ~3455) — **manter paridade**, não “apagar” |
+| `evolution-webhook` | Legado / paridade (~3952 + bot-flow **6902** + conversational ~3455) — **manter paridade**, não “apagar” |
 
 Nested: #[[file:supabase/functions/whapi-webhook/AGENTS.md]]
 

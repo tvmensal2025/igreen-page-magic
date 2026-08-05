@@ -32,8 +32,13 @@ export const NON_ADDRESSABLE_NAME_SOURCES = new Set([
 
 /** Tokens que nunca são prenome (meme, lixo, saudação, domínio). */
 const BAD_NAME_TOKENS = new Set([
-  // consultor (slugs vazados)
-  "silviaclaudiaalmeida", "silvia", "claudia", "silvia claudia", "silvia claudia almeida", "rafael", "rafa",
+  // Consultor: só SLUG/nome completo vazado. Regressão 2026-08-04: a lista
+  // tinha "silvia", "claudia", "rafael" e "rafa" soltos, então todo LEAD com
+  // esses prenomes — que são comuns no Brasil — ficava sem nome capturado
+  // (`extractNome("Rafael Ferreira") === null`). O objetivo era barrar slug
+  // vazado, não prenome de cliente. Nome composto do consultor continua fora.
+  "silviaclaudiaalmeida", "silvia claudia", "silvia claudia almeida",
+  "rafaelferreiradias", "rafael ferreira dias",
   // meme / risada / interjeição
   "ixi", "kkk", "kkkk", "kkkkk", "haha", "hahaha", "rsrs", "rsrsrs", "hehe",
   "aff", "nossa", "caramba", "puts", "poxa", "eita", "opa", "ops", "entendi",
@@ -55,6 +60,21 @@ const BAD_NAME_TOKENS = new Set([
 ]);
 
 const EMOJI_CLASS = String.raw`[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]`;
+/**
+ * Rótulos de consultor que já vazaram para o campo `name` do cliente.
+ * Comparados contra a string INTEIRA normalizada (sem espaço/acento) — nunca
+ * token por token, senão derruba lead legítimo com o mesmo prenome.
+ */
+const LEAKED_CONSULTANT_LABELS = new Set([
+  // Apenas slug/nome COMPLETO. Prenome solto ("Rafael", "Silvia") é nome
+  // legítimo de lead — quem protege contra rótulo vazado é a `name_source`
+  // (`isAddressableNameSource`): `cadence` e `whatsapp_profile` nunca viram
+  // saudação. Ver teste-guardião em captureExtractors_test.ts:68.
+  "silviaclaudia", "silviaclaudiaalmeida",
+  "rafaelferreiradias",
+  "sirlenecorrea",
+]);
+
 /** Olá com/sem acento + Oi / Ei. */
 const GREET = String.raw`(?:Ol[aá]|Oi|Ei|E\s*a[ií])`;
 
@@ -74,9 +94,18 @@ export function isUsableCustomerName(raw: string | null | undefined): boolean {
     return false;
   }
   
-  // F15: Bloqueia slugs de sistema "silvia", "claudia", "rafael" em qualquer posição se for suspeito
-  const lower = full.toLowerCase();
-  if (/\b(silvia|claudia|rafael|rafa)\b/i.test(lower)) {
+  // F15 (corrigido em 2026-08-05): bloqueia LABEL de consultor vazado, não
+  // prenome de cliente. A versão anterior testava /\b(silvia|claudia|rafael|
+  // rafa)\b/ em qualquer posição, então lead chamado "Rafael Ferreira",
+  // "Silvia Correa" ou "Ana Claudia" ficava PARA SEMPRE sem nome capturado —
+  // e a base tem clientes reais com esses nomes (ex.: ANA CLAUDIA PEREIRA).
+  // Agora só barra quando a string INTEIRA é o rótulo vazado.
+  const compact = full
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, "");
+  if (LEAKED_CONSULTANT_LABELS.has(compact)) {
     return false;
   }
 

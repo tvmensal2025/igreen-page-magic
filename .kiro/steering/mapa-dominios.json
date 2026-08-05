@@ -764,7 +764,7 @@
     },
     {
       "path": "supabase/functions/evolution-webhook/index.ts",
-      "lines": 3636
+      "lines": 3952
     },
     {
       "path": "supabase/functions/whapi-webhook/handlers/conversational/index.ts",
@@ -788,7 +788,7 @@
     },
     {
       "path": "supabase/functions/cadence-tick/index.ts",
-      "lines": 1849
+      "lines": 2005
     }
   ],
   "pack_stats": {

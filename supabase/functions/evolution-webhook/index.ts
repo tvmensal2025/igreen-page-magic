@@ -1965,6 +1965,37 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ─── Gate anti-robô (paridade com whapi-webhook — auditoria 2026-08-05) ──
+    // URA de outra empresa respondendo automaticamente não é lead. Ver o
+    // comentário completo em whapi-webhook/index.ts e os casos reais em
+    // _shared/auto-responder-detect_test.ts.
+    if (customer && messageText && !buttonId) {
+      try {
+        const { detectAutoResponder, AUTO_RESPONDER_PAUSE_REASON } = await import(
+          "../_shared/auto-responder-detect.ts"
+        );
+        const verdict = detectAutoResponder(messageText);
+        if (verdict.isAutoResponder) {
+          const alreadyPaused = (customer as any).bot_paused === true;
+          if (!alreadyPaused) {
+            await supabase.from("customers").update({
+              bot_paused: true,
+              bot_paused_reason: AUTO_RESPONDER_PAUSE_REASON,
+            }).eq("id", customer.id).then(() => {}, () => {});
+          }
+          console.warn(
+            `[auto-responder] customer=${customer.id} signal=${verdict.signal} — bot pausado, sem resposta`,
+          );
+          return new Response(
+            JSON.stringify({ ok: true, skipped: AUTO_RESPONDER_PAUSE_REASON, signal: verdict.signal }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      } catch (e) {
+        console.warn("[auto-responder] detector falhou:", (e as any)?.message);
+      }
+    }
+
     // Retentativa pós-reprovado: botão → sai da carteira e entra Grupo A (cadastro).
     if (customer && (buttonId || messageText)) {
       const { isPosVendaRetentativaClick, activatePosVendaRecadastro } = await import(

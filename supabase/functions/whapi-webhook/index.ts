@@ -2030,6 +2030,45 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ─── Gate anti-robô (auditoria 2026-08-05) ──────────────────────────────
+    // 13% das conversas (20/151 em 7 dias) eram URA de OUTRA empresa
+    // respondendo automaticamente: imobiliárias, despachantes, pet shop,
+    // barbearia, corretoras. Nosso bot respondia, entrava no funil, gravava o
+    // nome da empresa como nome do cliente e chegou a escalar robô para
+    // atendimento humano — queimando cota anti-ban (cap global 200/dia).
+    //
+    // Fica ANTES de qualquer motor: o inbound já foi persistido, então nada se
+    // perde; só não respondemos e pausamos com razão rastreável.
+    if (customer && messageText && !buttonId) {
+      try {
+        const { detectAutoResponder, AUTO_RESPONDER_PAUSE_REASON } = await import(
+          "../_shared/auto-responder-detect.ts"
+        );
+        const verdict = detectAutoResponder(messageText);
+        if (verdict.isAutoResponder) {
+          const alreadyPaused = (customer as any).bot_paused === true;
+          if (!alreadyPaused) {
+            await supabase.from("customers").update({
+              bot_paused: true,
+              bot_paused_reason: AUTO_RESPONDER_PAUSE_REASON,
+            }).eq("id", customer.id).then(() => {}, () => {});
+          }
+          jsonLog("warn", "auto_responder_detected", {
+            customer_id: customer.id,
+            signal: verdict.signal,
+            already_paused: alreadyPaused,
+          });
+          return new Response(
+            JSON.stringify({ ok: true, skipped: AUTO_RESPONDER_PAUSE_REASON, signal: verdict.signal }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      } catch (e) {
+        // Fail-open: detector nunca derruba o inbound de um lead real.
+        console.warn("[auto-responder] detector falhou:", (e as any)?.message);
+      }
+    }
+
     // Retentativa pós-reprovado: botão → sai da carteira e entra Grupo A (cadastro).
     if (customer && (buttonId || messageText)) {
       const { isPosVendaRetentativaClick, activatePosVendaRecadastro } = await import(
@@ -2244,6 +2283,12 @@ Deno.serve(async (req) => {
         return new Response(JSON.stringify({ ok: true, msg: "bot_paused", reason: _reason, paused_until: (customer as any).bot_paused_until || null }), {
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+        }
+        // silenceExpired (regra 48h) cai aqui: NÃO retorna, segue o fluxo e o
+        // bot volta a responder. Chave fechada em 2026-08-05 — o commit
+        // ca2b74374 (03/08 23:51) abriu este `if` sem fechar, deixando o
+        // whapi-webhook SEM COMPILAR na main por ~26h. Deploy dele nesse
+        // estado derrubaria o inbound primário (INVALID_ENTRYPOINT).
       }
     }
 
