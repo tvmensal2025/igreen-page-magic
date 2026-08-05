@@ -32,6 +32,18 @@ const ROBOS_REAIS = [
   "Prime Negócios Imobiliários agradece seu contato 😀 Não estamos disponíveis",
 ];
 
+// 2ª rodada: variantes achadas na varredura completa (4.184 mensagens).
+const ROBOS_2A_RODADA = [
+  "Obrigado pelo contato. Caso necessite, estarei à disposição",
+  "Olá, igreen-suporte! Eu sou a Vel, a assistente virtual da Velip. Como posso ajudar?",
+  "Olá, Rafael Ferreira Dias! Eu sou a Vel, assistente virtual da Velip",
+  "Oi, tudo bem? 😁 Meu nome é Denise. Sou assistente virtual da DM",
+  "Queremos saber sua opinião! *Deixe sua nota de 1 a 5* para o atendimento",
+  "Espere um instante, vou chamar um consultor para falar com você. 😉",
+  "Poxa, o que houve? Se preferir, posso te transferir agora mesmo para um atendente",
+  "Seu atendimento será encerrado por inatividade nos próximos minutos",
+];
+
 const LEADS_REAIS = [
   // CTWA / abertura de lead de verdade
   "Olá! Quero saber mais sobre o desconto na energia e economizar.",
@@ -63,12 +75,24 @@ const LEADS_REAIS = [
   "Qd vem o desconto na conta de luz",
   "Precisa de outra",
   "Já estou acessando?",
+  // Risco real da 2ª rodada: lead educado que agradece o contato SEM ser robô.
+  // Só vira robô quando vem a companhia corporativa ("à disposição" etc.).
+  "Obrigado pelo contato",
+  "Obrigado pelo contato, mas não tenho interesse agora",
+  "Obrigada pela mensagem, vou pensar e te falo",
+  "Ok obrigado pelo retorno",
 ];
 
 Deno.test("detecta as 23 auto-respostas corporativas reais", () => {
   for (const t of ROBOS_REAIS) {
     const v = detectAutoResponder(t);
     assertEquals(v.isAutoResponder, true, `deveria detectar robô: ${t}`);
+  }
+});
+
+Deno.test("detecta as variantes da 2ª rodada (inclui o robô da própria Velip)", () => {
+  for (const t of ROBOS_2A_RODADA) {
+    assertEquals(detectAutoResponder(t).isAutoResponder, true, `deveria detectar robô: ${t}`);
   }
 });
 

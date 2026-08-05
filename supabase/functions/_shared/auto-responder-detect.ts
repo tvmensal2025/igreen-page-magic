@@ -51,6 +51,29 @@ const SIGNALS: Array<{ id: string; re: RegExp }> = [
   { id: "aguarde_atendimento", re: /aguarde\s+que\s+j[áa]\s+(vou|ir[ei])\s+l?h?e?\s*atend/i },
   { id: "responderemos_breve", re: /responderemos\s+(o\s+)?(sua|seu|em)\s+/i },
   { id: "msg_automatica", re: /(esta|essa)\s+[ée]\s+uma\s+mensagem\s+autom[áa]tica|mensagem\s+autom[áa]tica/i },
+
+  // ─── 2ª rodada (varredura de 4.184 mensagens, 2026-08-05) ────────────────
+  // 27 auto-respostas do histórico escapavam das assinaturas acima. Uma delas
+  // era o robô da PRÓPRIA Velip ("Eu sou a Vel") conversando com o nosso bot.
+
+  // "Obrigado pelo contato. Caso necessite, estarei à disposição."
+  // CUIDADO: um lead educado também escreve "obrigado pelo contato" e não pode
+  // ser marcado como robô. Por isso exigimos companhia corporativa na mesma
+  // mensagem (à disposição / caso necessite / nossa equipe / horário).
+  {
+    id: "obrigado_pelo_contato",
+    re: /obrigad[oa]\s+pel[oa]s?\s+(contato|mensagem|retorno)[\s\S]{0,80}(à\s+disposi[çc][ãa]o|a\s+disposi[çc][ãa]o|caso\s+necessite|caso\s+precise|nossa\s+equipe|nosso\s+time|hor[áa]rio)/i,
+  },
+  // "Eu sou a Vel, assistente virtual da Velip" / "Sou assistente virtual da DM"
+  { id: "assistente_virtual", re: /assistente\s+(virtual|digital)/i },
+  // "Deixe sua nota de 1 a 5 para o atendimento" (pesquisa deles, não nossa)
+  { id: "pesquisa_nota", re: /(nota|avalia[çc][ãa]o)\s+de\s+\d\s+a\s+\d/i },
+  { id: "opiniao_atendimento", re: /(queremos|gostar[íi]amos\s+de)\s+saber\s+(a\s+)?sua\s+opini[ãa]o/i },
+  // "Espere um instante, vou chamar um consultor para falar com você"
+  { id: "vai_chamar_atendente", re: /(vou|irei)\s+(chamar|transferir|acionar)\s+(um|uma|o|a)\s+(consultor|atendente|especialista|respons[áa]vel)/i },
+  { id: "transferir_atendimento", re: /posso\s+te\s+transferir|transferir\s+(agora\s+)?(mesmo\s+)?para/i },
+  // "Seu atendimento será encerrado por inatividade nos próximos minutos"
+  { id: "encerrado_inatividade", re: /encerrad[oa]\s+por\s+inatividade|por\s+inatividade\s+nos?\s+pr[óo]xim/i },
 ];
 
 export type AutoResponderVerdict =
