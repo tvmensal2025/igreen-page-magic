@@ -10,13 +10,12 @@
 // Se um lado divergir, o consultor veria uma frase no painel e o lead receberia
 // outra. Ao mexer aqui, replique no front (e vice-versa).
 //
-// MARCADOR DETERMINÍSTICO `#R{short_code}` — DESLIGADO (2026-08-03)
+// MARCADOR DETERMINÍSTICO `#R{short_code}` — RELIGADO (2026-08-05)
 // -----------------------------------------------------------------
-// O marcador NÃO é mais anexado ao texto (cada consultor/parceiro atende em
-// instância própria, então a keyword não colide entre canais). O webhook ainda
-// ENTENDE `#R` de QR antigo já impresso — ver `extractShortCodeMarker`.
-// Consequência: a atribuição depende da keyword sobreviver no texto. Por isso a
-// frase padrão abaixo é montada para SEMPRE conter a keyword inteira.
+// Keyword sozinha falha na prática: lead edita o texto, keyword genérica
+// ("Zap") cai na blocklist, parceiro sem keyword. O webhook já prioriza
+// `extractShortCodeMarker` → short_code. Anexamos `#R{code}` de novo para
+// o QR marcar o lead mesmo se a frase mudar.
 //
 // ⚠️ A FRASE PADRÃO NÃO PODE IMITAR O AUTOFILL DO META (regressão real)
 // ---------------------------------------------------------------------
@@ -144,9 +143,8 @@ export function resolveQrMessage(
     }
   }
 
-  // Atribuição por KEYWORD apenas (2026-08-03): o marcador `#R` não é mais
-  // anexado ao texto. `shortCode` fica no contrato só por compatibilidade.
-  void code;
+  // Marcador determinístico — prioridade no webhook sobre keyword.
+  if (code) base = appendShortCodeMarker(base, code);
   return base;
 }
 

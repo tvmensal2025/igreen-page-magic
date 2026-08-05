@@ -95,9 +95,8 @@ export function resolveQrMessage(
     }
   }
 
-  // Atribuição por KEYWORD apenas (2026-08-03): o marcador `#R` não é mais
-  // anexado ao texto. `shortCode` fica no contrato só por compatibilidade.
-  void code;
+  // Marcador determinístico — prioridade no webhook sobre keyword (2026-08-05).
+  if (code) base = appendShortCodeMarker(base, code);
   return base;
 }
 
