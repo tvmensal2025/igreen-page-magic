@@ -19,15 +19,15 @@ export const ADDRESSABLE_NAME_SOURCES = new Set([
   "ocr",
   "manual",
   "igreen_portal", // ficha oficial sync portal iGreen
-  "cadence", // reativado: se o sistema capturou nome na cadência, confiamos se passar no scrub
 ]);
 
-/** Nunca usar pra saudação — veio do Zap ou ainda não sabemos. */
+/** Nunca usar pra saudação — veio do Zap, cadência ou ainda não sabemos. */
 export const NON_ADDRESSABLE_NAME_SOURCES = new Set([
   "",
   "unknown",
   "whatsapp_profile",
   "freeform_multi", // heurística de texto livre — dúvida
+  "cadence", // push-name / nome herdado na volta B→A — NÃO é confirmação do lead
 ]);
 
 /** Tokens que nunca são prenome (meme, lixo, saudação, domínio). */
@@ -68,7 +68,7 @@ const EMOJI_CLASS = String.raw`[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]`;
 const LEAKED_CONSULTANT_LABELS = new Set([
   // Apenas slug/nome COMPLETO. Prenome solto ("Rafael", "Silvia") é nome
   // legítimo de lead — quem protege contra rótulo vazado é a `name_source`
-  // (`isAddressableNameSource`): `cadence` e `whatsapp_profile` nunca viram
+  // (`isAddressableNameSource`): `whatsapp_profile` / `cadence` nunca viram
   // saudação. Ver teste-guardião em captureExtractors_test.ts:68.
   "silviaclaudia", "silviaclaudiaalmeida",
   "rafaelferreiradias",

@@ -2054,8 +2054,17 @@ Deno.serve(async (req) => {
             await supabase.from("customers").update({
               bot_paused: true,
               bot_paused_reason: AUTO_RESPONDER_PAUSE_REASON,
+              bot_paused_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
             }).eq("id", customer.id).then(() => {}, () => {});
           }
+          await supabase.from("conversations").insert({
+            customer_id: customer.id,
+            message_direction: "inbound",
+            message_text: String(messageText).slice(0, 2000),
+            message_type: "text",
+            conversation_step: (customer as any).conversation_step ?? null,
+          }).then(() => {}, () => {});
           console.warn(
             `[auto-responder] customer=${customer.id} signal=${verdict.signal} — bot pausado, sem resposta`,
           );
@@ -2105,7 +2114,15 @@ Deno.serve(async (req) => {
     const isPausedByHuman = isCustomerPausedByHuman(customer as any);
     const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
     const lastActivity = (customer as any).updated_at ? new Date((customer as any).updated_at) : new Date();
-    const silenceExpired = isPausedByHuman && lastActivity < fortyEightHoursAgo;
+    const pauseReasonEvo = String((customer as any).bot_paused_reason || "").toLowerCase();
+    const permanentPauseEvo = [
+      "auto_responder_detected",
+      "opt_out",
+      "requested",
+      "complaint",
+      "dnc",
+    ].includes(pauseReasonEvo) || pauseReasonEvo.startsWith("dnc:");
+    const silenceExpired = isPausedByHuman && lastActivity < fortyEightHoursAgo && !permanentPauseEvo;
 
     if (isPausedByHuman && !silenceExpired) {
       const _autoReason = String((customer as any).bot_paused_reason || "").toLowerCase();

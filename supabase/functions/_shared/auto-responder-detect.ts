@@ -22,7 +22,8 @@
 /** Sinais inequívocos de auto-resposta corporativa. */
 const SIGNALS: Array<{ id: string; re: RegExp }> = [
   // "A Farnese Seguros agradece seu contato", "LS DESPACHANTE agradece seu contato"
-  { id: "agradece_contato", re: /agradec\w*\s+(o\s+)?seu\s+contato/i },
+  // "agradece o seu contato" / "agradecemos pelo o seu contato" (typo comum em URA)
+  { id: "agradece_contato", re: /agradec\w*\s+((o|pelo(\s+o)?)\s+)?seu\s+contato/i },
   // "Agradecemos sua mensagem. Não estamos disponíveis no momento"
   { id: "agradece_mensagem", re: /agradecemos\s+(a\s+)?sua\s+mensagem/i },
   { id: "indisponivel", re: /n[ãa]o\s+estamos\s+dispon[íi]ve/i },
@@ -30,14 +31,15 @@ const SIGNALS: Array<{ id: string; re: RegExp }> = [
   // Menus de URA
   { id: "menu_opcoes", re: /(selecione|escolha|digite)\s+(uma\s+)?d[ao]s?\s+op[çc][õo]es/i },
   { id: "menu_nao_entendi", re: /n[ãa]o\s+entendi,\s*escolha/i },
+  { id: "menu_digite_n", re: /digite\s+[1-9]\s+(para|ou|-)/i },
+  { id: "menu_opcao_n", re: /op[çc][ãa]o\s*[1-9]\b/i },
   // Pesquisa de satisfação (o robô deles avaliando o nosso bot)
   { id: "nps", re: /de\s+0\s+a\s+10\s+como\s+voc[êe]\s+avalia/i },
   { id: "nps_nota", re: /digite\s+uma\s+nota\s+v[áa]lida/i },
   // Boas-vindas de empresa: "Seja bem vindo a Prime Investimentos Imobiliários"
-  { id: "boas_vindas_empresa", re: /seja\s+(muito\s+)?bem[-\s]?vind[oa](\(a\))?\s+(a|ao|à|à\s+recep[çc][ãa]o\s+d[ae])\s+\S/i },
-  // "bem vindo(a)" com gênero entre parênteses é marca de texto automatizado —
-  // nenhum lead escreve isso ao nos procurar.
-  { id: "bem_vindo_parenteses", re: /bem[-\s]?vind[oa]\(a\)/i },
+  { id: "boas_vindas_empresa", re: /seja\s+(muito\s+)?bem[-\s]?vind[oa](\s*\(\s*a\s*\))?\s+(a|ao|à|à\s+recep[çc][ãa]o\s+d[ae])\s+\S/i },
+  // "bem vindo(a)" / "Bem-vindo (a)" — marca de texto automatizado
+  { id: "bem_vindo_parenteses", re: /bem[-\s]?vind[oa]\s*\(\s*a\s*\)/i },
   // "Sou Leandro Nunes, corretor de imóveis" / "Sou a Kelly, consultora" —
   // apresentação profissional em auto-reply. Também evita que o extrator de
   // nome grave isso como `self_introduced` do lead.

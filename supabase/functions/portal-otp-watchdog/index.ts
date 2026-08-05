@@ -308,8 +308,10 @@ async function bucketB(supabase: any) {
     }
     if (truth && truth.otp === "pending") {
       // Existe código válido em trânsito. Gerar outro invalidaria justamente o
-      // que o cliente está digitando — deixa o confirm-otp seguir sem resend.
-      console.log(`[watchdog B] customer=${r.id} portal com código pendente — não pede novo`);
+      // que o cliente está digitando — NÃO confirma com código local (pode
+      // estar errado/atrasado) nem pede resend.
+      console.log(`[watchdog B] customer=${r.id} portal com código pendente — skip confirm/resend`);
+      continue;
     }
 
     try {
@@ -344,10 +346,11 @@ async function bucketB(supabase: any) {
         continue;
       }
 
-      // Detecta OTP expirado/inválido → para de retentar e pede novo código
+      // Detecta OTP expirado/inválido → para de retentar e pede novo código.
+      // NÃO usar HTTP 400 genérico: payload inválido / race também é 400 e
+      // gerava OTP 2x no Zap do cliente (incidente 2026-08-05).
       const isExpired = OTP_EXPIRED_PATTERNS.some((re) => re.test(txt))
-        || /otp_invalid_or_expired/i.test(txt)
-        || res.status === 400;
+        || /otp_invalid_or_expired/i.test(txt);
       if (isExpired) {
         const clearedAt = new Date().toISOString();
         await supabase.from("customers").update({

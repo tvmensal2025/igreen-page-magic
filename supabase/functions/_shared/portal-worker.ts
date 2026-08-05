@@ -12,7 +12,7 @@ import { resolvePortalContaTitularidade } from "./title-transfer.ts";
 
 export interface DispatchResult {
   ok: boolean;
-  mode: "dispatched" | "queued_offline" | "not_configured";
+  mode: "dispatched" | "queued_offline" | "not_configured" | "already_dispatched";
   status?: number;
   error?: string;
   worker?: "autoconexao";
@@ -261,6 +261,43 @@ export async function dispatchPortalWorker(supabase: any, customerId: string): P
   const { url, secret, kind } = resolved;
   console.log(`[portal-worker] roteando customer=${customerId} → kind=${kind} url=${url}`);
 
+  // Status terminais que NÃO podem ser regredidos por uma retentativa tardia
+  const TERMINAL_STATUSES = new Set([
+    "awaiting_otp", "validating_otp", "awaiting_signature", "complete", "handoff_humano",
+  ]);
+  // OTP já em voo / cadastro já no portal: segundo dispatch gera 2º código no Zap.
+  const OTP_IN_FLIGHT = new Set([
+    "otp_sent",
+    "awaiting_otp",
+    "validating_otp",
+    "otp_validated",
+    "contract_completed",
+    "complete",
+    "already_registered",
+  ]);
+  const { data: currentRow } = await supabase
+    .from("customers")
+    .select("status, portal2_idcliente, portal2_status, portal2_otp_sent_at, portal2_otp_validated_at")
+    .eq("id", customerId)
+    .maybeSingle();
+  const currentStatus = String(currentRow?.status || "");
+  const portal2Status = String(currentRow?.portal2_status || "").toLowerCase();
+  if (
+    currentRow?.portal2_idcliente &&
+    (
+      currentRow.portal2_otp_sent_at ||
+      currentRow.portal2_otp_validated_at ||
+      OTP_IN_FLIGHT.has(portal2Status) ||
+      TERMINAL_STATUSES.has(currentStatus)
+    )
+  ) {
+    console.log(
+      `[portal-worker] customer=${customerId} já no portal (idcliente=${currentRow.portal2_idcliente} ` +
+      `portal2=${portal2Status} status=${currentStatus}) — skip re-dispatch (anti OTP 2x)`,
+    );
+    return { ok: true, mode: "already_dispatched", worker: kind };
+  }
+
   // Health check (10s)
   let online = false;
   let healthErr = "";
@@ -278,14 +315,6 @@ export async function dispatchPortalWorker(supabase: any, customerId: string): P
   await supabase.from("customers").update({
     last_portal_dispatch_at: new Date().toISOString(),
   }).eq("id", customerId).then(() => {}, () => {});
-
-  // Status terminais que NÃO podem ser regredidos por uma retentativa tardia
-  const TERMINAL_STATUSES = new Set([
-    "awaiting_otp", "validating_otp", "awaiting_signature", "complete", "handoff_humano",
-  ]);
-  const { data: currentRow } = await supabase
-    .from("customers").select("status").eq("id", customerId).maybeSingle();
-  const currentStatus = String(currentRow?.status || "");
 
   if (!online) {
     if (!TERMINAL_STATUSES.has(currentStatus)) {

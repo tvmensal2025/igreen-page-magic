@@ -296,17 +296,45 @@ async function processLead(job) {
       }
     }
 
-    // Disparar geração de OTP (a iGreen manda WhatsApp pro cliente com o código)
+    // Disparar geração de OTP (a iGreen manda WhatsApp pro cliente com o código).
+    // Gate espelha /resend-otp: retry do job ou 2º dispatch NÃO pode gerar 2º código.
     let otpGenerated = false;
     try {
-      await c.generateVerificationCode(cadastroResult.idcliente);
-      otpGenerated = true;
-      console.log(`  ✓ OTP requisitado pra customer=${customer_id} (cliente recebe via WhatsApp da iGreen)`);
+      let localPortalStatus = null;
+      let alreadySentAt = null;
       if (supabase && customer_id) {
-        await supabase.from('customers').update({
-          portal2_status: 'otp_sent',
-          portal2_otp_sent_at: new Date().toISOString(),
-        }).eq('id', customer_id).then(() => {}, () => {});
+        const { data: cust } = await supabase
+          .from('customers')
+          .select('portal2_status, portal2_otp_sent_at')
+          .eq('id', customer_id)
+          .maybeSingle();
+        localPortalStatus = cust?.portal2_status ?? null;
+        alreadySentAt = cust?.portal2_otp_sent_at ?? null;
+      }
+      const truth = await readPortalOtpTruth(c, cadastroResult.idcliente);
+      const gate = shouldGenerateOtpForResend({
+        portalOtpStatus: truth.otpStatus,
+        portalContractStatus: truth.contractStatus,
+        localPortalStatus,
+      });
+      if (alreadySentAt || !gate.allowed) {
+        const reason = alreadySentAt ? 'local_otp_already_sent' : gate.reason;
+        console.log(`  ↩ OTP pulado customer=${customer_id} idcliente=${cadastroResult.idcliente} motivo=${reason}`);
+        if (supabase && customer_id && alreadySentAt && localPortalStatus !== 'otp_sent') {
+          await supabase.from('customers').update({
+            portal2_status: 'otp_sent',
+          }).eq('id', customer_id).then(() => {}, () => {});
+        }
+      } else {
+        await c.generateVerificationCode(cadastroResult.idcliente);
+        otpGenerated = true;
+        console.log(`  ✓ OTP requisitado pra customer=${customer_id} (cliente recebe via WhatsApp da iGreen)`);
+        if (supabase && customer_id) {
+          await supabase.from('customers').update({
+            portal2_status: 'otp_sent',
+            portal2_otp_sent_at: new Date().toISOString(),
+          }).eq('id', customer_id).then(() => {}, () => {});
+        }
       }
     } catch (e) {
       console.warn(`  ⚠ falha ao gerar OTP: ${e.message}`);
@@ -747,7 +775,9 @@ app.post('/submit-lead', authRequired, async (req, res) => {
 
   try {
     if (queueAvailable) {
+      // jobId estável: 2º submit-lead do mesmo customer vira no-op (anti OTP 2x).
       const job = await queue.add('cadastrar', { customer_id, dados }, {
+        jobId: customer_id ? `cadastrar-${customer_id}` : undefined,
         attempts: 3,
         backoff: { type: 'exponential', delay: 30_000 },
         removeOnComplete: { age: 86400, count: 1000 },

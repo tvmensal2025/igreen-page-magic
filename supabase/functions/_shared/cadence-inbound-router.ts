@@ -15,6 +15,7 @@ import {
 } from "./cadence-stage-buttons.ts";
 import { matchButtonIntent, type ButtonOption } from "./ai-button-intent.ts";
 import { isCoverageCityIntent, coverageCityReply } from "./coverage-city-intent.ts";
+import { safeFirstNameForAddress } from "./customer-display-name.ts";
 
 export const BILL_BUTTON_VALUES: Readonly<Record<string, number>> = {
   bill_low: 200,
@@ -97,6 +98,7 @@ export type CadenceInboundInput = {
   customer: {
     id?: string;
     name?: string | null;
+    name_source?: string | null;
     consultant_id?: string | null;
     origin_recovery?: string | null;
     flow_variant?: string | null;
@@ -259,7 +261,8 @@ function existingBill(customer: CadenceInboundInput["customer"]): number | undef
 }
 
 function firstName(customer: CadenceInboundInput["customer"]): string {
-  return String(customer?.name || "").trim().split(/\s+/)[0] || "";
+  // Só chama com fonte confiável — push-name / cadence não contam.
+  return safeFirstNameForAddress(customer?.name, customer?.name_source);
 }
 
 function cadastroReply(customer: CadenceInboundInput["customer"], billValue?: number): string {
@@ -295,18 +298,26 @@ function cadastroUpdates(billValue?: number): Record<string, unknown> {
 /**
  * Entrada no fluxo conversacional Grupo A após retorno de cadência B/C.
  *
- * Regra: tempo passou — o gasto pode ter mudado. Sempre limpa o valor da
- * conta para o motor re-pedir o a2 (áudio + pedir valor). O nome NÃO é
- * re-pedido: se já existir, resolveLandingStep pula a1 e pousa no a2.
+ * Valor:
+ *   - Digitado AGORA (preciso) → grava: resolveLandingStep pula a2 (não
+ *     re-pede o que o lead acabou de informar — bug 2026-08-05).
+ *   - Faixa/botão (200/500/800) → limpa: a2 pede o valor oficial.
+ *   - Sem valor → limpa: a2 pede.
  *
- * Faixa/botão/valor digitado na cadência NÃO grava electricity_bill_value
- * aqui — só sinaliza engajamento; o valor oficial vem do a2.
+ * Nome: NÃO promove name_source para "cadence" (não é fonte addressable —
+ * push-name do Zap virava "Oi NomeErrado"). Se a fonte já for confiável,
+ * resolveLandingStep pula a1 sozinho.
  */
 function conversationalEntryUpdates(
   customer: CadenceInboundInput["customer"],
-  _billValue?: number,
+  billValue?: number,
 ): Record<string, unknown> {
-  const u: Record<string, unknown> = {
+  const precise =
+    billValue != null &&
+    Number.isFinite(billValue) &&
+    billValue > 0 &&
+    !BILL_RANGE_ESTIMATES.has(billValue);
+  return {
     flow_variant: "A",
     conversation_step: null,
     origin_recovery: "cadence",
@@ -314,13 +325,8 @@ function conversationalEntryUpdates(
     custom_step_retries: 0,
     last_custom_prompt_at: null,
     ai_followups_count: 0,
-    // Tempo passou: faixa/botão/valor da cadência NÃO grava aqui.
-    // Sempre limpa para o a2 re-pedir o valor oficial (nunca faixa 200/500/800).
-    electricity_bill_value: null,
+    electricity_bill_value: precise ? billValue : null,
   };
-  const nm = String(customer?.name || "").trim();
-  if (nm.length >= 2) u.name_source = "cadence"; // TRUSTED → pula a1
-  return u;
 }
 
 function pushToCadastro(
@@ -445,10 +451,11 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     };
   }
 
-  // Educativo: se já tem valor, NÃO repergunta — empurra ao cadastro
+  // Educativo com valor antigo: entra no Grupo A, mas a2 re-pede (tempo passou).
+  // Só valor digitado NESTE turno (cadence_typed_bill) grava no updates.
   if (EDUCATIONAL_BUTTON_IDS.has(buttonId)) {
     if (knownBill != null && knownBill >= 100) {
-      return pushToCadastro(input.customer, `cadence_educational_to_cadastro_${buttonId}`, knownBill);
+      return pushToCadastro(input.customer, `cadence_educational_to_cadastro_${buttonId}`);
     }
     return {
       handled: true,
@@ -486,7 +493,7 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     (wantsToAdvance(text) || isActivateIntent(text, buttonId) ||
       /\b(analisar|analise|análise|cadastr|ativar|enviar\s+(?:a\s+)?conta|mandar\s+(?:a\s+)?foto)\b/i.test(text))
   ) {
-    return pushToCadastro(input.customer, "cadence_intent_cadastro", knownBill);
+    return pushToCadastro(input.customer, "cadence_intent_cadastro");
   }
 
 
@@ -520,9 +527,10 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     };
   }
 
-  // Já tem valor → qualquer ambiguidade ainda avança (sem loop)
+  // Já tem valor antigo → avança ao Grupo A, mas re-pede no a2 (tempo passou).
+  // Valor digitado NESTE turno já foi tratado em cadence_typed_bill acima.
   if (knownBill != null && knownBill >= 100) {
-    return pushToCadastro(input.customer, "cadence_known_bill_forward", knownBill);
+    return pushToCadastro(input.customer, "cadence_known_bill_forward");
   }
 
 

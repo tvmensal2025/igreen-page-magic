@@ -2102,8 +2102,19 @@ Deno.serve(async (req) => {
             await supabase.from("customers").update({
               bot_paused: true,
               bot_paused_reason: AUTO_RESPONDER_PAUSE_REASON,
+              bot_paused_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
             }).eq("id", customer.id).then(() => {}, () => {});
           }
+          // Persiste inbound ANTES do early-return (auditoria + anti-loop).
+          await supabase.from("conversations").insert({
+            customer_id: customer.id,
+            message_direction: "inbound",
+            message_text: messageText.slice(0, 2000),
+            message_type: "text",
+            conversation_step: customer.conversation_step,
+            external_message_id: messageId || null,
+          }).then(() => {}, () => {});
           jsonLog("warn", "auto_responder_detected", {
             customer_id: customer.id,
             signal: verdict.signal,
@@ -2300,9 +2311,18 @@ Deno.serve(async (req) => {
         
         // Regra 48h (Rafa 2026-08-03): Se o bot está pausado para atendimento humano,
         // mas o consultor não fala nada há 48h, a próxima msg do lead DEVE "acordar" o bot.
+        // EXCEÇÃO: pausas permanentes (URA/robô, opt-out, DNC) NUNCA acordam sozinhas.
         const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
         const lastActivity = (customer as any).updated_at ? new Date((customer as any).updated_at) : new Date();
-        const silenceExpired = isPausedByHuman && lastActivity < fortyEightHoursAgo;
+        const pauseReason = String((customer as any).bot_paused_reason || "").toLowerCase();
+        const permanentPause = [
+          "auto_responder_detected",
+          "opt_out",
+          "requested",
+          "complaint",
+          "dnc",
+        ].includes(pauseReason) || pauseReason.startsWith("dnc:");
+        const silenceExpired = isPausedByHuman && lastActivity < fortyEightHoursAgo && !permanentPause;
 
         if ((isPausedByHuman || pausedUntil) && !silenceExpired) {
           const _reason = (customer as any).bot_paused_reason || ((customer as any).assigned_human_id ? "humano_assumiu" : (pausedUntil ? "paused_until" : "manual"));

@@ -115,3 +115,14 @@ Deno.test("texto curto e vazio nunca é robô", () => {
   assertEquals(isAutoResponderText("ok"), false);
   assertEquals(isAutoResponderText("bem vindo"), false); // curto, sem empresa
 });
+
+Deno.test("variantes URA: bem-vindo (a) e 'pelo o seu contato'", () => {
+  assertEquals(
+    detectAutoResponder("Olá! Seja bem-vindo (a) à Clínica XYZ. Aguarde.").isAutoResponder,
+    true,
+  );
+  assertEquals(
+    detectAutoResponder("Agradecemos pelo o seu contato. Retornaremos em breve.").isAutoResponder,
+    true,
+  );
+});

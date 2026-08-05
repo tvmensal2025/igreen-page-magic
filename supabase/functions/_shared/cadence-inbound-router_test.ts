@@ -23,7 +23,8 @@ Deno.test("resolveCadenceInboundRoute: bill_mid → Grupo A a2 (re-pede valor)",
   assertEquals(r?.updates.conversation_step, null);
   // Tempo passou: faixa NÃO grava valor — a2 pede de novo
   assertEquals(r?.updates.electricity_bill_value, null);
-  assertEquals(r?.updates.name_source, "cadence"); // nome ok, não re-pede a1
+  // NÃO promover name_source=cadence (push-name virava saudação errada)
+  assertEquals(r?.updates.name_source, undefined);
 });
 
 Deno.test("resolveCadenceInboundRoute: bill_low → a2 sem gravar faixa 200", () => {
@@ -35,17 +36,17 @@ Deno.test("resolveCadenceInboundRoute: bill_low → a2 sem gravar faixa 200", ()
   assertEquals(r?.continueBotFlow, true);
   assertEquals(r?.updates.electricity_bill_value, null);
   assertEquals(r?.updates.conversation_step, null);
-  assertEquals(r?.updates.name_source, "cadence");
+  assertEquals(r?.updates.name_source, undefined);
 });
 
-Deno.test("resolveCadenceInboundRoute: texto 450 → a2 (valor limpo p/ re-pedir)", () => {
+Deno.test("resolveCadenceInboundRoute: texto 450 → grava valor preciso (não re-pede a2)", () => {
   const r = resolveCadenceInboundRoute({
     customer: baseCustomer,
     messageText: "450",
   });
   assertEquals(r?.reason, "cadence_typed_bill");
   assertEquals(r?.continueBotFlow, true);
-  assertEquals(r?.updates.electricity_bill_value, null);
+  assertEquals(r?.updates.electricity_bill_value, 450);
   assertEquals(r?.updates.conversation_step, null);
 });
 
@@ -212,17 +213,17 @@ Deno.test("digitar 'Até R$300' limpa valor antigo e re-pede no a2", () => {
   });
   assertEquals(r?.continueBotFlow, true);
   assertEquals(r?.updates.electricity_bill_value, null);
-  assertEquals(r?.updates.name_source, "cadence");
+  assertEquals(r?.updates.name_source, undefined);
 });
 
-Deno.test("Grupo C: 'pago 300 reais por mês' → a2 (não grava 300; re-pede)", () => {
+Deno.test("Grupo C: 'pago 300 reais por mês' → grava 300 (preciso)", () => {
   const r = resolveCadenceInboundRoute({
     customer: { name: "João", origin_recovery: "cadence" },
     messageText: "pago 300 reais por mês",
     cadencePausedReason: "lead_responded:RECALL_5M",
   });
   assertEquals(r?.continueBotFlow, true);
-  assertEquals(r?.updates.electricity_bill_value, null);
+  assertEquals(r?.updates.electricity_bill_value, 300);
   assertEquals(r?.reason, "cadence_typed_bill");
 });
 
