@@ -629,6 +629,10 @@ Deno.serve(async (req) => {
     // inbound é áudio (Task 17). Por isso vai como `let` e não destructured.
     let messageText: string = parsed.messageText;
     let messageId = String(key?.id || parsed.messageId || body.data?.key?.id || "");
+    // Início da janela do turno. O drain usa isto em vez de `pending_inbound_at`
+    // porque a linha em `conversations` é gravada ANTES do marcador — com a
+    // janela do marcador a própria mensagem barrada ficava de fora e sumia.
+    const turnWindowStartIso = new Date().toISOString();
     // Type cast: dedupe.ts pins @supabase/supabase-js@2.49.4 while this file
     // pins @2; the runtime is identical but TS sees two protected-property
     // shapes. Same workaround used elsewhere in this file (line 141).
@@ -715,6 +719,45 @@ Deno.serve(async (req) => {
       jsonLog("warn", "rate_limit_checked", {
         phone, v2_flag: v2Flag, rate_limited: true,
       });
+      // Anti-flood segue valendo (não processamos o turno agora), mas a
+      // mensagem não pode sumir: grava o inbound e marca como pendente para o
+      // turno em voo drenar antes de soltar o lock. Paridade Whapi.
+      try {
+        const { data: flooded } = await supabase
+          .from("customers")
+          .select("id, conversation_step")
+          .eq("phone_whatsapp", phone)
+          .eq("consultant_id", instanceData.consultant_id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        const floodedId = (flooded as any)?.id ?? null;
+        if (floodedId) {
+          await supabase.from("conversations").insert({
+            customer_id: floodedId,
+            message_direction: "inbound",
+            message_text: String(messageText || (isFile ? "[arquivo]" : "")).slice(0, 2000),
+            message_type: isFile ? "image" : isButton ? "button" : "text",
+            conversation_step: (flooded as any).conversation_step ?? null,
+            external_message_id: messageId || null,
+          });
+          await supabase.rpc("enqueue_pending_inbound", {
+            _customer_id: floodedId,
+            _message_id: messageId || `noid-${Date.now()}`,
+          });
+          jsonLog("info", "rate_limited_inbound_preserved", {
+            customer_id: floodedId,
+            phone,
+            channel: "evolution",
+          });
+        }
+      } catch (e) {
+        jsonLog("warn", "rate_limited_inbound_preserve_failed", {
+          phone,
+          channel: "evolution",
+          message: e instanceof Error ? e.message : String(e),
+        });
+      }
       return new Response(JSON.stringify({ ok: true, msg: "rate_limited" }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -3490,6 +3533,7 @@ Deno.serve(async (req) => {
     // do Whapi; replies normais só saem depois que toda a fila foi persistida.
     const primaryStepBefore = stepBefore;
     const primaryRawStepBefore = rawStep;
+    const primaryInboundMessageId = messageId;
     let drainedTurns = 0;
     try {
       const { drainPendingInboundTurns } = await import("../_shared/bot/pending-inbound.ts");
@@ -3531,6 +3575,10 @@ Deno.serve(async (req) => {
           if (error) throw error;
           Object.assign(customer, replayUpdates);
         }
+      }, 3, {
+        since: turnWindowStartIso,
+        excludeMessageIds: [primaryInboundMessageId].filter(Boolean) as string[],
+        excludeConversationIds: [inboundLogId].filter(Boolean) as string[],
       });
       drainedTurns = drained;
       if (drained > 0) console.log(`[pending-drain/evolution] ${drained} turn(s) customer=${customer.id}`);

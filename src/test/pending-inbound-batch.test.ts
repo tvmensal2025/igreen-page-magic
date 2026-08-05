@@ -7,6 +7,9 @@
  * lote sobre a janela do turno.
  */
 import { describe, it, expect, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
 import {
   claimPendingInboundBatch,
   drainPendingInboundTurns,
@@ -167,4 +170,48 @@ describe("drainPendingInboundTurns", () => {
     expect(drained).toBe(0);
     expect(processTurn).not.toHaveBeenCalled();
   });
+});
+
+describe("janela do turno vs. janela do marcador", () => {
+  // A linha em `conversations` é gravada antes do RPC que grava o marcador.
+  // Usar `pending_inbound_at` como início da janela deixa a própria mensagem
+  // barrada de fora — ela some do histórico e nunca é respondida.
+  const barrada: Row[] = [
+    { id: "c9", message_text: "e o desconto?", external_message_id: "m9", created_at: "2026-08-05T10:00:04.000Z" },
+  ];
+  const MARKER_AT = "2026-08-05T10:00:05.000Z";
+
+  it("a janela do marcador perde a mensagem barrada", async () => {
+    const sb = fakeSupabase({ pendingId: "m9", pendingAt: MARKER_AT, inbound: barrada });
+    const batch = await claimPendingInboundBatch(sb as any, CUSTOMER, {});
+    expect(batch).toEqual([]);
+  });
+
+  it("a janela do turno recupera a mensagem barrada", async () => {
+    const sb = fakeSupabase({ pendingId: "m9", pendingAt: MARKER_AT, inbound: barrada });
+    const batch = await claimPendingInboundBatch(sb as any, CUSTOMER, { since: TURN_START });
+    expect(batch.map((b) => b.messageText)).toEqual(["e o desconto?"]);
+  });
+});
+
+describe("guarda estática — anti-flood não descarta inbound", () => {
+  const FN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../supabase/functions");
+
+  for (const channel of ["whapi-webhook", "evolution-webhook"]) {
+    it(`${channel} preserva e enfileira a mensagem barrada por rate limit`, () => {
+      const src = readFileSync(path.join(FN, channel, "index.ts"), "utf8");
+      expect(src).toContain("rate_limited_inbound_preserved");
+      // O early-return do rate limit não pode voltar a ser um descarte seco.
+      expect(src).toMatch(
+        /rate_limit_checked[\s\S]{0,2600}?enqueue_pending_inbound[\s\S]{0,900}?msg: "rate_limited"/,
+      );
+    });
+
+    it(`${channel} drena a rajada pela janela do turno`, () => {
+      const src = readFileSync(path.join(FN, channel, "index.ts"), "utf8");
+      expect(src).toContain("turnWindowStartIso");
+      expect(src).toContain("since: turnWindowStartIso");
+      expect(src).toContain("excludeConversationIds");
+    });
+  }
 });
