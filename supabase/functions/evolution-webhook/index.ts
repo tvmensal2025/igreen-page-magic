@@ -3489,6 +3489,8 @@ Deno.serve(async (req) => {
     // O estado é buscado de novo a cada replay para manter a mesma serialização
     // do Whapi; replies normais só saem depois que toda a fila foi persistida.
     const primaryStepBefore = stepBefore;
+    const primaryRawStepBefore = rawStep;
+    let drainedTurns = 0;
     try {
       const { drainPendingInboundTurns } = await import("../_shared/bot/pending-inbound.ts");
       const drained = await drainPendingInboundTurns(supabase, customer.id, async (replay) => {
@@ -3530,6 +3532,7 @@ Deno.serve(async (req) => {
           Object.assign(customer, replayUpdates);
         }
       });
+      drainedTurns = drained;
       if (drained > 0) console.log(`[pending-drain/evolution] ${drained} turn(s) customer=${customer.id}`);
     } catch (e) {
       console.warn("[pending-drain/evolution] falhou:", (e as Error).message);
@@ -3981,6 +3984,43 @@ Deno.serve(async (req) => {
       if (sendResult.ok && !sendResult.pending) deliveryStatus = "sent";
       else if (sendResult.ok && sendResult.pending) deliveryStatus = "queued";
       else deliveryStatus = "failed";
+    }
+
+    // ── Compensação: envio recusado não pode deixar o lead numa etapa muda ──
+    // O estado do Evolution é persistido antes do envio (a fila pendente é
+    // drenada no meio). Quando o canal recusa de vez, o lead fica parado numa
+    // etapa cuja pergunta nunca chegou e só sai de lá pela cadência. Aqui
+    // desfazemos apenas o avanço de etapa; dados extraídos do lead ficam.
+    try {
+      const stepAfterAttempted = updates.conversation_step
+        ? stripPrefix(String(updates.conversation_step))
+        : null;
+      const { shouldRevertStepAfterFailedSend } = await import("../_shared/bot/outbound-commit.ts");
+      if (
+        shouldRevertStepAfterFailedSend({
+          deliveryStatus,
+          stepBefore: primaryStepBefore,
+          stepAfter: stepAfterAttempted,
+          drainedTurns,
+          sendError: sendResult.error ?? null,
+        })
+      ) {
+        const { error: revertErr } = await supabase
+          .from("customers")
+          .update({ conversation_step: primaryRawStepBefore })
+          .eq("id", customer.id);
+        if (revertErr) throw revertErr;
+        (customer as any).conversation_step = primaryRawStepBefore;
+        jsonLog("warn", "step_reverted_after_failed_send", {
+          customer_id: customer.id,
+          consultant_id: instanceData.consultant_id,
+          step_before: primaryStepBefore,
+          step_attempted: stepAfterAttempted,
+          send_error: sendResult.error ?? null,
+        });
+      }
+    } catch (e) {
+      console.warn("[step-revert/evolution] falhou:", (e as Error).message);
     }
 
     if (!isDuplicate && finalReply) {

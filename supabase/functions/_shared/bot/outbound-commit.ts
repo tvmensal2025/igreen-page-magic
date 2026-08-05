@@ -54,6 +54,52 @@ export function stripProgressUpdatesOnFailedSend<T extends Record<string, unknow
   return out as T;
 }
 
+/**
+ * Falhas em que o silêncio é intencional: alguém assumiu a conversa. Voltar o
+ * step aqui faria o bot re-perguntar depois algo que o humano já resolveu.
+ */
+export const NON_REVERTING_SEND_ERRORS = new Set([
+  "paused_by_human",
+  "bot_paused",
+  "dnc",
+  "opt_out",
+]);
+
+export type RevertStepDecisionInput = {
+  /** Resultado real do canal para a resposta principal do turno. */
+  deliveryStatus: "sent" | "queued" | "failed" | null;
+  /** Step (já sem prefixo) em que o lead estava quando o turno começou. */
+  stepBefore: string;
+  /** Step (já sem prefixo) que o turno tentou gravar. */
+  stepAfter: string | null;
+  /** Quantas mensagens da rajada foram reprocessadas depois da persistência. */
+  drainedTurns: number;
+  /** `error` devolvido pelo sender, quando houver. */
+  sendError?: string | null;
+};
+
+/**
+ * Caminho Evolution: o estado é persistido ANTES do envio (a fila pendente é
+ * drenada no meio, então inverter a ordem mudaria a serialização do turno).
+ * Quando o canal recusa de vez a mensagem, o lead fica parado numa etapa cuja
+ * pergunta nunca chegou — mudo. Aqui decidimos desfazer só esse avanço.
+ *
+ * Conservador de propósito:
+ *   - `queued` (aceito, sem ACK) NÃO reverte — a mensagem tende a chegar;
+ *   - se a rajada foi drenada depois, o estado já pertence a outro turno e
+ *     reverter apagaria trabalho legítimo;
+ *   - pausa humana / DNC não reverte (ver `NON_REVERTING_SEND_ERRORS`);
+ *   - só reverte quando o step realmente mudou neste turno.
+ */
+export function shouldRevertStepAfterFailedSend(input: RevertStepDecisionInput): boolean {
+  if (input.deliveryStatus !== "failed") return false;
+  if (input.drainedTurns > 0) return false;
+  if (NON_REVERTING_SEND_ERRORS.has(String(input.sendError || "").trim())) return false;
+  const after = (input.stepAfter || "").trim();
+  if (!after) return false;
+  return after !== input.stepBefore;
+}
+
 export type CommitOutboundTurnInput<U extends Record<string, unknown>> = {
   /** Patch de `customers` calculado pelo turno. */
   updates: U;

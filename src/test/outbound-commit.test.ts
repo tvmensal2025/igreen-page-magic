@@ -14,6 +14,7 @@ import {
   isSendConfirmed,
   stripProgressUpdatesOnFailedSend,
   commitOutboundTurn,
+  shouldRevertStepAfterFailedSend,
 } from "../../supabase/functions/_shared/bot/outbound-commit.ts";
 
 function makeHarness(sendImpl: (text: string) => Promise<unknown>) {
@@ -185,6 +186,41 @@ describe("commitOutboundTurn — comportamentos preservados", () => {
   });
 });
 
+describe("shouldRevertStepAfterFailedSend — compensação do Evolution", () => {
+  const base = {
+    deliveryStatus: "failed" as const,
+    stepBefore: "menu_inicial",
+    stepAfter: "aguardando_conta",
+    drainedTurns: 0,
+    sendError: "connection_closed",
+  };
+
+  it("desfaz o avanço quando o canal recusou a pergunta do novo passo", () => {
+    expect(shouldRevertStepAfterFailedSend(base)).toBe(true);
+  });
+
+  it("não desfaz quando a mensagem saiu (sent) ou ficou na fila (queued)", () => {
+    expect(shouldRevertStepAfterFailedSend({ ...base, deliveryStatus: "sent" })).toBe(false);
+    expect(shouldRevertStepAfterFailedSend({ ...base, deliveryStatus: "queued" })).toBe(false);
+    expect(shouldRevertStepAfterFailedSend({ ...base, deliveryStatus: null })).toBe(false);
+  });
+
+  it("não desfaz se a rajada foi drenada — o estado já é de outro turno", () => {
+    expect(shouldRevertStepAfterFailedSend({ ...base, drainedTurns: 1 })).toBe(false);
+  });
+
+  it("não desfaz quando o silêncio é intencional (humano assumiu / DNC)", () => {
+    expect(shouldRevertStepAfterFailedSend({ ...base, sendError: "paused_by_human" })).toBe(false);
+    expect(shouldRevertStepAfterFailedSend({ ...base, sendError: "dnc" })).toBe(false);
+  });
+
+  it("não desfaz quando o turno não mudou de etapa", () => {
+    expect(shouldRevertStepAfterFailedSend({ ...base, stepAfter: "menu_inicial" })).toBe(false);
+    expect(shouldRevertStepAfterFailedSend({ ...base, stepAfter: null })).toBe(false);
+    expect(shouldRevertStepAfterFailedSend({ ...base, stepAfter: "  " })).toBe(false);
+  });
+});
+
 const FN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../supabase/functions");
 
 describe("guarda estática — caminho Whapi/Grupo A", () => {
@@ -201,5 +237,20 @@ describe("guarda estática — caminho Whapi/Grupo A", () => {
     const src = readFileSync(path.join(FN, "whapi-webhook/handlers/bot-flow.ts"), "utf8");
     expect(src).toContain("okSend = await sendText(remoteJid, it.text)");
     expect(src).toMatch(/if \(okSend === false\)[\s\S]{0,240}continue;/);
+  });
+});
+
+describe("guarda estática — caminho Evolution/Grupo A", () => {
+  const src = readFileSync(path.join(FN, "evolution-webhook/index.ts"), "utf8");
+
+  it("aplica a compensação de etapa com o resultado real do envio", () => {
+    expect(src).toContain("shouldRevertStepAfterFailedSend");
+    expect(src).toContain("sendError: sendResult.error ?? null");
+    expect(src).toContain("conversation_step: primaryRawStepBefore");
+  });
+
+  it("alimenta a decisão com o número real de turnos drenados", () => {
+    expect(src).toMatch(/drainedTurns = drained;/);
+    expect(src).toContain("drainedTurns,");
   });
 });
