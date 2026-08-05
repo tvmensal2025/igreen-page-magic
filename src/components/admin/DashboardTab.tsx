@@ -176,7 +176,7 @@ export function DashboardTab({
       };
       walletMine = filterMyClients(walletAll, expandedSettings);
     }
-    // Total de cadastros = carteira sincronizada (bate com o portal).
+    // analise oq foi feito: Total de cadastros = carteira sincronizada (bate com o portal).
     // Aplica somente o filtro de licenciado quando o usuário seleciona um.
     const walletForTotal = selectedLicenciado === "all"
       ? walletAll
