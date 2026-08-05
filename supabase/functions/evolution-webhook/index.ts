@@ -61,7 +61,11 @@ import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled, isCustomerPausedByHuman, wrapSenderWithLivePauseGuard } from "../_shared/bot/paused.ts";
 import { evaluateLowBillReentry } from "../_shared/bot/low-bill-reentry.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
-import { findGenericKeywords, matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
+import {
+  deriveEffectiveKeywordList,
+  matchKeyword,
+  type PartnerKeywordSource,
+} from "../_shared/keyword-matcher.ts";
 import { extractShortCodeMarker } from "../_shared/qr-phrase.ts";
 import { makeIdempotentEnviarTexto } from "../_shared/bot/conversational-send-idempotency.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../_shared/multi-field-extractor.ts";
@@ -1554,24 +1558,26 @@ Deno.serve(async (req) => {
           if (!matchedPartnerId) {
             const { data: partnerRows } = await supabase
               .from("referral_partners")
-              .select("id, keywords, consultant_id")
+              .select("id, keywords, nome, qr_phrase, consultant_id")
               .in("consultant_id", partnerScopeIds)
               .eq("is_active", true);
             const partners = orderPartnersByScope(partnerRows as any[], partnerScopeIds);
 
             if (partners?.length) {
-              const partnerKeywords: PartnerKeywords[] = partners.map((p: any) => ({
-                partnerId: p.id,
-                keywords: p.keywords || [],
-              }));
-              // Keyword genérica nunca atribui (caso "Zap" do José). Avisa qual
-              // parceiro precisa trocar a palavra em vez de falhar calado.
-              const kwRuins = findGenericKeywords(partnerKeywords);
-              if (kwRuins.length) {
+              // Keyword genérica ("Zap") ou vazia não atribui sozinha: derivamos
+              // uma versão qualificada pela frase do QR / nome do parceiro.
+              const partnerKeywords = deriveEffectiveKeywordList(
+                partners.map((p: any): PartnerKeywordSource => ({
+                  partnerId: p.id,
+                  keywords: p.keywords || [],
+                  nome: p.nome,
+                  qrPhrase: p.qr_phrase,
+                })),
+              );
+              const semKeyword = partners.length - partnerKeywords.length;
+              if (semKeyword > 0) {
                 console.warn(
-                  `[partner-match] keywords genéricas ignoradas: ${
-                    kwRuins.map((k) => `${k.partnerId}="${k.keyword}"`).join(", ")
-                  } — parceiro precisa trocar por algo único`,
+                  `[partner-match] ${semKeyword} parceiro(s) sem keyword utilizável — precisam de palavra única`,
                 );
               }
               const match = matchKeyword(messageText, partnerKeywords);

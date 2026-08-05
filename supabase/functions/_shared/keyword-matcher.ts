@@ -29,6 +29,14 @@ export interface PartnerKeywords {
   keywords: string[];
 }
 
+/** Linha crua de `referral_partners` usada para derivar a keyword efetiva. */
+export interface PartnerKeywordSource {
+  partnerId: string;
+  keywords?: string[] | null;
+  nome?: string | null;
+  qrPhrase?: string | null;
+}
+
 const BASE_URL = "https://digital.igreenenergy.com.br/";
 
 /**
@@ -169,6 +177,78 @@ export function findGenericKeywords(
     }
   }
   return out;
+}
+
+/**
+ * Ligações e verbos de frase que não qualificam nada sozinhos — usados para
+ * escolher um vizinho útil ao expandir uma keyword genérica.
+ */
+const FILLER_TOKENS = new Set([
+  "a", "o", "as", "os", "um", "uma", "de", "do", "da", "dos", "das", "em",
+  "no", "na", "nos", "nas", "pelo", "pela", "por", "para", "pra", "com", "e",
+  "que", "me", "eu", "vim", "quero", "queria", "gostaria", "saber", "ola",
+  "oi", "vi", "sou", "aqui", "voces", "vcs", "seu", "sua", "minha", "meu",
+]);
+
+/**
+ * Keyword efetiva de um parceiro — o que o runtime realmente usa para atribuir.
+ *
+ * O QR não carrega marcador: quem identifica o parceiro é a palavra dentro da
+ * frase. Só que na prática o cadastro vem torto e o parceiro perde o lead:
+ *   • keyword genérica ("Zap") → `isGenericKeyword` descarta e sobra nada;
+ *   • keyword vazia → nunca casa.
+ *
+ * Em vez de falhar calado, derivamos algo utilizável:
+ *   1. keywords próprias que já servem;
+ *   2. keyword genérica QUALIFICADA pelo vizinho na frase do QR
+ *      ("Zap" + "Olá! Vim pela indicação da Loja Zap…" → "loja zap");
+ *   3. por último, o nome do parceiro, quando ele mesmo não é genérico.
+ *
+ * A régua de match continua exata — só a lista de candidatos fica honesta.
+ */
+export function deriveEffectiveKeywords(partner: PartnerKeywordSource): PartnerKeywords {
+  const raw = (partner.keywords || []).filter((k) => String(k || "").trim());
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (kw: string) => {
+    const n = normalizeText(kw);
+    if (!n || seen.has(n) || isGenericKeyword(kw)) return;
+    seen.add(n);
+    out.push(kw);
+  };
+
+  for (const kw of raw) push(kw);
+  if (out.length > 0) return { partnerId: partner.partnerId, keywords: out };
+
+  const phraseTokens = tokensOf(normalizeText(partner.qrPhrase || ""));
+  for (const kw of raw) {
+    const kwTokens = tokensOf(normalizeText(kw));
+    if (kwTokens.length === 0) continue;
+    for (let i = 0; i + kwTokens.length <= phraseTokens.length; i++) {
+      if (!kwTokens.every((tk, j) => phraseTokens[i + j] === tk)) continue;
+      const before = i > 0 ? phraseTokens[i - 1] : "";
+      const after = phraseTokens[i + kwTokens.length] || "";
+      if (before && !FILLER_TOKENS.has(before)) push(`${before} ${kwTokens.join(" ")}`);
+      if (out.length === 0 && after && !FILLER_TOKENS.has(after)) {
+        push(`${kwTokens.join(" ")} ${after}`);
+      }
+      if (out.length > 0) break;
+    }
+    if (out.length > 0) break;
+  }
+  if (out.length > 0) return { partnerId: partner.partnerId, keywords: out };
+
+  push(String(partner.nome || ""));
+  return { partnerId: partner.partnerId, keywords: out };
+}
+
+/** Aplica `deriveEffectiveKeywords` a uma lista, descartando quem ficou sem nada. */
+export function deriveEffectiveKeywordList(
+  partners: PartnerKeywordSource[],
+): PartnerKeywords[] {
+  return (partners || [])
+    .map(deriveEffectiveKeywords)
+    .filter((p) => p.keywords.length > 0);
 }
 
 /**

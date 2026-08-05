@@ -1,6 +1,8 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildCadastroLink,
+  deriveEffectiveKeywordList,
+  deriveEffectiveKeywords,
   findGenericKeywords,
   hasExactTokenSequence,
   isGenericKeyword,
@@ -153,6 +155,56 @@ Deno.test("findGenericKeywords aponta o parceiro que precisa trocar a palavra", 
   assertEquals(ruins.length, 1);
   assertEquals(ruins[0].partnerId, "partner-jose");
   assertEquals(ruins[0].keyword, "Zap");
+});
+
+Deno.test("deriveEffectiveKeywords: 'Zap' + frase do QR vira 'loja zap' (caso José)", () => {
+  const eff = deriveEffectiveKeywords({
+    partnerId: "partner-jose",
+    keywords: ["Zap"],
+    nome: "Jose luiz",
+    qrPhrase:
+      "Olá! Vim pela indicação da Loja Zap e gostaria de saber como posso economizar na conta de luz.",
+  });
+  assertEquals(eff.keywords, ["loja zap"]);
+  assertEquals(
+    matchKeyword(
+      "Olá! Vim pela indicação da Loja Zap e gostaria de saber como economizar.",
+      [eff],
+    )?.partnerId,
+    "partner-jose",
+  );
+  // "zap" solto continua sem atribuir
+  assertEquals(matchKeyword("me chama no zap", [eff]), null);
+});
+
+Deno.test("deriveEffectiveKeywords: sem keyword usa o nome do parceiro", () => {
+  const eff = deriveEffectiveKeywords({
+    partnerId: "partner-rodrigo",
+    keywords: [],
+    nome: "Rodrigo Horácio",
+    qrPhrase: null,
+  });
+  assertEquals(eff.keywords, ["Rodrigo Horácio"]);
+  assertEquals(
+    matchKeyword("Oi, o Rodrigo Horacio me indicou", [eff])?.partnerId,
+    "partner-rodrigo",
+  );
+});
+
+Deno.test("deriveEffectiveKeywords: keyword boa passa intacta e genérica não sobra", () => {
+  const boa = deriveEffectiveKeywords({
+    partnerId: "p1",
+    keywords: ["nilma", "Zap"],
+    nome: "Nilma Santana",
+  });
+  assertEquals(boa.keywords, ["nilma"]);
+
+  // Nome também genérico e frase sem âncora → parceiro fica de fora da lista.
+  const lista = deriveEffectiveKeywordList([
+    { partnerId: "p2", keywords: ["oi"], nome: "Loja", qrPhrase: "Oi, quero desconto" },
+    boa,
+  ]);
+  assertEquals(lista.map((p) => p.partnerId), ["p1"]);
 });
 
 Deno.test("allowGeneric:true existe só para diagnóstico", () => {

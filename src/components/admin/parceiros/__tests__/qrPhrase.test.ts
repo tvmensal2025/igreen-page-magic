@@ -149,14 +149,14 @@ describe("resolveQrMessage — decisão da mensagem final", () => {
 
 });
 
-describe("resolveQrMessage — anexa marcador #R (atribuição determinística)", () => {
-  it("anexa #R quando recebe shortCode", () => {
+describe("resolveQrMessage — atribuição SÓ por keyword (sem marcador #R)", () => {
+  it("não anexa #R mesmo recebendo shortCode", () => {
     const msg = resolveQrMessage(null, "Valdenice", "482917");
-    expect(msg).toMatch(/#R482917/i);
+    expect(msg).not.toMatch(/#R/i);
     expect(msg).toContain("Valdenice");
   });
 
-  it("não duplica #R já digitado na frase salva", () => {
+  it("preserva #R já digitado na frase salva pelo consultor", () => {
     const custom = "Oi, vim pela Valdenice #R482917 hoje";
     const msg = resolveQrMessage(custom, "Valdenice", "482917");
     expect(msg).toBe(custom);
@@ -167,12 +167,12 @@ describe("resolveQrMessage — anexa marcador #R (atribuição determinística)"
     expect(resolveQrMessage(null, "Valdenice", undefined)).not.toMatch(/#R/i);
   });
 
-  it("frase longa ganha #R no final (marcador prevalece)", () => {
+  it("frase longa é respeitada e continua sem marcador", () => {
     const longa =
       "Olá, a Valdenice me indicou você porque quero economizar na minha conta de luz e queria saber mais.";
     const msg = resolveQrMessage(longa, "Valdenice", "482917");
-    expect(msg).toMatch(/#R482917/i);
-    expect(msg.startsWith(longa)).toBe(true);
+    expect(msg).toBe(longa);
+    expect(msg).not.toMatch(/#R/i);
   });
 });
 

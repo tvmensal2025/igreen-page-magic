@@ -61,13 +61,14 @@ function buildDefaultPhrase(keyword: string): string {
 /**
  * Resolver local para o deploy não depender de bundle compartilhado em cache.
  *
- * Atribuição: keyword na frase + marcador `#R{short_code}` (religado 2026-08-05).
- * O webhook prioriza short_code via extractShortCodeMarker; keyword é fallback.
+ * ATRIBUIÇÃO = SOMENTE KEYWORD (decisão 2026-08-03). O marcador `#R{short_code}`
+ * foi removido do texto: cada consultor/parceiro atende em instância própria
+ * (Whapi do superadmin ou Evolution do consultor), então a keyword não colide
+ * entre canais. O webhook ainda entende `#R` de QR antigo já impresso.
  */
 function resolveQrMessage(
   qrPhrase: string | null | undefined,
   keyword: string | null | undefined,
-  shortCode?: string | null,
 ): string {
   const custom = tidyPhrase(qrPhrase ?? "");
   const kw = tidyPhrase(keyword ?? "");
@@ -77,10 +78,6 @@ function resolveQrMessage(
   if (kw && !normalizePhrase(message).includes(normalizePhrase(kw))) {
     const withKeyword = tidyPhrase(`${message} ${kw}`);
     if (withKeyword.length <= QR_PHRASE_MAX) message = withKeyword;
-  }
-  const digits = String(shortCode ?? "").replace(/\D/g, "");
-  if (/^\d{3,}$/.test(digits) && !new RegExp(`#?\\s*R\\s*${digits}\\b`, "i").test(message)) {
-    message = tidyPhrase(`${message} #R${digits}`);
   }
   return message;
 }
@@ -433,7 +430,6 @@ Deno.serve(async (req) => {
         message = resolveQrMessage(
           custom || (msgParam ?? "").trim() || partner.qr_phrase,
           kw || keywordParam || partner.nome,
-          short || partner.short_code,
         );
       } else {
         const fromQuery = (keywordParam ?? "").trim();
@@ -449,7 +445,7 @@ Deno.serve(async (req) => {
         // compatibilidade para QR antigo quando ainda não existe frase salva.
         const phraseSource =
           (partner.qr_phrase as string | null) || (msgParam ?? "").trim();
-        message = resolveQrMessage(phraseSource, keyword, short || partner.short_code);
+        message = resolveQrMessage(phraseSource, keyword);
       }
     }
 
