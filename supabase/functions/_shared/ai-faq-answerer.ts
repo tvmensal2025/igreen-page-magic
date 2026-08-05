@@ -17,6 +17,7 @@
 import { aiChatCascade } from "./ai-gateway.ts";
 import { trackAIUsage } from "./ai-cost-tracker.ts";
 import { formatFaqReply, withSoftFlowClose } from "./format-reply.ts";
+import { checkCustomerSafeText } from "./customer-safe-text.ts";
 import { resolveFlowId } from "./resolve-flow.ts";
 import {
   resolveConsultantPresentationLabel,
@@ -236,13 +237,22 @@ export async function answerFaqWithAI(opts: {
       question: q,
       consultantId: opts.consultantId,
     });
+    // `text_response` vai cru para o WhatsApp. Se veio placeholder sem
+    // substituir ou texto de bastidor, é melhor deixar o LLM responder.
     if (exact) {
-      return {
-        text: formatFaqReply(exact.text.slice(0, 1200)),
-        confidence: 1,
-        shouldHandoff: false,
-        source: "exact_qa",
-      };
+      const seguro = checkCustomerSafeText(exact.text);
+      if (seguro.safe) {
+        return {
+          text: formatFaqReply(exact.text.slice(0, 1200)),
+          confidence: 1,
+          shouldHandoff: false,
+          source: "exact_qa",
+        };
+      }
+      console.warn("[ai-faq-answerer] QA exata bloqueada antes de virar mensagem", {
+        motivo: seguro.reason,
+        trecho: seguro.evidence,
+      });
     }
   } catch (e) {
     console.warn("[ai-faq-answerer] exact-match lookup failed (fallback to LLM):", (e as Error).message);
@@ -379,6 +389,15 @@ PERGUNTA DO LEAD: "${q.slice(0, 600)}"`;
     }
 
     const answer = String(parsed.text).trim().slice(0, 1200);
+    // O modelo pode ecoar trecho do conhecimento (ou do próprio prompt).
+    const seguro = checkCustomerSafeText(answer);
+    if (!seguro.safe) {
+      console.warn("[ai-faq-answerer] resposta do modelo bloqueada", {
+        motivo: seguro.reason,
+        trecho: seguro.evidence,
+      });
+      return { text: "", confidence: 0, shouldHandoff: true, source: "skipped" };
+    }
     const handoff = !!parsed.shouldHandoff;
     // Fechamento neutro (sem pressão de cadastro). Em handoff, não anexa
     // ponte — a mensagem de transferência cuida do próximo passo.

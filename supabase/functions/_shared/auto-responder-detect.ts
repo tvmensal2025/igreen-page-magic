@@ -67,7 +67,8 @@ const SIGNALS: Array<{ id: string; re: RegExp }> = [
     re: /obrigad[oa]\s+pel[oa]s?\s+(contato|mensagem|retorno)[\s\S]{0,80}(à\s+disposi[çc][ãa]o|a\s+disposi[çc][ãa]o|caso\s+necessite|caso\s+precise|nossa\s+equipe|nosso\s+time|hor[áa]rio)/i,
   },
   // "Eu sou a Vel, assistente virtual da Velip" / "Sou assistente virtual da DM"
-  { id: "assistente_virtual", re: /assistente\s+(virtual|digital)/i },
+  // "Eu sou atendente virtual na Ethos" — uma letra de diferença deixava passar.
+  { id: "assistente_virtual", re: /(assistente|atendente)\s+(virtual|digital)/i },
   // "Deixe sua nota de 1 a 5 para o atendimento" (pesquisa deles, não nossa)
   { id: "pesquisa_nota", re: /(nota|avalia[çc][ãa]o)\s+de\s+\d\s+a\s+\d/i },
   { id: "opiniao_atendimento", re: /(queremos|gostar[íi]amos\s+de)\s+saber\s+(a\s+)?sua\s+opini[ãa]o/i },
@@ -95,6 +96,21 @@ const SIGNALS: Array<{ id: string; re: RegExp }> = [
     id: "oferta_credito",
     re: /\btrabalhamos\s+com\b[\s\S]{0,100}(empr[ée]stimo|consignado|fgts|cart[ãa]o\s+de\s+cr[ée]dito|cons[óo]rcio|financiamento)/i,
   },
+
+  // ─── 4ª rodada (URA "Ethos", caso real 2026-08-04) ───────────────────────
+  // Ping-pong de 15 mensagens em 2 minutos: a URA deles reapresentava o menu a
+  // cada resposta nossa. Nenhuma assinatura acima pegava esse formato.
+
+  // "Seu protocolo de atendimento é 20266217978067475662!" — só URA gera
+  // protocolo numérico; o nosso nunca aparece em mensagem (regra do projeto).
+  { id: "protocolo_atendimento", re: /protocolo\s+de\s+atendimento\s*(é|e|:|n[ºo°])/i },
+  // "Digite o número de uma das opções 👇" — a variante com "o número de"
+  // não casava no `menu_opcoes`.
+  { id: "menu_digite_numero", re: /digite\s+(o\s+)?(n[úu]mero|n[ºo°])\s+d[eao]s?\s+(uma\s+)?d?a?s?\s*op[çc][õo]es/i },
+  // "Ops! Opção inválida!" — resposta padrão de menu que não entendeu.
+  { id: "menu_opcao_invalida", re: /op[çc][ãa]o\s+(inv[áa]lida|incorreta|n[ãa]o\s+reconhecida)/i },
+  // "Com qual assunto posso te ajudar?" — abertura de URA por assunto.
+  { id: "menu_qual_assunto", re: /(com\s+)?qual\s+assunto\s+(posso|deseja|gostaria)/i },
 ];
 
 export type AutoResponderVerdict =

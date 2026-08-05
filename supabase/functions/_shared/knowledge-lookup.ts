@@ -2,6 +2,7 @@
 // Looks up consultant FAQ first, then active knowledge sections. No LLM calls.
 
 import { phraseMatchesMessage as phraseMatchesShared, QA_STOPWORDS } from "./qa-phrase-match.ts";
+import { checkCustomerSafeText } from "./customer-safe-text.ts";
 
 type LookupResult = {
   found: boolean;
@@ -24,6 +25,28 @@ function normalizeText(text: string): string {
 
 function phraseMatches(phraseRaw: string, messageRaw: string): boolean {
   return phraseMatchesShared(phraseRaw, messageRaw);
+}
+
+/**
+ * O texto daqui vai CRU para o WhatsApp (modo kb-only, sem LLM). Em 04/08 uma
+ * seção que era o prompt da IA foi enviada a 5 leads. Conteúdo que não parece
+ * resposta ao cliente vira "não encontrei": o chamador segue para o LLM ou
+ * para o humano em vez de despejar bastidor no lead.
+ */
+function descartaSeInseguro(
+  text: string,
+  origem: "bot_flow_qa" | "ai_knowledge_sections",
+  ref: string,
+): boolean {
+  const v = checkCustomerSafeText(text);
+  if (v.safe) return false;
+  console.warn("[knowledge-lookup] conteúdo bloqueado antes de virar mensagem", {
+    origem,
+    ref,
+    motivo: v.reason,
+    trecho: v.evidence,
+  });
+  return true;
 }
 
 function tokenScore(queryRaw: string, haystackRaw: string): number {
@@ -83,6 +106,8 @@ async function semanticLookup(
       const bloco = `${r.titulo ? r.titulo + "\n" : ""}${r.conteudo || ""}`.trim();
       if (!bloco) continue;
       if (text.length + bloco.length > 1500) break;
+      // Um bloco ruim contamina a resposta inteira: descarta só ele.
+      if (descartaSeInseguro(bloco, "ai_knowledge_sections", r.titulo || "(sem título)")) continue;
       text += (text ? "\n\n" : "") + bloco;
     }
     if (!text.trim()) return null;
@@ -127,7 +152,9 @@ export async function lookupKnowledge(opts: {
           const qa = ((qaRows as Array<{ id: string; text_response: string | null; position: number }>) || [])
             .find((q) => q.id === hit.qa_id);
           const text = String(qa?.text_response || "").trim();
-          if (text) return { found: true, text: text.slice(0, 1200), source: "bot_flow_qa", confidence: 1 };
+          if (text && !descartaSeInseguro(text, "bot_flow_qa", String(hit.qa_id))) {
+            return { found: true, text: text.slice(0, 1200), source: "bot_flow_qa", confidence: 1 };
+          }
         }
       }
     }
@@ -155,10 +182,12 @@ export async function lookupKnowledge(opts: {
     .filter((s) => s.score >= 0.5)
     .sort((a, b) => b.score - a.score);
 
-  if (ranked.length === 0) return { found: false, text: "", source: "none", confidence: 0 };
-  const best = ranked[0];
-  const text = String(best.content || best.title || "").trim().slice(0, 1200);
-  return text
-    ? { found: true, text, source: "ai_knowledge_sections", confidence: Math.min(0.9, best.score) }
-    : { found: false, text: "", source: "none", confidence: 0 };
+  // Se a melhor seção for interna, tenta a próxima em vez de calar de vez.
+  for (const best of ranked) {
+    const text = String(best.content || best.title || "").trim().slice(0, 1200);
+    if (!text) continue;
+    if (descartaSeInseguro(text, "ai_knowledge_sections", best.title || "(sem título)")) continue;
+    return { found: true, text, source: "ai_knowledge_sections", confidence: Math.min(0.9, best.score) };
+  }
+  return { found: false, text: "", source: "none", confidence: 0 };
 }

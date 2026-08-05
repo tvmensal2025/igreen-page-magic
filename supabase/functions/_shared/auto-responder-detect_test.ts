@@ -143,6 +143,30 @@ Deno.test("lead que fala de crédito/link NÃO vira robô", () => {
   assertEquals(isAutoResponderText("somos a família Silva, moramos os dois aqui"), false);
 });
 
+Deno.test("URA Ethos: ping-pong de 15 mensagens em 2 min (caso real 04/08)", () => {
+  // A 1ª mensagem tem que casar — é ela que pausa o bot antes do loop começar.
+  const casos: Array<[string, string]> = [
+    ["Olá,\n\nEu sou atendente virtual na *Ethos*!", "assistente_virtual"],
+    ["Seu protocolo de atendimento é 20266217978067475662!", "protocolo_atendimento"],
+    ["Com qual assunto posso te ajudar?\nDigite o número de uma das opções 👇", "menu_digite_numero"],
+    ["Ops! Opção inválida!", "menu_opcao_invalida"],
+    ["Opção invalida, tente de novo", "menu_opcao_invalida"],
+  ];
+  for (const [texto, sinal] of casos) {
+    const v = detectAutoResponder(texto);
+    assertEquals(v.isAutoResponder, true, `deveria detectar robô: ${texto}`);
+    if (v.isAutoResponder) assertEquals(v.signal, sinal);
+  }
+});
+
+Deno.test("lead que fala de protocolo/opção/atendente NÃO vira robô", () => {
+  assertEquals(isAutoResponderText("qual o número do protocolo do meu cadastro?"), false);
+  assertEquals(isAutoResponderText("escolhi a opção errada, dá pra corrigir?"), false);
+  assertEquals(isAutoResponderText("prefiro falar com um atendente de verdade"), false);
+  assertEquals(isAutoResponderText("digite meu nome errado no cadastro"), false);
+  assertEquals(isAutoResponderText("qual assunto era mesmo? esqueci"), false);
+});
+
 Deno.test("variantes URA: bem-vindo (a) e 'pelo o seu contato'", () => {
   assertEquals(
     detectAutoResponder("Olá! Seja bem-vindo (a) à Clínica XYZ. Aguarde.").isAutoResponder,

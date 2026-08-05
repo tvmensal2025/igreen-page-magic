@@ -2084,6 +2084,45 @@ Deno.serve(async (req) => {
       }
     }
 
+    // Freio de ping-pong — paridade com o Whapi. Olha o ritmo, não o texto:
+    // oito respostas automáticas em dez minutos sem avançar passo é loop.
+    if (customer && messageText && !buttonId) {
+      try {
+        const { evaluatePingPongForCustomer, PING_PONG_PAUSE_REASON, pingPongPauseUntil } =
+          await import("../_shared/ping-pong-brake.ts");
+        const verdict = await evaluatePingPongForCustomer(supabase, {
+          customerId: customer.id,
+          humanTookOver: !!(customer as any).assigned_human_id,
+          alreadyPaused: (customer as any).bot_paused === true,
+        });
+        if (verdict.brake) {
+          await supabase.from("customers").update({
+            bot_paused: true,
+            bot_paused_reason: PING_PONG_PAUSE_REASON,
+            bot_paused_at: new Date().toISOString(),
+            bot_paused_until: pingPongPauseUntil(),
+            updated_at: new Date().toISOString(),
+          }).eq("id", customer.id).then(() => {}, () => {});
+          await supabase.from("conversations").insert({
+            customer_id: customer.id,
+            message_direction: "inbound",
+            message_text: String(messageText).slice(0, 2000),
+            message_type: "text",
+            conversation_step: (customer as any).conversation_step ?? null,
+          }).then(() => {}, () => {});
+          console.warn(
+            `[ping-pong] customer=${customer.id} auto=${verdict.autoReplies} — bot pausado, sem resposta`,
+          );
+          return new Response(
+            JSON.stringify({ ok: true, skipped: PING_PONG_PAUSE_REASON }),
+            { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+      } catch (e) {
+        console.warn("[ping-pong] freio falhou:", (e as any)?.message);
+      }
+    }
+
     // Retentativa pós-reprovado: botão → sai da carteira e entra Grupo A (cadastro).
     if (customer && (buttonId || messageText)) {
       const { isPosVendaRetentativaClick, activatePosVendaRecadastro } = await import(

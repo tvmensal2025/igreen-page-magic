@@ -155,7 +155,13 @@ jobs:
             supabase/functions/_shared/evolution-api_idempotency_test.ts \
             supabase/functions/_shared/cadence-hooks_test.ts \
             supabase/functions/_shared/__tests__/cliente-cadence-guard_test.ts \
-            supabase/functions/_shared/__tests__/crm-vs-lead-analysis_test.ts
+            supabase/functions/_shared/__tests__/crm-vs-lead-analysis_test.ts \
+            supabase/functions/_shared/auto-responder-detect_test.ts \
+            supabase/functions/_shared/customer-safe-text_test.ts \
+            supabase/functions/_shared/ping-pong-brake_test.ts \
+            supabase/functions/_shared/outreach-caps_test.ts \
+            supabase/functions/_shared/cadence-ack-policy_test.ts \
+            supabase/functions/_shared/cadence-inbound-router_test.ts
 
   engine-purity-check:
     name: Engine purity lint (v3-runner.ts)
