@@ -1618,15 +1618,23 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (it.kind === "text" && it.text) {
           try {
             const useButtons = isLast && _buttons.length > 0;
+            // Mesma checagem já usada no envio de mídia abaixo: sender que
+            // devolve `false` (guard de pausa/humano, destino inválido, erro
+            // Whapi) não conta como enviado nem entra no histórico.
+            let okSend: unknown = true;
             if (useButtons) {
               const renderedButtons = _buttons.map((b) => ({
                 id: b.id,
                 title: applyVars(b.title).slice(0, 20),
               }));
-              await sendButtons(remoteJid, it.text, renderedButtons);
-              buttonsSent = true;
+              okSend = await sendButtons(remoteJid, it.text, renderedButtons);
+              if (okSend !== false) buttonsSent = true;
             } else {
-              await sendText(remoteJid, it.text);
+              okSend = await sendText(remoteJid, it.text);
+            }
+            if (okSend === false) {
+              console.warn(`[dispatch:${stepKey}] envio de texto recusado pelo canal — não gravado no histórico`);
+              continue;
             }
             await supabase.from("conversations").insert({
               customer_id: customer.id,

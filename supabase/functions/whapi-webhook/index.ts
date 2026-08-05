@@ -32,6 +32,7 @@ import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead, not
 import { mirrorCustomerToCaptation } from "../_shared/captation/mirror-customer.ts";
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isCustomerPausedByHuman, isConsultantAIDisabled, wrapSenderWithLivePauseGuard } from "../_shared/bot/paused.ts";
+import { commitOutboundTurn } from "../_shared/bot/outbound-commit.ts";
 import { handoffResumeAtIso } from "../_shared/bot/handoff-resume.ts";
 import { evaluateLowBillReentry } from "../_shared/bot/low-bill-reentry.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
@@ -3178,25 +3179,28 @@ Deno.serve(async (req) => {
         if (k.startsWith("__")) delete (localUpdates as any)[k];
       }
 
-      if (Object.keys(localUpdates).length > 0) {
-        const { error: updateError } = await supabase.from("customers").update(localUpdates).eq("id", customer.id).select();
+      // Persistência do turno. Chamada por `commitOutboundTurn` DEPOIS da
+      // confirmação do envio — se o canal recusou, `updates` já chega sem os
+      // campos de progresso (conversation_step, last_bot_reply_at, …).
+      const persistTurnUpdates = async (updates: Record<string, any>) => {
+        const { error: updateError } = await supabase.from("customers").update(updates).eq("id", customer.id).select();
         if (updateError) console.error(`❌ ERRO ao salvar updates:`, updateError);
-        else Object.assign(customer, localUpdates);
-        if (localUpdates.conversation_step && stripPrefix(localUpdates.conversation_step) !== turnStepBefore) {
+        else Object.assign(customer, updates);
+        if (updates.conversation_step && stripPrefix(updates.conversation_step) !== turnStepBefore) {
           await logStepTransition(supabase, {
             customer_id: customer.id, consultant_id: superAdminConsultantId,
-            phone, from_step: turnStepBefore, to_step: stripPrefix(localUpdates.conversation_step),
+            phone, from_step: turnStepBefore, to_step: stripPrefix(updates.conversation_step),
             intent: __intent, confidence: __confidence,
           });
         }
-        if (localUpdates.conversation_step) {
+        if (updates.conversation_step) {
           await syncCustomerStage(supabase, {
             customerId: customer.id,
-            stepKeyAfter: localUpdates.conversation_step,
+            stepKeyAfter: updates.conversation_step,
             consultantId: customer.consultant_id || superAdminConsultantId,
           });
         }
-      }
+      };
 
       const handlerSentInline = localReply === "" && (Object.keys(localUpdates).length > 0 || __inline_sent_flag);
       let finalReply = localReply;
@@ -3213,8 +3217,8 @@ Deno.serve(async (req) => {
           finalReply = scrubLegacyWelcomeRoleLeak(finalReply);
         } catch (_) { /* best-effort */ }
       }
+      let isDuplicate = false;
       if (finalReply?.trim()) {
-        let isDuplicate = false;
         try {
           const sinceIso = new Date(Date.now() - 60_000).toISOString();
           const { data: lastOut } = await supabase
@@ -3230,17 +3234,37 @@ Deno.serve(async (req) => {
             isDuplicate = true;
           }
         } catch (_) { /* noop */ }
+      }
 
-        if (!isDuplicate) {
-          try { await sender.sendText(remoteJid, finalReply); } catch (e: any) { console.error("Erro enviar:", e); }
+      // Ordem canônica: enviar → persistir estado → gravar histórico.
+      // Envio negado (guard de pausa/humano, destino inválido, erro Whapi)
+      // não avança etapa e não entra no histórico.
+      const commit = await commitOutboundTurn<Record<string, any>>({
+        updates: localUpdates,
+        reply: finalReply,
+        isDuplicate,
+        send: (text) => sender.sendText(remoteJid, text),
+        persistUpdates: persistTurnUpdates,
+        recordHistory: async (text) => {
           await supabase.from("conversations").insert({
             customer_id: customer.id,
             message_direction: "outbound",
-            message_text: finalReply,
+            message_text: text,
             message_type: "text",
             conversation_step: localUpdates.conversation_step || turnStepBefore,
           });
-        }
+        },
+        onSendFailure: (error) => {
+          console.error("Erro enviar:", error);
+        },
+      });
+      if (commit.sendAttempted && !commit.sendConfirmed) {
+        jsonLog("warn", "outbound_send_rejected", {
+          customer_id: customer.id,
+          step_before: turnStepBefore,
+          step_intended: localUpdates.conversation_step ?? null,
+          progress_stripped: commit.progressStripped,
+        });
       }
     };
 
