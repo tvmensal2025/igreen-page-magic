@@ -55,6 +55,53 @@ describe("blocklist de keyword — paridade front ↔ runtime", () => {
   });
 });
 
+describe("nome como chave — paridade front ↔ runtime", () => {
+  const casos: Array<[string, string]> = [
+    ["Erica", "Erica pereira"],
+    ["rafael", "Rafael Ferreira Dias"],
+    ["dias", "Rafael Ferreira Dias"],
+    ["Rafael Ferreira Dias", "Rafael Ferreira Dias"],
+    ["Daniel", "Daniel"],
+    ["mercado do elias", "Elias Souza"],
+  ];
+
+  it("isPartOfPartnerName concorda nos dois lados", () => {
+    for (const [kw, nome] of casos) {
+      expect(front.isPartOfPartnerName(kw, nome), `${kw} / ${nome}`).toBe(
+        runtime.isPartOfPartnerName(kw, nome),
+      );
+    }
+  });
+
+  it("isWeakNameKeyword concorda nos dois lados", () => {
+    for (const [kw, nome] of casos) {
+      expect(front.isWeakNameKeyword(kw, nome), `${kw} / ${nome}`).toBe(
+        runtime.isWeakNameKeyword(kw, nome),
+      );
+    }
+  });
+
+  it("o front mostra a mesma chave que o runtime vai usar", () => {
+    const nome = "Erica pereira";
+    const frase = "Olá, a Erica Pereira me indicou vocês porque quero economizar na luz";
+    expect(front.resolveEffectiveKeyword("Erica", nome, frase)).toBe("Erica pereira");
+    expect(
+      runtime.deriveEffectiveKeywords({
+        partnerId: "p",
+        keywords: ["Erica"],
+        nome,
+        qrPhrase: frase,
+      }).keywords[0],
+    ).toBe("Erica pereira");
+  });
+
+  it("nome fora da frase do QR não é expandido (a frase é o que o lead envia)", () => {
+    const nome = "Erica pereira";
+    const frase = "Olá, vim do Mercado da Erica e quero desconto na luz";
+    expect(front.resolveEffectiveKeyword("Erica", nome, frase)).toBe("Erica");
+  });
+});
+
 describe("blocklist — o caso José", () => {
   it('"Zap" é recusada (é como o brasileiro chama WhatsApp)', () => {
     expect(front.isGenericKeyword("Zap")).toBe(true);

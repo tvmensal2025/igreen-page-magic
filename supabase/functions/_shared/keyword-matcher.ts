@@ -179,32 +179,53 @@ export function findGenericKeywords(
   return out;
 }
 
-/**
- * Ligações e verbos de frase que não qualificam nada sozinhos — usados para
- * escolher um vizinho útil ao expandir uma keyword genérica.
- */
-const FILLER_TOKENS = new Set([
-  "a", "o", "as", "os", "um", "uma", "de", "do", "da", "dos", "das", "em",
-  "no", "na", "nos", "nas", "pelo", "pela", "por", "para", "pra", "com", "e",
-  "que", "me", "eu", "vim", "quero", "queria", "gostaria", "saber", "ola",
-  "oi", "vi", "sou", "aqui", "voces", "vcs", "seu", "sua", "minha", "meu",
-]);
+/** Frase curta demais não identifica ninguém — não serve de âncora. */
+const PHRASE_MIN_TOKENS = 4;
 
 /**
- * Keyword efetiva de um parceiro — o que o runtime realmente usa para atribuir.
+ * `true` quando a keyword é um pedaço do nome do parceiro — prenome solto
+ * ("Erica" em "Erica Pereira"), sobrenome solto, nome sem o meio.
+ * Comparação por token normalizado, então acento e caixa não contam.
+ */
+export function isPartOfPartnerName(keyword: string, nome: string | null | undefined): boolean {
+  const kwTokens = tokensOf(normalizeText(keyword));
+  const nomeTokens = tokensOf(normalizeText(nome || ""));
+  if (kwTokens.length === 0 || nomeTokens.length < 2) return false;
+  if (kwTokens.length >= nomeTokens.length) return false;
+  return kwTokens.every((t) => nomeTokens.includes(t));
+}
+
+/**
+ * `true` quando a chave depende de um nome que o parceiro não tem como
+ * qualificar: um único token, sem sobrenome no cadastro ("Daniel", "Bruna").
+ * A UI usa isso para pedir sobrenome ou local — o runtime não inventa nada.
+ */
+export function isWeakNameKeyword(keyword: string, nome: string | null | undefined): boolean {
+  const kwTokens = tokensOf(normalizeText(keyword));
+  if (kwTokens.length !== 1) return false;
+  const nomeTokens = tokensOf(normalizeText(nome || ""));
+  return nomeTokens.length <= 1 && nomeTokens.includes(kwTokens[0]);
+}
+
+/**
+ * Keywords efetivas de um parceiro — o que o runtime usa para atribuir.
  *
- * O QR não carrega marcador: quem identifica o parceiro é a palavra dentro da
- * frase. Só que na prática o cadastro vem torto e o parceiro perde o lead:
- *   • keyword genérica ("Zap") → `isGenericKeyword` descarta e sobra nada;
- *   • keyword vazia → nunca casa.
+ * NOME PODE SER A CHAVE, MAS TEM QUE SER O NOME INTEIRO
+ * ----------------------------------------------------
+ * O cadastro real salvava prenome solto: "rafael" (parceiro Rafael Ferreira
+ * Dias — que é também o nome do CONSULTOR), "Erica", "abel", "Daniel". Um lead
+ * escrevendo "o Rafael falou comigo" caía no parceiro errado. Prenome não
+ * identifica: identifica o nome completo.
  *
- * Em vez de falhar calado, derivamos algo utilizável:
- *   1. keywords próprias que já servem;
- *   2. keyword genérica QUALIFICADA pelo vizinho na frase do QR
- *      ("Zap" + "Olá! Vim pela indicação da Loja Zap…" → "loja zap");
- *   3. por último, o nome do parceiro, quando ele mesmo não é genérico.
+ * Então, quando a keyword é um pedaço do nome do parceiro e o nome inteiro
+ * aparece na frase do QR, a chave vira o NOME INTEIRO. Isso não é palpite — é
+ * a mesma string que o lead vai enviar ao escanear.
  *
- * A régua de match continua exata — só a lista de candidatos fica honesta.
+ * A frase do QR entra como chave extra (sequência longa e exata): quem mandou
+ * a frase do parceiro é lead daquele parceiro, sem depender de palavra solta.
+ * É o que cobre keyword genérica já gravada no banco ("Zap" do José) sem
+ * chutar qualificador — a versão anterior deduzia a palavra vizinha na frase
+ * ("Zap" → "loja zap"), e vizinho na frase é adivinhação.
  */
 export function deriveEffectiveKeywords(partner: PartnerKeywordSource): PartnerKeywords {
   const raw = (partner.keywords || []).filter((k) => String(k || "").trim());
@@ -217,28 +238,24 @@ export function deriveEffectiveKeywords(partner: PartnerKeywordSource): PartnerK
     out.push(kw);
   };
 
-  for (const kw of raw) push(kw);
-  if (out.length > 0) return { partnerId: partner.partnerId, keywords: out };
+  const nome = String(partner.nome || "");
+  const phrase = String(partner.qrPhrase || "");
+  const phraseTokens = tokensOf(normalizeText(phrase));
+  const nomeTokens = tokensOf(normalizeText(nome));
 
-  const phraseTokens = tokensOf(normalizeText(partner.qrPhrase || ""));
+  // Sem frase o material usa a frase padrão, que é montada com o nome inteiro.
+  const nomeUsavel = nomeTokens.length >= 2 &&
+    (phraseTokens.length === 0 || hasExactTokenSequence(phraseTokens, nomeTokens));
+
   for (const kw of raw) {
-    const kwTokens = tokensOf(normalizeText(kw));
-    if (kwTokens.length === 0) continue;
-    for (let i = 0; i + kwTokens.length <= phraseTokens.length; i++) {
-      if (!kwTokens.every((tk, j) => phraseTokens[i + j] === tk)) continue;
-      const before = i > 0 ? phraseTokens[i - 1] : "";
-      const after = phraseTokens[i + kwTokens.length] || "";
-      if (before && !FILLER_TOKENS.has(before)) push(`${before} ${kwTokens.join(" ")}`);
-      if (out.length === 0 && after && !FILLER_TOKENS.has(after)) {
-        push(`${kwTokens.join(" ")} ${after}`);
-      }
-      if (out.length > 0) break;
-    }
-    if (out.length > 0) break;
+    if (nomeUsavel && isPartOfPartnerName(kw, nome)) push(nome);
+    else push(kw);
   }
-  if (out.length > 0) return { partnerId: partner.partnerId, keywords: out };
 
-  push(String(partner.nome || ""));
+  if (out.length === 0 && nomeUsavel) push(nome);
+
+  if (phraseTokens.length >= PHRASE_MIN_TOKENS) push(phrase);
+
   return { partnerId: partner.partnerId, keywords: out };
 }
 
@@ -280,7 +297,11 @@ export function hasExactTokenSequence(msgTokens: string[], kwTokens: string[]): 
  *   1. Descarta keyword genérica / curta demais (`isGenericKeyword`)
  *   2. Normaliza texto e keyword
  *   3. Exige sequência contígua de tokens idênticos (word-boundary)
- *   4. Em empate, prefere a keyword mais longa
+ *   4. Prefere a keyword mais longa (a mais específica)
+ *   5. Empate de tamanho entre parceiros DIFERENTES → não atribui a ninguém
+ *
+ * O passo 5 existe porque empate é sorteio: dois parceiros com a mesma palavra
+ * (ou a mesma frase) dariam o lead para quem viesse primeiro na consulta.
  *
  * NÃO usa fuzzy/Levenshtein. Atribuição determinística preferida: `#R{short_code}`.
  *
@@ -300,6 +321,7 @@ export function matchKeyword(
 
   let best: KeywordMatchResult | null = null;
   let bestLen = -1;
+  let tied = false;
 
   for (const partner of partners) {
     for (const kw of partner.keywords) {
@@ -311,12 +333,15 @@ export function matchKeyword(
 
       if (normKw.length > bestLen) {
         bestLen = normKw.length;
+        tied = false;
         best = { partnerId: partner.partnerId, keyword: kw, score: 1.0 };
+      } else if (normKw.length === bestLen && best && best.partnerId !== partner.partnerId) {
+        tied = true;
       }
     }
   }
 
-  return best;
+  return tied ? null : best;
 }
 
 /**

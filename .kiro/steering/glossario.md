@@ -90,6 +90,8 @@ Worker Playwright separado (`worker-igreen-sync/`) que sincroniza consumo/comiss
 ## Takeover humano
 Consultor assume a conversa: `customer-takeover`, `start-customer-attendance`, `end-customer-attendance`. Pausa o bot com timeout de 24h (`humano_assumiu_whatsapp`).
 
+Responder pelo celular também assume: o webhook grava `customers.bot_paused_reason='humano_assumiu'` + `lead_cadence_state.paused_reason='handoff_humano'`. Essa pausa **tem prazo**: `_shared/bot/handoff-resume.ts` agenda a reavaliação (`HANDOFF_RESUME_HOURS = 48` de silêncio total na conversa) e o `cadence-tick` devolve o lead ao robô liberando `bot_paused`/`assigned_human_id`. Pedido do cliente (`requested`, `opt_out`, `complaint`, `blocked`), `bulk_pro` e DNC não voltam. Ver armadilha #63.
+
 ## Velip
 Provedor de voz/SMS. Erros críticos `IK/EK/CK/BK` (número inexistente) e 2×`UNDELIV`/72h em SMS acionam auto-DNC no `voice-dialer-webhook`.
 

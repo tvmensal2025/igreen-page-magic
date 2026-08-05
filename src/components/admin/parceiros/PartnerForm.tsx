@@ -16,7 +16,13 @@ import { useConfirm } from "@/components/ui/confirm-dialog";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/integrations/supabase/client";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
-import { buildDefaultQrPhrase, isGenericKeyword, QR_PHRASE_MAX } from "./qrPhrase";
+import {
+  buildDefaultQrPhrase,
+  isGenericKeyword,
+  isWeakNameKeyword,
+  QR_PHRASE_MAX,
+  resolveEffectiveKeyword,
+} from "./qrPhrase";
 import { HelpHint } from "@/components/ui/help-hint";
 import {
   Tooltip,
@@ -122,6 +128,11 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
     setKeywords(keywords.filter((k) => k !== kw));
   };
 
+  // Palavras que o runtime troca pelo nome inteiro do parceiro.
+  const expandedKeywords = keywords
+    .map((kw) => resolveEffectiveKeyword(kw, nome, qrPhrase))
+    .filter((eff, i) => eff !== keywords[i]);
+
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "Enter") {
       e.preventDefault();
@@ -213,9 +224,15 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
       // Bloqueia keywords genéricas que aparecem em texto natural de leads
       // (ex.: "energia", "desconto", "oi") — atribuiriam o lead errado.
       const generic = finalKeywords.find((k) => isGenericKeyword(k));
+      // Prenome sozinho, sem sobrenome no cadastro, é loteria: qualquer lead
+      // que escreva "Daniel" cairia aqui. O sistema não inventa o sobrenome.
+      const weak = finalKeywords.find((k) => isWeakNameKeyword(k, nome));
       if (generic) {
         newErrors.keywords =
           `"${generic}" é genérica demais e pode pegar lead de outro. Use algo único (ex.: sobrenome + cidade).`;
+      } else if (weak) {
+        newErrors.keywords =
+          `Só "${weak}" não identifica ninguém: qualquer cliente que escrever esse nome cairia neste parceiro. Complete com sobrenome ou o local (ex.: "${weak} Padaria Central").`;
       }
     }
 
@@ -507,6 +524,13 @@ export function PartnerForm({ open, partner, onClose, onSave, onDelete }: Partne
                     </Badge>
                   ))}
                 </div>
+              )}
+              {expandedKeywords.length > 0 && (
+                <p className="text-[10px] text-muted-foreground pt-0.5">
+                  O sistema vai procurar o nome inteiro{" "}
+                  {expandedKeywords.map((k) => `"${k}"`).join(", ")} na mensagem — só o
+                  primeiro nome pegaria cliente de outro parceiro.
+                </p>
               )}
 
               {aiExample && (

@@ -37,10 +37,54 @@ const GROUPS: Array<{
   },
 ];
 
+/**
+ * Lead que existe mas não está em nenhuma pizza precisa de explicação.
+ *
+ * Caso real (José, 2026-08-05): portal mostrava "2 leads" e "0 no ciclo". Um
+ * tinha fechado, o outro estava em atendimento humano — e o parceiro concluiu
+ * que o sistema tinha perdido a gente dele.
+ */
+const OUTSIDE_LABEL: Record<string, { one: string; many: string }> = {
+  fechado: { one: "fechou o cadastro", many: "fecharam o cadastro" },
+  cadastro_em_analise: {
+    one: "com cadastro em análise na iGreen",
+    many: "com cadastro em análise na iGreen",
+  },
+  atendimento_humano: {
+    one: "falando direto com o consultor",
+    many: "falando direto com o consultor",
+  },
+  bloqueado: {
+    one: "pediu para não receber contato",
+    many: "pediram para não receber contato",
+  },
+  cliente_carteira: { one: "já é cliente", many: "já são clientes" },
+  sem_cadencia: {
+    one: "sem etapa automática no momento",
+    many: "sem etapa automática no momento",
+  },
+};
+
+function describeOutside(outsideCycle: Record<string, number>): string[] {
+  return Object.entries(outsideCycle)
+    .filter(([, qtd]) => Number(qtd) > 0)
+    .sort((a, b) => Number(b[1]) - Number(a[1]))
+    .map(([motivo, qtd]) => {
+      const n = Number(qtd);
+      const label = OUTSIDE_LABEL[motivo] ?? {
+        one: "fora do ciclo automático",
+        many: "fora do ciclo automático",
+      };
+      return `${n} ${n === 1 ? label.one : label.many}`;
+    });
+}
+
 export function PartnerPortalCycleSection({
   leads,
+  outsideCycle = {},
 }: {
   leads: ClassifiedPartnerLead[];
+  outsideCycle?: Record<string, number>;
 }) {
   const [pick, setPick] = useState<{
     group: PartnerCycleGroup;
@@ -55,6 +99,8 @@ export function PartnerPortalCycleSection({
   const groupLabel = pick
     ? GROUPS.find((g) => g.group === pick.group)?.title ?? pick.group
     : "";
+
+  const outsideParts = useMemo(() => describeOutside(outsideCycle), [outsideCycle]);
 
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 py-8 sm:py-10">
@@ -95,6 +141,18 @@ export function PartnerPortalCycleSection({
           );
         })}
       </div>
+
+      {outsideParts.length > 0 && (
+        <div className="mt-5 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-center">
+          <p className="text-xs text-emerald-100/70">
+            <span className="font-semibold text-emerald-200">Fora do ciclo automático:</span>{" "}
+            {outsideParts.join(" · ")}.
+          </p>
+          <p className="text-[10px] text-emerald-100/40 mt-1">
+            Continuam sendo seus — só não recebem mensagem automática agora.
+          </p>
+        </div>
+      )}
 
       <PartnerPortalSliceSheet
         open={!!pick}

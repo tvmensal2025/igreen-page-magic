@@ -6,7 +6,10 @@ description: Histórico de rounds do pack steering.
 
 # Auditoria do pack steering
 
-Última atualização: **2026-08-02** (fixes demo: silêncio bot, PV deferred, sync promove limpo, caps).
+Última atualização: **2026-08-05** (fechamento do parceiro sobrevive à linha irmã da carteira).
+
+## 2026-08-05 — Parceiro sem fechamento quando o cliente cadastra de outro número
+Caso José (`short_code` 915275, consultor Rafael): o cliente conversou de um celular e cadastrou em outro para ficar no mesmo app. Resultado: linha `whatsapp_lead` com `referral_partner_id` parada em `cadastro_concluido` e linha `igreen_sync` `Validado`/`aprovado` sem parceiro — mesmo CPF, mesmo e-mail, mesmo `igreen_code` (1699240). Portal do parceiro mostrava `0 fechamentos / 1 em análise` numa venda real; `carryPartnerAttributionToWalletRow` não cobre porque casa só por telefone. Fix: `public.partner_lead_is_closed(...)` + `public.customer_closed_via_wallet_sibling(...)` (migration `20260805210000`), usados por `get_partner_banner_portal` e `get_referral_partner_analytics`. Varredura em todos os parceiros: só o José mudou (0→1). Armadilha #60 · `#parceiros-referral`.
 
 ## 2026-08-02 — Fixes pré-demo (silêncio, pós-venda, sync, caps)
 Mudanças de comportamento que o steering deve refletir:

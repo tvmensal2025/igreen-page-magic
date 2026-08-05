@@ -125,6 +125,32 @@ function redirectTo(url: string) {
   });
 }
 
+/**
+ * Leitura de QR é gente com o celular na mão. Nada mais pode contar.
+ *
+ * O portal do parceiro mostra "leituras" para ele saber se o banner na loja
+ * está funcionando — número inflado destrói a confiança na métrica. Três
+ * fontes de ruído já vistas em produção (José, 2026-08-05: 9 leituras para 2
+ * conversas):
+ *   1. `?json=1` — diagnóstico do admin, contava igual a cliente;
+ *   2. prefetch/preview de link (WhatsApp, Facebook, buscadores);
+ *   3. a mesma abertura chegando duas vezes com 1 segundo de diferença.
+ */
+const BOT_UA = /bot|crawler|spider|preview|facebookexternalhit|whatsapp|slurp|bingpreview|curl|wget|python-requests|axios|headless/i;
+
+/** Janela em que uma nova leitura do MESMO alvo é considerada a mesma abertura. */
+const SCAN_DEDUPE_SECONDS = 15;
+
+function isBotUserAgent(ua: string): boolean {
+  return BOT_UA.test(ua || "");
+}
+
+function deviceFromUserAgent(ua: string): string {
+  if (!ua) return "unknown";
+  if (isBotUserAgent(ua)) return "bot";
+  return /mobile|android|iphone|ipad|ipod/i.test(ua) ? "mobile" : "desktop";
+}
+
 function jsonResponse(body: unknown) {
   return new Response(JSON.stringify(body), {
     status: 200,
@@ -450,20 +476,45 @@ Deno.serve(async (req) => {
     }
 
     // Telemetria fina (consultor Geral / spot / parceiro / parceiro+local).
-    if (consultant?.id) {
+    const userAgent = req.headers.get("user-agent") || "";
+    const deviceType = deviceFromUserAgent(userAgent);
+    const skipScanReason = wantsJson
+      ? "diagnostico_json"
+      : isBotUserAgent(userAgent)
+      ? "bot_ou_preview"
+      : "";
+
+    if (consultant?.id && !skipScanReason) {
       try {
-        const { error: scanErr } = await supabase.from("page_events").insert({
-          consultant_id: consultant.id,
-          event_type: "qr_scan",
-          event_target: eventTarget,
-          page_type: "client",
-        });
-        if (scanErr) {
-          console.warn("[qr-redirect] qr_scan insert failed", scanErr.message);
+        const since = new Date(Date.now() - SCAN_DEDUPE_SECONDS * 1000).toISOString();
+        const { data: recente } = await supabase
+          .from("page_events")
+          .select("id")
+          .eq("consultant_id", consultant.id)
+          .eq("event_type", "qr_scan")
+          .eq("event_target", eventTarget)
+          .gte("created_at", since)
+          .limit(1);
+
+        if ((recente?.length ?? 0) > 0) {
+          console.log(`[qr-redirect] qr_scan repetido em ${SCAN_DEDUPE_SECONDS}s — ${eventTarget}`);
+        } else {
+          const { error: scanErr } = await supabase.from("page_events").insert({
+            consultant_id: consultant.id,
+            event_type: "qr_scan",
+            event_target: eventTarget,
+            page_type: "client",
+            device_type: deviceType,
+          });
+          if (scanErr) {
+            console.warn("[qr-redirect] qr_scan insert failed", scanErr.message);
+          }
         }
       } catch (e) {
         console.warn("[qr-redirect] qr_scan insert exception", e);
       }
+    } else if (consultant?.id && skipScanReason) {
+      console.log(`[qr-redirect] qr_scan ignorado (${skipScanReason}) — ${eventTarget}`);
     }
 
     if (wantsJson) {

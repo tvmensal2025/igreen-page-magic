@@ -59,6 +59,7 @@ import { reconcileStrongMetaCampaign } from "../_shared/reconcile-strong-meta.ts
 
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled, isCustomerPausedByHuman, wrapSenderWithLivePauseGuard } from "../_shared/bot/paused.ts";
+import { handoffResumeAtIso } from "../_shared/bot/handoff-resume.ts";
 import { evaluateLowBillReentry } from "../_shared/bot/low-bill-reentry.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import {
@@ -552,11 +553,13 @@ Deno.serve(async (req) => {
             })
             .eq("id", cust.id);
           console.log(`✅ [evolution] Bot pausado para ${outPhone} (customer ${cust.id}, reason=humano_assumiu)`);
+          // Agenda a reavaliação: com null o claim do cadence-tick nunca mais
+          // veria a linha (paridade com whapi-webhook).
           await supabase
             .from("lead_cadence_state")
             .update({
               paused_reason: "handoff_humano",
-              next_action_at: null,
+              next_action_at: handoffResumeAtIso(),
             })
             .eq("customer_id", cust.id)
             .neq("stage", "WON");
@@ -569,7 +572,7 @@ Deno.serve(async (req) => {
             .from("lead_cadence_state")
             .update({
               paused_reason: "handoff_humano",
-              next_action_at: null,
+              next_action_at: handoffResumeAtIso(),
             })
             .eq("customer_id", cust.id)
             .neq("stage", "WON");
@@ -1564,8 +1567,8 @@ Deno.serve(async (req) => {
             const partners = orderPartnersByScope(partnerRows as any[], partnerScopeIds);
 
             if (partners?.length) {
-              // Keyword genérica ("Zap") ou vazia não atribui sozinha: derivamos
-              // uma versão qualificada pela frase do QR / nome do parceiro.
+              // Prenome solto vira o nome inteiro e keyword genérica ("Zap")
+              // cai na frase do QR — sem deduzir palavra vizinha.
               const partnerKeywords = deriveEffectiveKeywordList(
                 partners.map((p: any): PartnerKeywordSource => ({
                   partnerId: p.id,

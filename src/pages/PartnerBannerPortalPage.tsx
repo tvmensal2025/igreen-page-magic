@@ -44,6 +44,7 @@ export default function PartnerBannerPortalPage() {
   const [statsLeads, setStatsLeads] = useState(0);
   const [statsLeituras, setStatsLeituras] = useState(0);
   const [cycleRaw, setCycleRaw] = useState<PartnerPortalCycleLeadRaw[]>([]);
+  const [outsideCycle, setOutsideCycle] = useState<Record<string, number>>({});
 
   useEffect(() => {
     const t = String(token || "").trim();
@@ -80,6 +81,7 @@ export default function PartnerBannerPortalPage() {
           scans?: Array<{ event_target?: string }>;
           leads?: Array<{ referral_keyword_matched?: string | null }>;
           cycle_leads?: PartnerPortalCycleLeadRaw[];
+          outside_cycle?: Record<string, number>;
         } | null;
         if (!payload?.ok) {
           setError(
@@ -104,6 +106,11 @@ export default function PartnerBannerPortalPage() {
         setStatsLeituras(Number(payload.stats?.leituras) || 0);
         setSpots(Array.isArray(payload.spots) ? payload.spots : []);
         setCycleRaw(Array.isArray(payload.cycle_leads) ? payload.cycle_leads : []);
+        setOutsideCycle(
+          payload.outside_cycle && typeof payload.outside_cycle === "object"
+            ? payload.outside_cycle
+            : {},
+        );
 
         const short = String(payload.partner?.short_code || "");
         let root = 0;
@@ -236,7 +243,7 @@ export default function PartnerBannerPortalPage() {
         countB={countB}
         countC={countC}
       />
-      <PartnerPortalCycleSection leads={cycleLeads} />
+      <PartnerPortalCycleSection leads={cycleLeads} outsideCycle={outsideCycle} />
       <PartnerPortalBanners
         rows={rows}
         partnerName={partnerName}

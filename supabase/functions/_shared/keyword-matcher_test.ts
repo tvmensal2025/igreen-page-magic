@@ -6,6 +6,8 @@ import {
   findGenericKeywords,
   hasExactTokenSequence,
   isGenericKeyword,
+  isPartOfPartnerName,
+  isWeakNameKeyword,
   levenshtein,
   matchKeyword,
   normalizeText,
@@ -157,7 +159,35 @@ Deno.test("findGenericKeywords aponta o parceiro que precisa trocar a palavra", 
   assertEquals(ruins[0].keyword, "Zap");
 });
 
-Deno.test("deriveEffectiveKeywords: 'Zap' + frase do QR vira 'loja zap' (caso José)", () => {
+Deno.test("deriveEffectiveKeywords: prenome solto vira o nome inteiro (caso Erica)", () => {
+  const eff = deriveEffectiveKeywords({
+    partnerId: "partner-erica",
+    keywords: ["Erica"],
+    nome: "Erica pereira",
+    qrPhrase:
+      "Olá, a Erica Pereira me indicou vocês porque eu quero economizar na minha conta de luz, pode me ajudar?",
+  });
+  assertEquals(eff.keywords[0], "Erica pereira");
+  assertEquals(
+    matchKeyword("Olá, a Erica Pereira me indicou vocês, quero economizar", [eff])?.partnerId,
+    "partner-erica",
+  );
+  // Prenome solto de terceiro não é mais atribuição do parceiro.
+  assertEquals(matchKeyword("minha amiga erica falou de voces", [eff]), null);
+});
+
+Deno.test("deriveEffectiveKeywords: prenome do parceiro não rouba lead do consultor homônimo", () => {
+  const eff = deriveEffectiveKeywords({
+    partnerId: "partner-rafael",
+    keywords: ["rafael"],
+    nome: "Rafael Ferreira Dias",
+    qrPhrase: "Olá, o(a) Rafael Ferreira Dias me indicou vocês porque quero economizar na luz",
+  });
+  assertEquals(eff.keywords[0], "Rafael Ferreira Dias");
+  assertEquals(matchKeyword("o Rafael falou comigo sobre a energia", [eff]), null);
+});
+
+Deno.test("deriveEffectiveKeywords: keyword genérica cai na frase do QR, não em palpite", () => {
   const eff = deriveEffectiveKeywords({
     partnerId: "partner-jose",
     keywords: ["Zap"],
@@ -165,15 +195,15 @@ Deno.test("deriveEffectiveKeywords: 'Zap' + frase do QR vira 'loja zap' (caso Jo
     qrPhrase:
       "Olá! Vim pela indicação da Loja Zap e gostaria de saber como posso economizar na conta de luz.",
   });
-  assertEquals(eff.keywords, ["loja zap"]);
+  // Nada de deduzir "loja zap" pelo vizinho: a âncora é a frase inteira.
+  assertEquals(eff.keywords.length, 1);
   assertEquals(
     matchKeyword(
-      "Olá! Vim pela indicação da Loja Zap e gostaria de saber como economizar.",
+      "Olá! Vim pela indicação da Loja Zap e gostaria de saber como posso economizar na conta de luz.",
       [eff],
     )?.partnerId,
     "partner-jose",
   );
-  // "zap" solto continua sem atribuir
   assertEquals(matchKeyword("me chama no zap", [eff]), null);
 });
 
@@ -191,20 +221,47 @@ Deno.test("deriveEffectiveKeywords: sem keyword usa o nome do parceiro", () => {
   );
 });
 
-Deno.test("deriveEffectiveKeywords: keyword boa passa intacta e genérica não sobra", () => {
+Deno.test("deriveEffectiveKeywords: keyword própria específica passa intacta", () => {
   const boa = deriveEffectiveKeywords({
     partnerId: "p1",
-    keywords: ["nilma", "Zap"],
-    nome: "Nilma Santana",
+    keywords: ["mercado do elias", "Zap"],
+    nome: "Elias Souza",
   });
-  assertEquals(boa.keywords, ["nilma"]);
+  assertEquals(boa.keywords, ["mercado do elias"]);
 
-  // Nome também genérico e frase sem âncora → parceiro fica de fora da lista.
+  // Keyword genérica, nome genérico e frase curta → parceiro fica de fora.
   const lista = deriveEffectiveKeywordList([
-    { partnerId: "p2", keywords: ["oi"], nome: "Loja", qrPhrase: "Oi, quero desconto" },
+    { partnerId: "p2", keywords: ["oi"], nome: "Loja", qrPhrase: "Oi, desconto" },
     boa,
   ]);
   assertEquals(lista.map((p) => p.partnerId), ["p1"]);
+});
+
+Deno.test("empate entre parceiros diferentes não atribui a ninguém", () => {
+  const a: PartnerKeywords = { partnerId: "p-a", keywords: ["padaria central"] };
+  const b: PartnerKeywords = { partnerId: "p-b", keywords: ["padaria central"] };
+  assertEquals(matchKeyword("vim da padaria central", [a, b]), null);
+  // Sozinho continua atribuindo.
+  assertEquals(matchKeyword("vim da padaria central", [a])?.partnerId, "p-a");
+  // Chave mais específica vence o empate.
+  const c: PartnerKeywords = { partnerId: "p-c", keywords: ["padaria central do zé"] };
+  assertEquals(
+    matchKeyword("vim da padaria central do zé", [a, b, c])?.partnerId,
+    "p-c",
+  );
+});
+
+Deno.test("isWeakNameKeyword aponta parceiro sem sobrenome no cadastro", () => {
+  assertEquals(isWeakNameKeyword("Daniel", "Daniel"), true);
+  assertEquals(isWeakNameKeyword("Erica", "Erica pereira"), false);
+  assertEquals(isWeakNameKeyword("mercado do elias", "Elias"), false);
+});
+
+Deno.test("isPartOfPartnerName reconhece pedaço do nome, não palavra qualquer", () => {
+  assertEquals(isPartOfPartnerName("Erica", "Erica pereira"), true);
+  assertEquals(isPartOfPartnerName("dias", "Rafael Ferreira Dias"), true);
+  assertEquals(isPartOfPartnerName("Rafael Ferreira Dias", "Rafael Ferreira Dias"), false);
+  assertEquals(isPartOfPartnerName("posto shell", "Rafael Ferreira Dias"), false);
 });
 
 Deno.test("allowGeneric:true existe só para diagnóstico", () => {

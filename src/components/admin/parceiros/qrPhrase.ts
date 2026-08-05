@@ -219,3 +219,61 @@ export function isGenericKeyword(keyword: string): boolean {
   if (n.replace(/\s/g, "").length < KEYWORD_MIN_LENGTH) return true;
   return GENERIC_KEYWORD_BLOCKLIST.some((g) => norm(g) === n);
 }
+
+function tokens(input: string): string[] {
+  return norm(input).split(/\s+/).filter(Boolean);
+}
+
+/** Sequência contígua e exata — mesma régua do `hasExactTokenSequence` do runtime. */
+function hasSequence(haystack: string[], needle: string[]): boolean {
+  if (needle.length === 0) return false;
+  for (let i = 0; i <= haystack.length - needle.length; i++) {
+    if (needle.every((t, j) => haystack[i + j] === t)) return true;
+  }
+  return false;
+}
+
+/**
+ * `true` quando a palavra é só um pedaço do nome do parceiro — prenome solto
+ * ("Erica" em "Erica Pereira"), sobrenome solto, nome sem o meio.
+ * ESPELHO de `supabase/functions/_shared/keyword-matcher.ts`.
+ */
+export function isPartOfPartnerName(keyword: string, nome: string | null | undefined): boolean {
+  const kw = tokens(keyword);
+  const nm = tokens(nome || "");
+  if (kw.length === 0 || nm.length < 2) return false;
+  if (kw.length >= nm.length) return false;
+  return kw.every((t) => nm.includes(t));
+}
+
+/**
+ * `true` quando a chave é um prenome que o cadastro não tem como completar:
+ * o parceiro foi salvo só com "Daniel", então não existe nome inteiro para
+ * usar. Aqui o sistema não inventa sobrenome — quem resolve é o consultor.
+ */
+export function isWeakNameKeyword(keyword: string, nome: string | null | undefined): boolean {
+  const kw = tokens(keyword);
+  if (kw.length !== 1) return false;
+  const nm = tokens(nome || "");
+  return nm.length <= 1 && nm.includes(kw[0]);
+}
+
+/**
+ * Palavra que o runtime REALMENTE vai usar para atribuir o lead.
+ *
+ * Prenome solto vira o nome inteiro quando ele aparece na frase do QR — é o
+ * que o lead envia ao escanear. Sem isso, "Erica" pegaria qualquer mensagem
+ * com "erica" e "rafael" (parceiro) roubaria lead do consultor Rafael.
+ */
+export function resolveEffectiveKeyword(
+  keyword: string,
+  nome: string | null | undefined,
+  qrPhrase: string | null | undefined,
+): string {
+  const nm = String(nome || "").trim();
+  const nmTokens = tokens(nm);
+  if (nmTokens.length < 2 || !isPartOfPartnerName(keyword, nm)) return keyword;
+  const phraseTokens = tokens(qrPhrase || "");
+  const nomeNaFrase = phraseTokens.length === 0 || hasSequence(phraseTokens, nmTokens);
+  return nomeNaFrase ? nm : keyword;
+}

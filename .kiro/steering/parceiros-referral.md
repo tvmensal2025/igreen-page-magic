@@ -85,13 +85,14 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
 | qrPhrase (Deno espelho) | `supabase/functions/_shared/qr-phrase.ts` — mesma lógica + `extractShortCodeMarker` |
 | Rota `/r/{licenca}/{code}` | edge `qr-redirect` (HTTP 302 → `wa.me`). Telefone = `resolveConsultantConnectedWaPhone` (não usar `connected_phone` de `needs_reconnect`). Preview UI: `src/lib/consultantWaPhone.ts`. |
 | Telefone WA (edge) | `_shared/consultant-wa-phone.ts` + `attendance-channel-env.ts` (superadmin → Whapi) |
-| Matcher | `supabase/functions/_shared/keyword-matcher.ts` — `normalizeText`, `hasExactTokenSequence`, `matchKeyword` |
+| Matcher | `supabase/functions/_shared/keyword-matcher.ts` — `normalizeText`, `hasExactTokenSequence`, `matchKeyword`, `deriveEffectiveKeywords`, `isPartOfPartnerName`, `isWeakNameKeyword` |
+| Telefone do rodapé | `src/components/admin/flyerPhoneDisplay.ts` → `formatBrazilPhone` (`src/lib/phone.ts`); espelho SQL `public.normalize_br_wa_phone` |
 | Webhook Whapi (inbound) | `supabase/functions/whapi-webhook/index.ts` (bloco keyword ≈ L1553–1658) |
 | Webhook Evolution | `supabase/functions/evolution-webhook/index.ts` (mesmo bloco, paridade) |
 | Aviso ao parceiro | `supabase/functions/_shared/notify-consultant.ts` → `notifyPartnerNewLead` |
 | Serviço lista (wizard rodízio) | `src/services/referralPartners.ts` |
 | Regra de ID iGreen | `mem/features/partner-id-rules.md` |
-| Testes | `src/components/admin/parceiros/__tests__/qrPhrase.test.ts`, `qrPhraseParity.test.ts`, `supabase/functions/_shared/keyword-matcher_test.ts` |
+| Testes | `src/components/admin/parceiros/__tests__/qrPhrase.test.ts`, `qrPhraseParity.test.ts`, `keywordBlocklistParity.test.ts`, `src/components/admin/__tests__/flyerPhoneDisplay.test.ts`, `supabase/functions/_shared/keyword-matcher_test.ts` |
 
 ---
 
@@ -101,7 +102,10 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
 - **Só sinal FORTE do Meta bloqueia keyword de parceiro.** Use `evaluatePartnerKeywordGate` (`_shared/partner-attribution-gate.ts`): forte = `source_campaign_id`/`source_ad_id`/`source_ctwa_clid`/`ctwa_clid`/`lead_source~meta` (persistido). Frase que "parece CTWA" é sinal **fraco** e não veta keyword exata nem `#R`.
 - **Escopo de parceiro = dono do lead, depois o hub.** `resolvePartnerScopeConsultantIds(customer.consultant_id, superAdmin|instancia)` + `.in("consultant_id", scope)` + `orderPartnersByScope`. Nunca filtrar só pelo consultor do canal (armadilha #54).
 - **Atribuição por QR/keyword sobrevive ao guard de AD ID** (migration `20260805120000`): `referral_keyword_matched` do próprio parceiro dispensa pertencimento a pool. Falha de escrita → `markManualReview('partner_attribution_write_failed')`, nunca `console.warn` mudo.
-- **Fechamento do parceiro = `public.customer_is_closed_deal(...)`** (migration `20260805121000`), igual no portal `/p/{token}` e em `get_referral_partner_analytics`. Nunca só `pos_venda_stage='Aprovado'`. Contagens ignoram `bot_paused_reason='absorbed_wallet_duplicate'`.
+- **Fechamento do parceiro = `public.partner_lead_is_closed(...)`** (migration `20260805210000`), igual no portal `/p/{token}` e em `get_referral_partner_analytics`. Ele soma `customer_is_closed_deal` (migration `20260805121000`) com a **linha irmã** fechada do mesmo consultor — por `igreen_code` (mesma venda) ou por `cpf` quando o lead tem `portal_submitted_at`. Existe porque o cliente pode conversar num celular e cadastrar em outro: o parceiro fica na linha do lead e a aprovação chega na linha `igreen_sync`. Nunca só `pos_venda_stage='Aprovado'`, nunca só a própria linha. Contagens ignoram `bot_paused_reason='absorbed_wallet_duplicate'`.
+- **Nome pode ser a chave, mas é o nome INTEIRO.** `deriveEffectiveKeywords` (`_shared/keyword-matcher.ts`) troca prenome/sobrenome solto pelo nome completo quando ele aparece na frase do QR (`isPartOfPartnerName`) — é a mesma string que o lead envia ao escanear. Motivo real: keyword `rafael` do parceiro **Rafael Ferreira Dias** competia com o nome do próprio consultor. Parceiro salvo só com prenome (“Daniel”, “Bruna”) é `isWeakNameKeyword` e o `PartnerForm` **bloqueia** — o sistema não inventa sobrenome. Ver armadilha #61.
+- **Frase do QR é âncora, vizinho na frase não.** Quando a keyword própria não serve, a chave extra é a **frase inteira** do QR (sequência longa e exata), nunca a palavra vizinha deduzida (“Zap” → “loja zap” era palpite). Mínimo de 4 tokens (`PHRASE_MIN_TOKENS`).
+- **Empate não atribui.** `matchKeyword` devolve `null` quando duas chaves do mesmo tamanho apontam para parceiros diferentes — empate seria sorteio pela ordem da consulta.
 - **Keyword genérica NUNCA atribui.** Régua canônica em `_shared/keyword-matcher.ts` (`isGenericKeyword`, `KEYWORD_MIN_LENGTH=3`, `findGenericKeywords`); `matchKeyword` descarta sozinho, sem depender da UI. Front é espelho (`qrPhrase.ts`), travado por `__tests__/keywordBlocklistParity.test.ts`. Caso real: José usou **"Zap"** (= WhatsApp em BR). Comparação é da keyword inteira → `posto` bloqueado, `posto shell br 101` válido. Ver armadilha #58.
 - **Banner físico ≠ rodízio ≠ Meta.** Vários parceiros do mesmo consultor no mesmo número: o `short_code` da URL morre no redirect e só o **texto** carrega a atribuição. Lembrar de `DETECTION_WINDOW=3` (cliente antigo nunca é atribuído) e da ausência do `#R`. Ver armadilha #59.
 - **Nunca** reintroduzir fuzzy/Levenshtein no `matchKeyword`. Só match por sequência de tokens exata (após normalize NFD/lower/sem pontuação). Motivo real: "Nilza" atribuía leads da parceira "Nilma" — comentário no topo de `keyword-matcher.ts`.
@@ -130,9 +134,10 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
   - Visual dark premium (`src/components/parceiros-portal/*`): hero, KPIs, **pizzas A/B/C**, banners.
   - **KPIs canônicos (não reabrir):**
     - `stats.leads` = **todos** `customers` com `referral_partner_id` (Meta rodízio + QR/`#R`/keyword).
-    - `stats.leituras` = só `page_events.qr_scan` com `event_target` `partner:{short}` (+ spots). **Meta CTWA não conta leitura.**
-    - `stats.fechamentos` = `pos_venda_stage = 'Aprovado'`.
-  - **Telefone no rodapé do flyer:** chip vivo via RPC — Whapi (`settings.whapi_connected_phone` se superadmin) **ou** Evolution/`whatsapp_instances` com status `connected|online|open`; fallback `consultants.phone`. Nunca `notification_phone`. Admin UI usa o mesmo critério em `resolveConsultantWaPhoneForUi` (`isWhapi` + instância saudável).
+    - `stats.leituras` = só `page_events.qr_scan` com `event_target` `partner:{short}` (+ spots), **deduplicado em 15s** por `lag()` (migration `20260805220000`). **Meta CTWA não conta leitura.**
+    - `stats.fechamentos` = `public.partner_lead_is_closed(...)` (inclui a linha irmã da carteira). `stats.em_analise` = `portal_submitted_at` sem fechamento.
+    - `outside_cycle` = lead que existe e **não** está na pizza, por motivo: `fechado` · `cadastro_em_analise` · `atendimento_humano` · `bloqueado` · `cliente_carteira` · `sem_cadencia`. Mexeu em `cycle_leads`, mexe no `CASE` junto — “0 no ciclo” sem explicação é o que fez o José achar que o sistema tinha perdido a gente dele (armadilha #65).
+  - **Telefone no rodapé do flyer:** chip vivo via RPC — Whapi (`settings.whapi_connected_phone` se superadmin) **ou** Evolution/`whatsapp_instances` com status `connected|online|open`; fallback `consultants.phone`. Nunca `notification_phone`. O RPC devolve o número por `public.normalize_br_wa_phone` e o front formata com `formatBrazilPhone` — celular sem o nono dígito seria **impresso** errado (armadilha #62). Admin UI usa o mesmo critério em `resolveConsultantWaPhoneForUi` (`isWhapi` + instância saudável).
   - Clique na linha do banner → `PartnerPortalDownloadModal` (só baixar A4/Banner PNG·PDF; sem editar frase).
   - Preview/impressão compartilham `FLYER_TEMPLATES` + `FlyerStaticPreview` (`src/components/admin/flyerTemplates.ts`) — PartnerQrCode / LiveModal / PortalDownload / ConsultantBanner.
   - RPC devolve `consultant.{name,igreen_id,phone}` + `cycle_leads` **só elegíveis** (filtros SQL ≈ `isCycleLeadEligible` + exige stage ou fila do dia) com nome, `phone_whatsapp`, stage, fila (`queue_queue`/`queue_step`), pós-venda.
@@ -141,7 +146,7 @@ Lead manda WA → whapi-webhook / evolution-webhook (inbound)
   - Meta `noindex,nofollow` com cleanup no unmount. Aviso “Link privado — não compartilhe”.
 - Limiar `banner_alert_threshold` no parceiro (0=off). Cron `partner-banner-alerts-cron` (15 min) conta leads/24h; se >= limiar, avisa consultor (e parceiro se tiver `notification_phone`). Dedup `banner_alert_last_at`.
 - `notifyPartnerNewLead` **pula** lead com `do_not_contact` (salvo `force`).
-- Telemetria `qr-redirect`: `banner_root` / `banner_spot:{code}` / `partner:{short}` / `partner:{short}:{spot}`. Insert de `qr_scan` é **await** (não fire-and-forget). Canal WA do redirect = Whapi **ou** Evolution via `resolveConsultantConnectedWaPhone`.
+- Telemetria `qr-redirect`: `banner_root` / `banner_spot:{code}` / `partner:{short}` / `partner:{short}:{spot}`. Insert de `qr_scan` é **await** (não fire-and-forget). **Leitura = gente:** `?json=1` (diagnóstico), user-agent de bot/preview e repetição do mesmo alvo em 15s **não** contam; `device_type` grava `mobile|desktop|bot` (armadilha #64). Canal WA do redirect = Whapi **ou** Evolution via `resolveConsultantConnectedWaPhone`.
 - Keywords espelho em `consultants.banner_keywords` e `referral_partners.keywords` — sync **une** (nunca remove histórico ao arquivar).
 - **Banner próprio do consultor:** a mensagem do WhatsApp é exatamente `consultant_banner_spots.phrase` (fallback `consultants.banner_default_phrase`), sem anexar `keyword`, código do spot ou “indicação”. O `igreen_id` do link já define o consultor e o path do spot continua registrando `page_events.event_target=banner_spot:{code}`. Keywords e marcador `#R` permanecem obrigatórios somente nos banners de **parceiros**, onde existe atribuição de indicador.
 

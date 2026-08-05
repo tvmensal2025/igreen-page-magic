@@ -32,6 +32,7 @@ import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead, not
 import { mirrorCustomerToCaptation } from "../_shared/captation/mirror-customer.ts";
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isCustomerPausedByHuman, isConsultantAIDisabled, wrapSenderWithLivePauseGuard } from "../_shared/bot/paused.ts";
+import { handoffResumeAtIso } from "../_shared/bot/handoff-resume.ts";
 import { evaluateLowBillReentry } from "../_shared/bot/low-bill-reentry.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import {
@@ -299,11 +300,14 @@ Deno.serve(async (req) => {
           else {
             console.log(`✅ Bot pausado para ${outPhone} (customer ${cust.id}, reason=humano_assumiu)`);
             // Entra no painel do dashboard (voltar / esquecer / bloquear).
+            // `next_action_at` agenda a REAVALIAÇÃO: com null o claim do
+            // cadence-tick nunca mais veria a linha e o lead morreria em
+            // atendimento humano (caso Robinho 2026-08-05).
             await supabase
               .from("lead_cadence_state")
               .update({
                 paused_reason: "handoff_humano",
-                next_action_at: null,
+                next_action_at: handoffResumeAtIso(),
               })
               .eq("customer_id", cust.id)
               .neq("stage", "WON");
@@ -318,7 +322,7 @@ Deno.serve(async (req) => {
             .from("lead_cadence_state")
             .update({
               paused_reason: "handoff_humano",
-              next_action_at: null,
+              next_action_at: handoffResumeAtIso(),
             })
             .eq("customer_id", cust.id)
             .neq("stage", "WON");
@@ -1770,8 +1774,8 @@ Deno.serve(async (req) => {
             const partners = orderPartnersByScope(partnerRows as any[], partnerScopeIds);
 
             if (partners?.length) {
-              // Keyword genérica ("Zap") ou vazia não atribui sozinha: derivamos
-              // uma versão qualificada pela frase do QR / nome do parceiro.
+              // Prenome solto vira o nome inteiro e keyword genérica ("Zap")
+              // cai na frase do QR — sem deduzir palavra vizinha.
               const partnerKeywords = deriveEffectiveKeywordList(
                 partners.map((p: any): PartnerKeywordSource => ({
                   partnerId: p.id,

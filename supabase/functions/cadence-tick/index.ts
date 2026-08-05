@@ -41,6 +41,11 @@ import {
 import { assertCronAuth, cronAuthUnauthorized } from "../_shared/cron-auth.ts";
 import { assertBotOutboundAllowed } from "../_shared/bot/outbound-gate.ts";
 import {
+  decideHandoffResume,
+  HANDOFF_RELEASE_PATCH,
+  handoffResumeAtIso,
+} from "../_shared/bot/handoff-resume.ts";
+import {
   isAckOk,
   isPendingStale,
 } from "../_shared/outbound-delivery-reconcile.ts";
@@ -262,6 +267,31 @@ async function countOutreachTouchesToday(
     (grp === "C" ? platformC : platformB).add(r.customer_id);
   }
   return { platform: { b: platformB.size, c: platformC.size }, byConsultant, ok: true };
+}
+
+/**
+ * Última mensagem da conversa (qualquer direção) — régua do handoff humano.
+ * `customers.updated_at` não serve: qualquer rotina que toca a linha empurraria
+ * o prazo e o lead nunca voltaria ao robô.
+ */
+async function lastConversationAt(
+  supabase: any,
+  customerId: string,
+): Promise<Date | null> {
+  try {
+    const { data } = await supabase
+      .from("conversations")
+      .select("created_at")
+      .eq("customer_id", customerId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!data?.created_at) return null;
+    const d = new Date(data.created_at);
+    return Number.isFinite(d.getTime()) ? d : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Verifica duplicados de leads no mesmo estágio e consolida se necessário. */
@@ -1258,6 +1288,32 @@ Deno.serve(async (req) => {
     await supabase.rpc("reconcile_stale_outbound_effects", { p_reserved_minutes: 30, p_sending_minutes: 30 });
   } catch { /* migration pendente */ }
 
+  // Rede do handoff: linha sem `next_action_at` é invisível para o claim, então
+  // a expiração de 48h nunca rodaria e o lead ficaria parado para sempre. Aqui
+  // qualquer caminho que tenha zerado a data (UI, RPC, webhook antigo) é
+  // recuperado. Escalonado para a volta não virar rajada.
+  try {
+    const { data: orfaos } = await supabase
+      .from("lead_cadence_state")
+      .select("id")
+      .is("next_action_at", null)
+      .eq("paused_reason", "handoff_humano")
+      .neq("stage", "WON")
+      .limit(200);
+    for (const [idx, o] of (orfaos || []).entries()) {
+      await supabase
+        .from("lead_cadence_state")
+        .update({ next_action_at: handoffResumeAtIso(new Date(now.getTime() + idx * 120_000)) })
+        .eq("id", o.id)
+        .is("next_action_at", null);
+    }
+    if (orfaos?.length) {
+      console.log(`[cadence-tick] handoff sem data de volta reagendado: ${orfaos.length}`);
+    }
+  } catch (e) {
+    console.warn("[cadence-tick] reagendar handoff órfão falhou", e);
+  }
+
   // Claim atômico (RPC). Fallback: SELECT + CAS em next_action_at (anti-duplicidade).
   const legacyLeaseById = new Map<string, string>();
   let due: any[] | null = null;
@@ -1521,6 +1577,52 @@ Deno.serve(async (req) => {
     // Retomada pós-inbound: PAUSED vencido.
     // - Grupo C (paused_reason lead_responded:<STAGE>): retoma o mesmo estágio.
     // - Onda B / sem estágio salvo: reaquece em COLD_1 (comportamento antigo).
+    // Atendimento humano abandonado: o consultor assumiu e a conversa morreu.
+    // Vale para qualquer stage — o handoff não muda o stage, só pausa. Sem esta
+    // volta o lead fica fora do robô E fora do humano para sempre (Robinho,
+    // 2026-08-05: dois áudios do consultor e nunca mais nada).
+    if (String(row.paused_reason || "").toLowerCase() === "handoff_humano") {
+      const lastInteractionAt = await lastConversationAt(supabase, row.customer_id);
+      const decision = decideHandoffResume(cust, lastInteractionAt, now);
+      if (!decision.resume) {
+        await finishRow(row.id, claimToken, { next_action_at: decision.retryAtIso });
+        deferred++; continue;
+      }
+      // Só devolver o stage não basta: `bot_paused` barra o envio depois.
+      const { error: releaseErr } = await supabase
+        .from("customers")
+        .update({ ...HANDOFF_RELEASE_PATCH, updated_at: new Date().toISOString() })
+        .eq("id", row.customer_id);
+      if (releaseErr) {
+        console.warn("[cadence-tick] handoff release falhou", releaseErr.message);
+        await finishRow(row.id, claimToken, {
+          next_action_at: new Date(now.getTime() + 6 * 3600_000).toISOString(),
+        });
+        deferred++; continue;
+      }
+      blockedCustomers.delete(row.customer_id);
+      // Limpa o motivo na hora: stages fora de PAUSED seguem o fluxo normal
+      // abaixo e não passariam por um `finishRow` que zere isso.
+      await supabase
+        .from("lead_cadence_state")
+        .update({ paused_reason: null, paused_until: null })
+        .eq("id", row.id);
+      row.paused_reason = null;
+      if (cust) {
+        cust.bot_paused = false;
+        cust.bot_paused_reason = null;
+        cust.bot_paused_until = null;
+        cust.assigned_human_id = null;
+      }
+      await logSkipped(supabase, "cadence_engine", {
+        reason: "handoff_expirado_robo_reassume",
+        customer_id: row.customer_id,
+        consultant_id: row.consultant_id,
+        stage,
+      });
+      console.log(`[cadence-tick] handoff expirado — robô reassume ${row.customer_id}`);
+    }
+
     if (stage === "PAUSED") {
       if (row.paused_until && new Date(row.paused_until) > now) {
         await finishRow(row.id, claimToken, { next_action_at: row.paused_until });
