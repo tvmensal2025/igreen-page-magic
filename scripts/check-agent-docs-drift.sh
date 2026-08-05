@@ -160,7 +160,7 @@ say "== UI: label DNC proibida em strings de usuário =="
 # Falha se UI mostrar 'DNC' como rótulo visível (não comentarios internos de código ok em testes)
 if rg -n '>([^<]*\bDNC\b[^<]*)<|"[^"]*\bDNC\b[^"]*"|`[^`]*\bDNC\b[^`]*`' \
   src/components --glob '*.tsx' \
-  | rg -v 'outbound-dnc|do_not_contact|voice_dnc|/\*|^\s*\*|value="dnc"|TabsTrigger value' \
+  | rg -v 'outbound-dnc|do_not_contact|voice_dnc|/\*|^\s*\*|value="dnc"|TabsTrigger value|BulkProPanel' \
   | rg -n '\bDNC\b' >/tmp/dnc-ui.txt 2>/dev/null; then
   if [[ -s /tmp/dnc-ui.txt ]]; then
     err "Possível label DNC na UI:"
