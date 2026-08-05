@@ -74,12 +74,13 @@ Responda em **pt-BR**. Você NÃO recebe automaticamente as `.cursor/rules` do C
 - **Nome do consultor ao lead** via `resolvePublicConsultantLabel` (nunca `display_name || name` cru).
 - **Protocolo `2026-####`** existe só no banco/admin — nunca appendar em mensagem WA.
 - **Portal 2 é o único cadastro vivo** (Portal 1 morto 2026-06); Club e Sync têm workers separados.
-- **Caps outreach A/B/C** (`daily_reheat_settings`):
-  - **A = ilimitado** (inbound, bypass total, não conta no global)
-  - **B = `cap_b`** (default 150) — reengajamento
-  - **C = `cap_c`** (default 50) — RECALL_*
-  - **Global B+C = `cap_global_outreach`** (default 200) — teto anti-ban
-  - Excedeu → adia p/ próxima manhã BRT (nunca descarta). Alertas 60/85/100 % em `automation_skip_log`.
+- **Caps outreach A/B/C** (`daily_reheat_settings`) — **cota por consultor** desde 2026-08-05:
+ - **A = ilimitado** (inbound, bypass total, não conta em nada)
+ - **B = `cap_b`** (default 150) — reengajamento · **C = `cap_c`** (default 50) — RECALL_*
+ - Linha `id = <uuid do consultor>` = cota daquele consultor; sem linha, herda a linha `global`
+ - Linha `global.cap_global_outreach` (default 200) = **teto do número de WhatsApp compartilhado**, aplicado por cima da cota individual (anti-ban). Só aumentar quando cada consultor tiver chip próprio
+ - Helper canônico: `_shared/outreach-caps.ts`; contagem por dono: RPC `outreach_touches_today`
+ - Excedeu → adia p/ próxima manhã BRT (nunca descarta). Alertas 60/85/100 % em `automation_skip_log`.
 - **Cérebro ≠ Grupo A ≠ cadência A/B/C:** funil cadastro determinístico manda; Cérebro só laterais (opt-in `cerebro_ativo` default off). Ver `#cerebro-fluxo-b` / armadilha #36.
 
 ## Steering — índice completo

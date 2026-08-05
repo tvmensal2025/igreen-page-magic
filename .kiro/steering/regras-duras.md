@@ -59,8 +59,10 @@ Espelho das `.cursor/rules/*.mdc`. Imperativo — modelo fraco: obedeça sem rei
 - **A = ilimitado** (inbound/em conversa; bypass total, não conta no global).
 - **B = `daily_reheat_settings.cap_b`** (default 150, **cap fixo configurável — NÃO é ramp**) — reengajamento (COLD/SMS/CALL/TEMA).
 - **C = `daily_reheat_settings.cap_c`** (default 50) — RECALL_* (60D…YEARLY, incl. `_SMS`/`_CALL`).
-- **Global B+C = `daily_reheat_settings.cap_global_outreach`** (default 200) — teto anti-ban somado.
-- Excedeu → **adia** para próxima manhã BRT (nunca descarta o lead).
+- **Cota é POR CONSULTOR** (2026-08-05): linha `daily_reheat_settings.id = <uuid do consultor>` sobrescreve `cap_b`/`cap_c`/`cap_global_outreach` daquele consultor; sem linha própria, herda a linha `global`. Contagem do dia por dono via RPC `outreach_touches_today`.
+- **Teto do número compartilhado = `cap_global_outreach` da linha `global`** (default 200) — trava anti-ban aplicada **por cima** da cota individual. Cota por consultor **não cria capacidade nova no chip**: só suba este teto quando cada consultor tiver número próprio.
+- Excedeu → **adia** para próxima manhã BRT (nunca descarta o lead). Motivo em `automation_skip_log` (`outreach_cap_reached`, com `blocked_by: platform|consultant`).
+- Helper canônico: `_shared/outreach-caps.ts` (`decideOutreachCap`, `resolveCapValues`, `usageBucketKey`). Não reimplementar a decisão dentro do tick.
 - Classificação: `stageGroup(stage)` em `_shared/cadence-engine.ts`.
 - Alertas 60 / 85 / 100 % em `automation_skip_log` (`outreach_cap_{b|c|g}_{60|85|100}pct`); UI: `ColdCadenceCapCard` (3 barras).
 - `daily_whapi_cap` = legado, mantido só para retrocompat do reheat clássico.
