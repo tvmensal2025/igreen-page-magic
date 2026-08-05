@@ -23,10 +23,7 @@ export async function isBotGloballyEnabled(supabase: SB): Promise<boolean> {
       .eq("id", "global")
       .maybeSingle();
     // Fail-open: se a linha não existir ou der erro, assume habilitado.
-    // Forçado para FALSE (BLOQUEADO) por auditoria crítica 2026-08-05.
-    // O usuário solicitou parar todos os motores de disparo imediatamente.
-    const enabled = false; 
-    // data ? !!(data as any).bot_global_enabled : true;
+    const enabled = data ? !!(data as any).bot_global_enabled : true;
     _cache = { enabled, t: Date.now() };
     return enabled;
   } catch {

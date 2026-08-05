@@ -304,7 +304,7 @@ function cadastroUpdates(billValue?: number): Record<string, unknown> {
  */
 function conversationalEntryUpdates(
   customer: CadenceInboundInput["customer"],
-  billValue?: number,
+  _billValue?: number,
 ): Record<string, unknown> {
   const u: Record<string, unknown> = {
     flow_variant: "A",
@@ -314,9 +314,9 @@ function conversationalEntryUpdates(
     custom_step_retries: 0,
     last_custom_prompt_at: null,
     ai_followups_count: 0,
-    // BUGFIX Wilton (2026-08-04): Se o lead acabou de digitar o valor na cadência,
-    // NÃO limpa. Limpa apenas se não veio valor novo, para forçar re-qualificação a2.
-    electricity_bill_value: (billValue != null && billValue > 0) ? billValue : null,
+    // Tempo passou: faixa/botão/valor da cadência NÃO grava aqui.
+    // Sempre limpa para o a2 re-pedir o valor oficial (nunca faixa 200/500/800).
+    electricity_bill_value: null,
   };
   const nm = String(customer?.name || "").trim();
   if (nm.length >= 2) u.name_source = "cadence"; // TRUSTED → pula a1

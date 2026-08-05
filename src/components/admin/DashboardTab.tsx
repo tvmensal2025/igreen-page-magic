@@ -176,7 +176,7 @@ export function DashboardTab({
       };
       walletMine = filterMyClients(walletAll, expandedSettings);
     }
-    // bloqueie todas as msg de hoje, pare todos os motores de disparo, deixe apenas para receber coloque explicito para arrumarmos e amanha voltamos: Total de cadastros = carteira sincronizada (bate com o portal).
+    // Total de cadastros = carteira sincronizada (bate com o portal).
     // Aplica somente o filtro de licenciado quando o usuário seleciona um.
     const walletForTotal = selectedLicenciado === "all"
       ? walletAll
@@ -643,7 +643,7 @@ export function DashboardTab({
 
       {/* CLIENTES iGREEN — 4 cards (2 cols no mobile modo PC; 4 no md+) */}
       <div className="grid grid-cols-1 min-[380px]:grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-4 min-w-0" data-tour="painel-kpis">
-        <StatCard icon={<Users className="w-5 h-5" />} label="bloqueie todas as msg de hoje, pare todos os motores de disparo, deixe apenas para receber coloque explicito para arrumarmos e amanha voltamos" value={filteredMetrics?.totalCustomers ?? 0} color="primary" />
+        <StatCard icon={<Users className="w-5 h-5" />} label="Total de cadastros" value={filteredMetrics?.totalCustomers ?? 0} color="primary" />
         <StatCard icon={<Zap className="w-5 h-5" />} label="Média kWh/cliente" value={`${(filteredMetrics?.avgKw ?? 0).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} kW`} color="accent" subtitle={`Total: ${(filteredMetrics?.totalKw ?? 0).toLocaleString("pt-BR")} kW`} />
         <StatCard
           icon={<DollarSign className="w-5 h-5" />}
