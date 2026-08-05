@@ -33,9 +33,9 @@ Isolamento e concorrência:
 - `wrapSenderWithLivePauseGuard` re-lê o lead antes de cada outbound e é
   fail-closed: leitura com erro não libera o bot.
 - Envio proativo (`cadence-tick`) passa `respectInboundTurn: true` em
-  `assertBotOutboundAllowed`; com turno inbound em andamento ou fila pendente,
-  o toque é adiado para o próximo tick. Envio manual do consultor não usa esse
-  gate.
+  `assertBotOutboundAllowed`; com turno inbound em andamento ou fila pendente
+  recente (< 5 min), o toque é adiado para o próximo tick. Marcador pendente
+  órfão nunca silencia o lead. Envio manual do consultor não usa esse gate.
 - FAQ/atalhos dentro de cadastro rodam com `keepStep: true` e não alteram
   `conversation_step`; a regra comercial de fechamento (`is_closing`) continua
   valendo apenas fora dos passos de cadastro (`NO_QA_STEPS`).

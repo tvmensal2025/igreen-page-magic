@@ -31,11 +31,33 @@ describe("isInboundTurnInProgress", () => {
     await expect(isInboundTurnInProgress(sb, "lead-1")).resolves.toBe(true);
   });
 
-  it("bloqueia enquanto há rajada inbound na fila", async () => {
+  it("bloqueia enquanto há rajada inbound recente na fila", async () => {
     const sb = fakeSupabase({
-      data: { bot_processing_until: inPast, pending_inbound_message_id: "m2" },
+      data: {
+        bot_processing_until: inPast,
+        pending_inbound_message_id: "m2",
+        pending_inbound_at: new Date(Date.now() - 10_000).toISOString(),
+      },
     });
     await expect(isInboundTurnInProgress(sb, "lead-1")).resolves.toBe(true);
+  });
+
+  it("marcador pendente órfão não silencia a cadência do lead", async () => {
+    const sb = fakeSupabase({
+      data: {
+        bot_processing_until: null,
+        pending_inbound_message_id: "m2",
+        pending_inbound_at: new Date(Date.now() - 60 * 60_000).toISOString(),
+      },
+    });
+    await expect(isInboundTurnInProgress(sb, "lead-1")).resolves.toBe(false);
+  });
+
+  it("marcador sem timestamp não bloqueia", async () => {
+    const sb = fakeSupabase({
+      data: { pending_inbound_message_id: "m2", pending_inbound_at: null },
+    });
+    await expect(isInboundTurnInProgress(sb, "lead-1")).resolves.toBe(false);
   });
 
   it("libera com lock expirado e fila vazia", async () => {

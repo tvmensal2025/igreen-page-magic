@@ -73,6 +73,8 @@ export function isPhoneAllowedForE2eStrict(phone: string | null | undefined): bo
  * tem TTL curto, então o pior caso é adiar o toque para o próximo tick.
  * Nunca lança: erro de leitura libera o envio (comportamento anterior).
  */
+export const PENDING_INBOUND_FRESH_MS = 5 * 60_000;
+
 export async function isInboundTurnInProgress(
   supabase: SupabaseClient,
   customerId: string,
@@ -80,14 +82,23 @@ export async function isInboundTurnInProgress(
   try {
     const { data, error } = await supabase
       .from("customers")
-      .select("bot_processing_until, pending_inbound_message_id")
+      .select("bot_processing_until, pending_inbound_message_id, pending_inbound_at")
       .eq("id", customerId)
       .maybeSingle();
     if (error || !data) return false;
-    const row = data as { bot_processing_until?: string | null; pending_inbound_message_id?: string | null };
-    if (String(row.pending_inbound_message_id || "").trim()) return true;
+    const row = data as {
+      bot_processing_until?: string | null;
+      pending_inbound_message_id?: string | null;
+      pending_inbound_at?: string | null;
+    };
     if (row.bot_processing_until) {
-      return new Date(row.bot_processing_until).getTime() > Date.now();
+      if (new Date(row.bot_processing_until).getTime() > Date.now()) return true;
+    }
+    // Marcador pendente só conta se for recente. Um marcador órfão (turno que
+    // morreu sem drenar) NUNCA pode silenciar a cadência daquele lead.
+    if (String(row.pending_inbound_message_id || "").trim() && row.pending_inbound_at) {
+      const at = new Date(row.pending_inbound_at).getTime();
+      return Number.isFinite(at) && Date.now() - at < PENDING_INBOUND_FRESH_MS;
     }
     return false;
   } catch {
