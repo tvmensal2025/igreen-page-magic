@@ -33,6 +33,23 @@ describe("partnerPortalCycle", () => {
     expect(c).toBeNull();
   });
 
+  it("handoff humano pausado aparece na pizza A (Ativo)", () => {
+    const c = classifyPartnerCycleLead({
+      id: "robinho",
+      name: "Robinho Pereira",
+      name_source: "whatsapp_push",
+      phone_whatsapp: "5534999990000",
+      status: "pending",
+      stage: "PAUSED",
+      paused_reason: "handoff_humano",
+      next_action_at: "2026-08-07T20:00:00Z",
+      active_cadence: true,
+    });
+    expect(c?.group).toBe("A");
+    expect(c?.sliceId).toBe("flow");
+    expect(c?.stageNotice).toMatch(/consultor/i);
+  });
+
   it("fila A tem prioridade sobre stage", () => {
     const c = classifyPartnerCycleLead({
       id: "q",

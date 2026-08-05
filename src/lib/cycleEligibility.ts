@@ -92,6 +92,8 @@ export function isPausedGroupA(pausedReason: string | null | undefined): boolean
   const r = String(pausedReason || "").trim();
   if (!r || r === "lead_responded") return true;
   if (isFrozenPauseReason(r)) return false;
+  // Atendimento humano pausa o robô, mas o lead continua no ciclo A (pizza).
+  if (r === "handoff_humano" || /^humano_assumiu/.test(r)) return true;
   const m = /^lead_responded(?::(.+))?$/.exec(r);
   if (!m) return false;
   const prev = (m[1] || "").trim();

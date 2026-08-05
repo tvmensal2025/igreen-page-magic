@@ -324,6 +324,21 @@ export function classifyPartnerCycleLead(
   } else if (queue === "B" && QUEUE_B_TO_SLICE[queueStep]) {
     group = "B";
     sliceId = QUEUE_B_TO_SLICE[queueStep];
+  } else if (
+    String(raw.paused_reason || "").trim().toLowerCase() === "handoff_humano" ||
+    /^humano_assumiu/.test(String(raw.paused_reason || "").trim().toLowerCase())
+  ) {
+    // Pausado com o consultor: continua na pizza (fatia Ativo / Em conversa).
+    if (stage && CADENCE_TO_B[stage]) {
+      group = "B";
+      sliceId = CADENCE_TO_B[stage];
+    } else if (stage && CADENCE_TO_C[stage]) {
+      group = "C";
+      sliceId = CADENCE_TO_C[stage];
+    } else {
+      group = "A";
+      sliceId = stage && CADENCE_TO_A[stage] ? CADENCE_TO_A[stage] : "flow";
+    }
   } else if (stage === "PAUSED") {
     if (isPausedGroupA(raw.paused_reason)) {
       group = "A";
@@ -365,8 +380,15 @@ export function classifyPartnerCycleLead(
         : ""
     : "";
 
-  const next = labelNextCadenceAction(stage);
-  const notice = stageNoticeForSlice(sliceId, stage);
+  const paused = String(raw.paused_reason || "").trim().toLowerCase();
+  const isHandoff =
+    paused === "handoff_humano" || paused.startsWith("humano_assumiu");
+  const next = isHandoff
+    ? "Automação pausada — consultor no comando"
+    : labelNextCadenceAction(stage);
+  const notice = isHandoff
+    ? "Falando direto com o consultor (automação pausada)"
+    : stageNoticeForSlice(sliceId, stage);
 
   return {
     id: raw.id,
