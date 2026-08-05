@@ -28,7 +28,14 @@ export interface SendConfig {
 }
 
 export interface CampaignTarget {
+  /**
+   * Id da linha na origem: `customers.id` quando o disparo começa da tela,
+   * `bulk_campaign_targets.id` quando é retomada do banco. NÃO use para
+   * atualizar `customers` — use `customerId`.
+   */
   id?: string;
+  /** `customers.id` resolvido. Usado no gate DNC e no handoff/Grupo A. */
+  customerId?: string;
   phone: string;
   name?: string;
   bill?: number;

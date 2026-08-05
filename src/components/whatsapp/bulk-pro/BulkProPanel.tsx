@@ -26,6 +26,8 @@ interface Customer {
 
 interface Props {
   instanceName: string;
+  /** Canal primário. Sem isso o envio cai no caminho Evolution (legado). */
+  isWhapi?: boolean;
   customers: Customer[];
   templates: MessageTemplate[];
   consultantId: string;
@@ -96,7 +98,7 @@ function downloadCsv(rows: CampaignTarget[]) {
   URL.revokeObjectURL(url);
 }
 
-export function BulkProPanel({ instanceName, customers, templates, consultantId, seedContacts }: Props) {
+export function BulkProPanel({ instanceName, isWhapi, customers, templates, consultantId, seedContacts }: Props) {
   const { toast } = useToast();
   const confirm = useConfirm();
   const [step, setStep] = useState<Step>(1);
@@ -194,11 +196,15 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
   }), []);
 
   const checkConnection = useCallback(async () => {
+    // Whapi não tem linha em whatsapp_instances: getConnectionState é Evolution
+    // e devolvia "close", pausando o disparo com "WhatsApp desconectado" mesmo
+    // com o canal saudável. A saúde do Whapi já é validada antes de abrir o painel.
+    if (isWhapi) return true;
     try {
       const r = await getConnectionState(instanceName);
       return (r?.state || "close") === "open";
     } catch { return false; }
-  }, [instanceName]);
+  }, [instanceName, isWhapi]);
 
   const runCampaign = useCallback(async (
     initialTargets: CampaignTarget[],
@@ -290,34 +296,40 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
 
       const finalMsg = renderFinal(useText, { name: t.name, bill: t.bill, city: t.city });
 
+      // Base comum: `isWhapi` decide o canal real (sem isso cai no Evolution
+      // legado) e `customerId` habilita o gate DNC + o registro em `conversations`.
+      const sendBase = { instanceName, isWhapi, customerId: t.customerId ?? null, phone: t.phone };
+
       let ok = true;
       let err: string | undefined;
+      const fail = (msg?: string) => { ok = false; err = err || msg || "Falha no envio"; };
       try {
         if (useMediaItems.length > 0) {
-          // Se houver múltiplas mídias, enviamos o texto uma vez (se configurado como primeiro)
-          // ou enviamos como legenda da primeira imagem/vídeo.
+          const firstKind = useMediaItems[0].kind;
+          const firstAcceptsCaption = firstKind === "image" || firstKind === "video";
+          const captionMode = useConfig.mediaOrder === "caption_only" || useConfig.mediaOrder === "media_first";
+          // Áudio e documento não aceitam legenda: nesses casos o texto tem que
+          // sair como mensagem separada, senão ele simplesmente não é enviado.
+          const useCaptionOnFirst = captionMode && firstAcceptsCaption && Boolean(finalMsg.trim());
+
           if (useConfig.mediaOrder === "text_first" && finalMsg.trim()) {
-            const r = await sendWhatsAppMessage({ instanceName, phone: t.phone, mediaCategory: "text", text: finalMsg });
-            if (r.status === "failed") { ok = false; err = r.error; }
+            const r = await sendWhatsAppMessage({ ...sendBase, mediaCategory: "text", text: finalMsg });
+            if (r.status === "failed") fail(r.error);
             await new Promise(r2 => setTimeout(r2, 1000 + Math.random() * 1000));
           }
 
           for (let mIdx = 0; mIdx < useMediaItems.length; mIdx++) {
             const m = useMediaItems[mIdx];
             const cat = m.kind === "image" ? "image" : m.kind === "video" ? "video" : m.kind === "audio" ? "audio" : "document";
-            
-            // Legenda vai apenas na primeira mídia se configurado como "caption_only" ou "media_first"
-            const caption = mIdx === 0 && (useConfig.mediaOrder === "caption_only" || useConfig.mediaOrder === "media_first") 
-              ? finalMsg 
-              : undefined;
+            const caption = mIdx === 0 && useCaptionOnFirst ? finalMsg : undefined;
 
             const r = await sendWhatsAppMessage({
-              instanceName, phone: t.phone, mediaCategory: cat as any,
+              ...sendBase, mediaCategory: cat as any,
               mediaUrl: m.url,
-              text: (cat === "image" || cat === "video") ? caption : undefined,
+              text: caption,
               fileName: m.fileName,
             });
-            if (r.status === "failed") { ok = false; err = r.error || err; }
+            if (r.status === "failed") fail(r.error);
 
             // Intervalo entre mídias do mesmo contato
             if (mIdx < useMediaItems.length - 1) {
@@ -325,30 +337,30 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
             }
           }
 
-          // Se configurado para texto por último (e não foi legenda)
-          if (useConfig.mediaOrder === "media_first" && finalMsg.trim()) {
-            const alreadySentAsCaption = useMediaItems.some(m => m.kind === "image" || m.kind === "video");
-            if (!alreadySentAsCaption || useConfig.mediaOrder === "media_first") {
-              await new Promise(r2 => setTimeout(r2, 1000 + Math.random() * 1000));
-              const r2 = await sendWhatsAppMessage({ instanceName, phone: t.phone, mediaCategory: "text", text: finalMsg });
-              if (r2.status === "failed") { ok = false; err = r2.error || err; }
-            }
+          // Texto depois do anexo sempre que ele não saiu como legenda nem antes.
+          const textAlreadySent = useConfig.mediaOrder === "text_first" || useCaptionOnFirst;
+          if (finalMsg.trim() && !textAlreadySent) {
+            await new Promise(r2 => setTimeout(r2, 1000 + Math.random() * 1000));
+            const r2 = await sendWhatsAppMessage({ ...sendBase, mediaCategory: "text", text: finalMsg });
+            if (r2.status === "failed") fail(r2.error);
           }
         } else {
-          if (!finalMsg.trim()) { ok = false; err = "Mensagem vazia"; }
+          if (!finalMsg.trim()) fail("Mensagem vazia");
           else {
-            const r = await sendWhatsAppMessage({ instanceName, phone: t.phone, mediaCategory: "text", text: finalMsg });
-            if (r.status === "failed") { ok = false; err = r.error; }
+            const r = await sendWhatsAppMessage({ ...sendBase, mediaCategory: "text", text: finalMsg });
+            if (r.status === "failed") fail(r.error);
           }
         }
       } catch (e: any) {
         ok = false; err = e?.message || "Erro desconhecido";
       }
 
-      // F12/F16: Sincroniza estado de pausa ou roteamento no banco para disparos via UI
-      if (ok && t.id && t.id.length > 10) { 
+      // F12/F16: Sincroniza estado de pausa ou roteamento no banco para disparos via UI.
+      // Usa `customerId` (não `t.id`): na retomada o `t.id` é o id do target da
+      // campanha, e o update em `customers` não achava nada.
+      if (ok && t.customerId) {
         const action = overrides?.config?.afterSendAction ?? config.afterSendAction ?? "handoff";
-        
+
         if (action === "grupo_a") {
           supabase.from("customers")
             .update({
@@ -358,7 +370,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
               conversation_step: "a1_ask_name",
               last_outbound_at: new Date().toISOString(),
             } as any)
-            .eq("id", t.id)
+            .eq("id", t.customerId)
             .then(() => {});
         } else {
           // Padrão solicitado: Pausa bot, humano responde
@@ -369,7 +381,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
               bot_paused_at: new Date().toISOString(),
               assigned_human_id: consultantId,
             })
-            .eq("id", t.id)
+            .eq("id", t.customerId)
             .then(() => {});
         }
       }
@@ -378,21 +390,11 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
         ...x, status: ok ? "sent" : "failed", error: err, finalMessage: finalMsg, sentAt: Date.now(),
       } : x));
 
-      // --- Orquestração Multicanal (Reforço no Navegador) ---
-      if (ok) {
-        if (useConfig.sendSms && useConfig.smsText) {
-          const smsFinal = renderFinal(useConfig.smsText, { name: t.name, bill: t.bill, city: t.city });
-          supabase.functions.invoke("send-velip-sms", {
-            body: { to: t.phone, text: smsFinal, consultantId }
-          }).catch(e => console.error("SMS fail:", e));
-        }
-        if (useConfig.makeCall || useConfig.callAudioClipId) {
-          const clipId = useConfig.callAudioClipId || "sofia-a2";
-          supabase.functions.invoke("voice-dialer-webhook", {
-            body: { to: t.phone, audioClipId: clipId, consultantId, source: `bulk-ui:${campaignIdRef.current}` }
-          }).catch(e => console.error("Call fail:", e));
-        }
-      }
+      // --- Reforço SMS / Ligação: NÃO IMPLEMENTADO ---
+      // Removidas as invocações de `send-velip-sms` (função inexistente) e
+      // `voice-dialer-webhook` (callback da Velip, exige ?auth → 401). Eram
+      // fire-and-forget com .catch(), então nada saía e nada era registrado.
+      // O aviso ao consultor fica no passo Multicanal.
 
       // Persist target result (fire-and-forget)
       if (campaignIdRef.current) {
@@ -442,7 +444,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
       }
       return prev;
     });
-  }, [config, text, instanceName, checkConnection, sleep, toast, consultantId, campaignName]);
+  }, [config, text, instanceName, isWhapi, checkConnection, sleep, toast, consultantId, campaignName]);
 
   const sendTest = useCallback(async () => {
     if (!text.trim() && (!config.mediaItems || config.mediaItems.length === 0)) {
@@ -461,7 +463,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
        toast({ title: "Aviso", description: "Enviando teste para um número de exemplo. Configure seu telefone no perfil para receber o teste real." });
     }
 
-    toast({ title: "Enviando teste...", description: "WhatsApp, SMS e Ligação (se ativos)" });
+    toast({ title: "Enviando teste...", description: "Mensagem de WhatsApp para o seu número" });
     
     const dummyTarget: CampaignTarget = {
       id: "test",
@@ -478,30 +480,31 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
       if (config.mediaItems && config.mediaItems.length > 0) {
         for (const m of config.mediaItems) {
            const cat = m.kind === "image" ? "image" : m.kind === "video" ? "video" : m.kind === "audio" ? "audio" : "document";
-           await sendWhatsAppMessage({ instanceName, phone: dummyTarget.phone, mediaCategory: cat as any, mediaUrl: m.url, text: finalMsg });
+           await sendWhatsAppMessage({ instanceName, isWhapi, phone: dummyTarget.phone, mediaCategory: cat as any, mediaUrl: m.url, text: finalMsg });
         }
       } else {
-        await sendWhatsAppMessage({ instanceName, phone: dummyTarget.phone, mediaCategory: "text", text: finalMsg });
+        await sendWhatsAppMessage({ instanceName, isWhapi, phone: dummyTarget.phone, mediaCategory: "text", text: finalMsg });
       }
 
-      // SMS
-      if (config.sendSms && config.smsText) {
-        const smsFinal = renderFinal(config.smsText, { name: dummyTarget.name });
-        await supabase.functions.invoke("send-velip-sms", { body: { to: dummyTarget.phone, text: smsFinal, consultantId } });
-      }
+      // SMS e ligação: as chamadas antigas apontavam para `send-velip-sms`
+      // (função que não existe) e `voice-dialer-webhook` (callback da Velip,
+      // exige ?auth → 401). Falhavam em silêncio e davam falsa sensação de
+      // sucesso. Enquanto não houver implementação, o teste avisa em vez de
+      // fingir que enviou.
+      const semReforco = (config.sendSms && config.smsText) || config.makeCall || config.callAudioClipId;
 
-      // Voice
-      if (config.makeCall && config.callAudioClipId) {
-        await supabase.functions.invoke("voice-dialer-webhook", { body: { to: dummyTarget.phone, audioClipId: config.callAudioClipId, consultantId, source: "test" } });
-      }
-
-      toast({ title: "Teste enviado com sucesso!", description: "Verifique seu celular." });
+      toast({
+        title: "Teste de WhatsApp enviado",
+        description: semReforco
+          ? "Verifique seu celular. SMS e ligação não foram enviados — reforço multicanal ainda não está disponível."
+          : "Verifique seu celular.",
+      });
     } catch (e: any) {
       toast({ title: "Falha no teste", description: e.message, variant: "destructive" });
     }
-  }, [text, config, instanceName, consultantId, toast]);
+  }, [text, config, instanceName, isWhapi, consultantId, toast]);
 
-  const startCampaign = useCallback(() => {
+  const startCampaign = useCallback(async () => {
     if (deduped.length === 0) { toast({ title: "Selecione contatos", variant: "destructive" }); return; }
     // A validação de mensagem agora é mais flexível: se for multicanal puro (ligação/sms), 
     // pode não ter WhatsApp, mas o Disparo PRO é focado em WhatsApp + Reforço.
@@ -510,14 +513,29 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
       toast({ title: "Intervalo inválido", description: "Intervalo máximo deve ser maior ou igual ao mínimo", variant: "destructive" });
       return;
     }
+
+    // Confirmação explícita do destino da resposta: é a decisão com mais
+    // impacto do disparo e antes ficava só num toggle no passo de envio.
+    const isGrupoA = config.afterSendAction === "grupo_a";
+    const confirmed = await confirm({
+      title: config.scheduleAt ? `Agendar disparo para ${deduped.length} contatos?` : `Disparar para ${deduped.length} contatos?`,
+      description: isGrupoA
+        ? "Quem responder entra no funil de cadastro automático (Sofia / Grupo A): ela pede nome, conta de luz e documento sozinha."
+        : "Quem responder fica aguardando você no chat. O robô e a cadência ficam calados para esses contatos até você reativar o robô na conversa.",
+      confirmText: config.scheduleAt ? "Agendar" : "Disparar agora",
+    });
+    if (!confirmed) return;
     const initial: CampaignTarget[] = deduped.map(c => ({
-      id: c.id, phone: c.phone, name: c.name,
+      id: c.id,
+      // Aqui a origem é a lista de leads, então o id É o customers.id.
+      customerId: c.id,
+      phone: c.phone, name: c.name,
       bill: c.electricity_bill_value,
       city: c.city, // Garante que a cidade vá para o render de variáveis
       status: "queued",
     }));
     runCampaign(initial);
-  }, [deduped, text, config, runCampaign, toast]);
+  }, [deduped, text, config, runCampaign, toast, confirm]);
 
   const handlePause = () => { pausedRef.current = !pausedRef.current; setPaused(pausedRef.current); };
   const handleCancel = () => { cancelledRef.current = true; pausedRef.current = false; setPaused(false); };
@@ -563,14 +581,27 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
     setConfig(restored);
     setCampaignName(payload.name);
     toast({ title: "Retomando disparo", description: `${payload.queuedTargets.length} contatos na fila` });
-    
-    runCampaign(payload.queuedTargets, payload.id, {
+
+    // Na retomada os targets vêm de `bulk_campaign_targets`, então o `id` NÃO é
+    // o customers.id. Resolve pelo telefone na lista de leads já carregada para
+    // o gate DNC e o handoff/Grupo A continuarem funcionando.
+    const byPhone = new Map<string, string>();
+    for (const c of customers) {
+      const k = normalizePhone(c.phone_whatsapp || "").slice(-11);
+      if (k.length >= 10) byPhone.set(k, c.id);
+    }
+    const resumeTargets = payload.queuedTargets.map(t => ({
+      ...t,
+      customerId: t.customerId ?? byPhone.get(normalizePhone(t.phone).slice(-11)),
+    }));
+
+    runCampaign(resumeTargets, payload.id, {
       text: payload.messageText,
       mediaItems: mediaItems,
       config: restored,
       name: payload.name,
     });
-  }, [running, runCampaign, toast]);
+  }, [running, runCampaign, toast, customers]);
 
   const resetAll = async () => {
     setIsCleaning(true);
@@ -955,7 +986,7 @@ export function BulkProPanel({ instanceName, customers, templates, consultantId,
                   disabled={running || uploading || (!text.trim() && (!config.mediaItems || config.mediaItems.length === 0))}
                   className="gap-2 border-primary/40 text-primary hover:bg-primary/5 rounded-xl h-11"
                 >
-                  <RotateCw className="w-4 h-4" /> Teste Multicanal
+                  <RotateCw className="w-4 h-4" /> Testar no meu Zap
                 </Button>
                 <Button
                   onClick={startCampaign}

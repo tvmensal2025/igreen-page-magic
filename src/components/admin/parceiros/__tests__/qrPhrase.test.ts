@@ -29,7 +29,45 @@ describe("buildDefaultQrPhrase — frase padrão curta", () => {
   it("sem keyword devolve a base genérica (não vazia)", () => {
     const frase = buildDefaultQrPhrase("");
     expect(frase.length).toBeGreaterThan(0);
-    expect(frase).toBe("Oi! Quero saber mais sobre o desconto na energia.");
+    expect(frase).toBe("Oi! Quero garantir meu desconto na energia.");
+  });
+
+  // REGRESSÃO 2026-08-05 (parceiro José): a frase padrão continha
+  // "quero saber mais", que é frase-âncora de Click-to-WhatsApp do Meta
+  // (`META_CTWA_OPENING_PHRASES`). O webhook classificava o lead do QR do
+  // parceiro como lead Meta e pulava a atribuição inteira — o parceiro nunca
+  // recebia o lead que ele mesmo indicou. Não repetir esse trecho aqui.
+  it("não usa nenhuma frase-âncora de CTWA do Meta", () => {
+    const proibidos = [
+      "quero saber mais",
+      "gostaria de saber mais",
+      "posso ter mais informacoes sobre isso",
+      "pagar menos na conta de luz",
+      "conta de luz mais barata",
+      "vi o anuncio",
+      "quero mais informacoes",
+    ];
+    const norm = (s: string) =>
+      s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+
+    const frases = [
+      buildDefaultQrPhrase(""),
+      buildDefaultQrPhrase("Valdenice"),
+      buildDefaultQrPhrase("jose"),
+      // keyword longa: exercita a escada de degradação da frase
+      buildDefaultQrPhrase("promocao-especial-black-friday-energia-solar-2026"),
+      resolveQrMessage(null, "Valdenice"),
+      resolveQrMessage("", ""),
+    ];
+
+    for (const frase of frases) {
+      for (const proibido of proibidos) {
+        expect(
+          norm(frase).includes(proibido),
+          `frase "${frase}" contém âncora CTWA "${proibido}"`,
+        ).toBe(false);
+      }
+    }
   });
 
   it("trata keyword nula/undefined sem quebrar", () => {

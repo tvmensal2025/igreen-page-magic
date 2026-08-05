@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { MessageSquare, Phone, Sparkles, Upload, Mic, Square, Loader2, Music, Check, Headphones } from "lucide-react";
+import { MessageSquare, Phone, Sparkles, Upload, Mic, Square, Loader2, Music, Check, Headphones, AlertTriangle } from "lucide-react";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
@@ -156,6 +156,24 @@ export function MultichannelStep({ config, onChange, consultantId }: Props) {
 
   return (
     <div className="space-y-6">
+      {/* O disparo em massa ainda não tem envio de SMS/ligação implementado.
+          Antes as chamadas apontavam para funções inexistentes e falhavam em
+          silêncio, dando a impressão de que o reforço tinha saído. */}
+      <div
+        role="status"
+        className="rounded-xl border border-warning/40 bg-warning/10 p-3 flex items-start gap-2"
+      >
+        <AlertTriangle className="w-4 h-4 text-warning shrink-0 mt-0.5" aria-hidden="true" />
+        <div className="space-y-1">
+          <p className="text-xs font-bold text-foreground">Reforço por SMS e ligação em manutenção</p>
+          <p className="text-[11px] text-muted-foreground leading-snug">
+            No disparo em massa, o SMS e a ligação ainda não são enviados — só o WhatsApp sai.
+            Você pode configurar aqui e o ajuste fica salvo na campanha, mas nada é disparado
+            por esses canais. Para SMS e ligação agora, use o módulo iGreen Fone.
+          </p>
+        </div>
+      </div>
+
       <div className="rounded-xl border border-border/40 bg-secondary/10 p-4 space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

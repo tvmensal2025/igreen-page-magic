@@ -6,6 +6,17 @@
 // Nunca chutar. Só atribui com match EXATO da keyword (tokens contíguos).
 // Fuzzy/Levenshtein foi removido — causava falso positivo real:
 // "Nilza" ≈ "nilma" (distância 1) → lead de teste ia pra parceira Nilma.
+//
+// KEYWORD GENÉRICA NUNCA ATRIBUI (regressão real, parceiro José 2026-08-05)
+// ------------------------------------------------------------------------
+// O José cadastrou a keyword **"Zap"**. "Zap" é como o brasileiro chama
+// WhatsApp: qualquer lead que escreva "me chama no zap" / "vi no zap" casaria
+// com ele. Ou seja, a keyword não identifica ninguém — ela sorteia.
+// A blocklist existia SÓ no front (`src/components/admin/parceiros/qrPhrase.ts`),
+// então (a) "zap" não estava na lista e (b) nada era validado no runtime:
+// keyword vinda de import/SQL/registro antigo passava direto.
+// Agora a checagem vive AQUI, no ponto onde a atribuição realmente acontece —
+// é a única trava que não depende de a UI ter validado antes.
 
 export interface KeywordMatchResult {
   partnerId: string;
@@ -48,6 +59,119 @@ function tokensOf(normalized: string): string[] {
 }
 
 /**
+ * Palavras genéricas demais para servir de IDENTIFICADOR de parceiro.
+ *
+ * Critério: se um lead que NUNCA ouviu falar do parceiro pode digitar isso
+ * naturalmente, não serve como keyword. Não é lista exaustiva — é o piso.
+ *
+ * A comparação é da keyword INTEIRA (não substring): "posto" é bloqueado, mas
+ * "posto shell br 101" continua válido. Então dá para usar termo genérico
+ * desde que qualificado.
+ *
+ * ESPELHO: `src/components/admin/parceiros/qrPhrase.ts` →
+ * `GENERIC_KEYWORD_BLOCKLIST`. Travado por `keyword-blocklist-parity.test.ts`.
+ */
+export const GENERIC_KEYWORD_BLOCKLIST = [
+  // ── WhatsApp / canal — o caso do José ──
+  "zap",
+  "zap zap",
+  "zapzap",
+  "whatsapp",
+  "whats",
+  "wpp",
+  "watsapp",
+  // ── produto / oferta ──
+  "energia",
+  "energy",
+  "desconto",
+  "luz",
+  "solar",
+  "igreen",
+  "i green",
+  "i-green",
+  "conta",
+  "boleto",
+  "fatura",
+  "promocao",
+  "promoção",
+  "oferta",
+  "economia",
+  "economizar",
+  "kwh",
+  "valor",
+  "preco",
+  "preço",
+  // ── meta-palavras do próprio material ──
+  "indicacao",
+  "indicação",
+  "banner",
+  "cartaz",
+  "panfleto",
+  "qr",
+  "qrcode",
+  "qr code",
+  "link",
+  "numero",
+  "número",
+  "contato",
+  "cadastro",
+  "cliente",
+  // ── lugar sem qualificação ──
+  "loja",
+  "mercado",
+  "posto",
+  "padaria",
+  // ── saudação / resposta solta ──
+  "oi",
+  "ola",
+  "olá",
+  "bom dia",
+  "boa tarde",
+  "boa noite",
+  "sim",
+  "nao",
+  "não",
+  "quero",
+  "ajuda",
+  "informacao",
+  "informação",
+  "informacoes",
+  "informações",
+];
+
+const GENERIC_SET = new Set(GENERIC_KEYWORD_BLOCKLIST.map((g) => normalizeText(g)));
+
+/** Tamanho mínimo útil — 1–2 caracteres casam em qualquer texto. */
+export const KEYWORD_MIN_LENGTH = 3;
+
+/**
+ * `true` quando a keyword não pode identificar um parceiro:
+ * está na blocklist, é curta demais, ou está vazia.
+ */
+export function isGenericKeyword(keyword: string): boolean {
+  const n = normalizeText(keyword);
+  if (!n) return true;
+  if (n.replace(/\s/g, "").length < KEYWORD_MIN_LENGTH) return true;
+  return GENERIC_SET.has(n);
+}
+
+/**
+ * Keywords inutilizáveis de uma lista de parceiros — para log/alerta e para a
+ * UI avisar o consultor que o parceiro precisa trocar a palavra.
+ */
+export function findGenericKeywords(
+  partners: PartnerKeywords[],
+): Array<{ partnerId: string; keyword: string }> {
+  const out: Array<{ partnerId: string; keyword: string }> = [];
+  for (const p of partners || []) {
+    for (const kw of p?.keywords || []) {
+      if (isGenericKeyword(kw)) out.push({ partnerId: p.partnerId, keyword: kw });
+    }
+  }
+  return out;
+}
+
+/**
  * True quando `kwTokens` aparece como sequência contígua em `msgTokens`.
  * Ex.: ["indicacao", "nilma"] casa em "oi (indicacao: nilma) #r711377".
  * Não casa substring frouxa ("luiz" dentro de "luiza") nem typo ("nilza"≠"nilma").
@@ -73,19 +197,26 @@ export function hasExactTokenSequence(msgTokens: string[], kwTokens: string[]): 
  * Returns the best match (longest keyword) or null.
  *
  * Matching strategy (só o que é seguro para atribuir parceiro):
- *   1. Normaliza texto e keyword
- *   2. Exige sequência contígua de tokens idênticos (word-boundary)
- *   3. Em empate, prefere a keyword mais longa
+ *   1. Descarta keyword genérica / curta demais (`isGenericKeyword`)
+ *   2. Normaliza texto e keyword
+ *   3. Exige sequência contígua de tokens idênticos (word-boundary)
+ *   4. Em empate, prefere a keyword mais longa
  *
  * NÃO usa fuzzy/Levenshtein. Atribuição determinística preferida: `#R{short_code}`.
+ *
+ * O passo 1 é a trava que não depende da UI: keyword genérica já gravada no
+ * banco (import, SQL, cadastro antigo — caso "Zap" do José) NUNCA atribui.
+ * Use `allowGeneric: true` só em ferramenta de diagnóstico, nunca em produção.
  */
 export function matchKeyword(
   messageText: string,
   partners: PartnerKeywords[],
+  opts?: { allowGeneric?: boolean },
 ): KeywordMatchResult | null {
   const normalized = normalizeText(messageText);
   if (!normalized) return null;
   const msgTokens = tokensOf(normalized);
+  const allowGeneric = opts?.allowGeneric === true;
 
   let best: KeywordMatchResult | null = null;
   let bestLen = -1;
@@ -94,6 +225,7 @@ export function matchKeyword(
     for (const kw of partner.keywords) {
       const normKw = normalizeText(kw);
       if (!normKw) continue;
+      if (!allowGeneric && isGenericKeyword(kw)) continue;
       const kwTokens = tokensOf(normKw);
       if (!hasExactTokenSequence(msgTokens, kwTokens)) continue;
 

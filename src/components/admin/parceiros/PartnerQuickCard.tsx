@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Pencil, QrCode, Eye, AlertTriangle, TrendingUp, TrendingDown, QrCode as QrIcon, Tag } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Area, AreaChart, ResponsiveContainer } from "recharts";
+import { isGenericKeyword } from "./qrPhrase";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
 import type { PartnerAnalytics } from "./hooks/usePartnerAnalytics";
 
@@ -18,7 +19,13 @@ interface Props {
 type Health = "ok" | "configured_no_leads" | "not_configured";
 
 function getHealth(p: ReferralPartner, a?: PartnerAnalytics): Health {
-  const configured = (p.keywords?.length ?? 0) > 0 || !!p.qr_phrase;
+  // Keyword genérica ("Zap", "energia", "oi") é ignorada pelo runtime na
+  // atribuição, então não conta como configurado — senão o card mostra
+  // "Atribuindo" para um parceiro que nunca vai receber lead.
+  const usaveis = (p.keywords || []).filter(
+    (k) => Boolean(k) && !isGenericKeyword(k),
+  );
+  const configured = usaveis.length > 0 || !!p.qr_phrase;
   if (!configured) return "not_configured";
   if ((a?.leads_30d ?? 0) === 0) return "configured_no_leads";
   return "ok";

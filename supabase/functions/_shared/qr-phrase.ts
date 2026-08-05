@@ -10,16 +10,23 @@
 // Se um lado divergir, o consultor veria uma frase no painel e o lead receberia
 // outra. Ao mexer aqui, replique no front (e vice-versa).
 //
-// MARCADOR DETERMINÍSTICO `#R{short_code}`
-// ----------------------------------------
-// A keyword no texto é ÚTIL mas FRÁGIL: leads editam a frase, removem trechos,
-// digitam só "oi". Sem keyword no texto, o webhook não atribui o lead ao
-// parceiro e o cashback vai para o consultor errado. Para tornar a atribuição
-// DETERMINÍSTICA, anexamos um marcador curto `#R{short_code}` (numérico, único
-// por consultor) ao final da mensagem. O webhook reconhece esse marcador ANTES
-// de cair no `matchKeyword` (fallback). Quando o `shortCode` não é informado
-// (parceiro legado sem backfill), o marcador é omitido e tudo continua como
-// antes — só keyword.
+// MARCADOR DETERMINÍSTICO `#R{short_code}` — DESLIGADO (2026-08-03)
+// -----------------------------------------------------------------
+// O marcador NÃO é mais anexado ao texto (cada consultor/parceiro atende em
+// instância própria, então a keyword não colide entre canais). O webhook ainda
+// ENTENDE `#R` de QR antigo já impresso — ver `extractShortCodeMarker`.
+// Consequência: a atribuição depende da keyword sobreviver no texto. Por isso a
+// frase padrão abaixo é montada para SEMPRE conter a keyword inteira.
+//
+// ⚠️ A FRASE PADRÃO NÃO PODE IMITAR O AUTOFILL DO META (regressão real)
+// ---------------------------------------------------------------------
+// Os webhooks tratam frases-âncora de Click-to-WhatsApp como sinal de lead Meta
+// (`matchesMetaCtwaPhrase` em `_shared/meta-ctwa-fallback.ts`). Enquanto a frase
+// padrão daqui continha "quero saber mais" — uma dessas âncoras — TODO lead que
+// entrava pelo QR do parceiro era classificado como lead Meta e o bloco de
+// atribuição de parceiro era pulado inteiro: o parceiro nunca recebia o lead,
+// mesmo tendo keyword e QR corretos.
+// Ao mexer nas frases daqui, mantenha `qr-phrase-ctwa-safety_test.ts` verde.
 
 /**
  * Teto ABSOLUTO da frase (só para manter a URL `wa.me` sã). A frase salva pelo
@@ -74,17 +81,22 @@ function appendShortCodeMarker(phrase: string, shortCode: string): string {
 /**
  * Frase PADRÃO curta para um parceiro, sempre contendo a `keyword`.
  *
- * - Com keyword: `Oi! Quero saber mais sobre o desconto na energia. (indicação: {keyword})`
+ * - Com keyword: `Oi! Vim pelo {keyword} e quero garantir meu desconto na energia.`
  * - Sem keyword: frase genérica curta.
+ *
+ * ⚠️ Nenhuma variante pode casar com `matchesMetaCtwaPhrase` (autofill do Meta),
+ * senão o webhook trata o lead do parceiro como lead Meta e não atribui.
+ * Em especial: NÃO usar "quero saber mais", "pagar menos na conta de luz",
+ * "conta de luz mais barata" nem "gostaria de saber mais".
  */
 export function buildDefaultQrPhrase(keyword?: string | null): string {
   const kw = tidy(keyword ?? "");
-  const base = "Oi! Quero saber mais sobre o desconto na energia.";
+  const base = "Oi! Quero garantir meu desconto na energia.";
   if (!kw) return base;
-  const withKw = tidy(`Oi! Vim pelo ${kw} e quero saber mais sobre o desconto na energia.`);
+  const withKw = tidy(`Oi! Vim pelo ${kw} e quero garantir meu desconto na energia.`);
   if (withKw.length <= QR_DEFAULT_PHRASE_MAX) return withKw;
   // Keyword longa: encurta a base, mantém a keyword inteira (atribuição).
-  const short = tidy(`Oi! Vim pelo ${kw}, quero o desconto na energia.`);
+  const short = tidy(`Oi! Vim pelo ${kw}, quero meu desconto na energia.`);
   if (short.length <= QR_DEFAULT_PHRASE_MAX) return short;
   const minimal = tidy(`Oi! Vim pelo ${kw}.`);
   if (minimal.length <= QR_DEFAULT_PHRASE_MAX) return minimal;

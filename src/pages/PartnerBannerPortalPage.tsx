@@ -40,6 +40,7 @@ export default function PartnerBannerPortalPage() {
   const [scanByCode, setScanByCode] = useState<Record<string, number>>({});
   const [leadByKw, setLeadByKw] = useState<Record<string, number>>({});
   const [fechamentos, setFechamentos] = useState(0);
+  const [emAnalise, setEmAnalise] = useState(0);
   const [statsLeads, setStatsLeads] = useState(0);
   const [statsLeituras, setStatsLeituras] = useState(0);
   const [cycleRaw, setCycleRaw] = useState<PartnerPortalCycleLeadRaw[]>([]);
@@ -71,6 +72,7 @@ export default function PartnerBannerPortalPage() {
           };
           stats?: {
             fechamentos?: number | null;
+            em_analise?: number | null;
             leads?: number | null;
             leituras?: number | null;
           };
@@ -97,6 +99,7 @@ export default function PartnerBannerPortalPage() {
         );
         setConsultantPhone(String(payload.consultant?.phone || "").trim());
         setFechamentos(Number(payload.stats?.fechamentos) || 0);
+        setEmAnalise(Number(payload.stats?.em_analise) || 0);
         setStatsLeads(Number(payload.stats?.leads) || 0);
         setStatsLeituras(Number(payload.stats?.leituras) || 0);
         setSpots(Array.isArray(payload.spots) ? payload.spots : []);
@@ -228,6 +231,7 @@ export default function PartnerBannerPortalPage() {
         leituras={totalLeituras}
         leads={totalLeads}
         fechamentos={fechamentos}
+        emAnalise={emAnalise}
         countA={countA}
         countB={countB}
         countC={countC}

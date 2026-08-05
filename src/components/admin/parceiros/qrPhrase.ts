@@ -42,15 +42,22 @@ function appendShortCodeMarker(phrase: string, shortCode: string): string {
 
 /**
  * Frase PADRÃO curta para um parceiro, sempre contendo a `keyword`.
+ *
+ * ⚠️ Nenhuma variante pode casar com as frases-âncora de Click-to-WhatsApp do
+ * Meta (`matchesMetaCtwaPhrase`, em `_shared/meta-ctwa-fallback.ts`). Enquanto
+ * a frase padrão continha "quero saber mais", o webhook classificava o lead do
+ * QR do parceiro como lead Meta e pulava a atribuição — o parceiro nunca
+ * recebia o lead. Evitar: "quero saber mais", "pagar menos na conta de luz",
+ * "conta de luz mais barata", "gostaria de saber mais".
  */
 export function buildDefaultQrPhrase(keyword?: string | null): string {
   const kw = tidy(keyword ?? "");
-  const base = "Oi! Quero saber mais sobre o desconto na energia.";
+  const base = "Oi! Quero garantir meu desconto na energia.";
   if (!kw) return base;
-  const withKw = tidy(`Oi! Vim pelo ${kw} e quero saber mais sobre o desconto na energia.`);
+  const withKw = tidy(`Oi! Vim pelo ${kw} e quero garantir meu desconto na energia.`);
   if (withKw.length <= QR_DEFAULT_PHRASE_MAX) return withKw;
   // Keyword longa: encurta a base, mantém a keyword inteira (atribuição).
-  const short = tidy(`Oi! Vim pelo ${kw}, quero o desconto na energia.`);
+  const short = tidy(`Oi! Vim pelo ${kw}, quero meu desconto na energia.`);
   if (short.length <= QR_DEFAULT_PHRASE_MAX) return short;
   const minimal = tidy(`Oi! Vim pelo ${kw}.`);
   if (minimal.length <= QR_DEFAULT_PHRASE_MAX) return minimal;
@@ -116,12 +123,31 @@ export function containsKeyword(phrase: string, keyword: string): boolean {
 }
 
 /**
- * Lista pequena de keywords genéricas demais para servir de marcador único.
- * São palavras que aparecem com frequência em texto natural de leads e que,
- * se usadas como keyword, atribuiriam o lead errado. Bloqueamos no form do
- * parceiro. NÃO é uma lista exaustiva — só os casos óbvios.
+ * Palavras genéricas demais para servir de IDENTIFICADOR de parceiro.
+ *
+ * Critério: se um lead que NUNCA ouviu falar do parceiro pode digitar isso
+ * naturalmente, não serve como keyword.
+ *
+ * Comparação é da keyword INTEIRA (não substring): "posto" é bloqueado, mas
+ * "posto shell br 101" continua válido.
+ *
+ * ESPELHO CANÔNICO: `supabase/functions/_shared/keyword-matcher.ts`.
+ * Travado por `__tests__/keywordBlocklistParity.test.ts` — editar os dois.
+ *
+ * Caso real que criou esta lista: o parceiro José cadastrou **"Zap"**. "Zap" é
+ * como o brasileiro chama WhatsApp, então qualquer lead que escrevesse
+ * "me chama no zap" viraria lead dele. A palavra não identificava — sorteava.
  */
 export const GENERIC_KEYWORD_BLOCKLIST = [
+  // ── WhatsApp / canal — o caso do José ──
+  "zap",
+  "zap zap",
+  "zapzap",
+  "whatsapp",
+  "whats",
+  "wpp",
+  "watsapp",
+  // ── produto / oferta ──
   "energia",
   "energy",
   "desconto",
@@ -132,22 +158,64 @@ export const GENERIC_KEYWORD_BLOCKLIST = [
   "i-green",
   "conta",
   "boleto",
+  "fatura",
   "promocao",
   "promoção",
   "oferta",
+  "economia",
+  "economizar",
+  "kwh",
+  "valor",
+  "preco",
+  "preço",
+  // ── meta-palavras do próprio material ──
   "indicacao",
   "indicação",
+  "banner",
+  "cartaz",
+  "panfleto",
+  "qr",
+  "qrcode",
+  "qr code",
+  "link",
+  "numero",
+  "número",
+  "contato",
+  "cadastro",
+  "cliente",
+  // ── lugar sem qualificação ──
+  "loja",
+  "mercado",
+  "posto",
+  "padaria",
+  // ── saudação / resposta solta ──
   "oi",
   "ola",
   "olá",
   "bom dia",
   "boa tarde",
   "boa noite",
+  "sim",
+  "nao",
+  "não",
+  "quero",
+  "ajuda",
+  "informacao",
+  "informação",
+  "informacoes",
+  "informações",
 ];
 
-/** `true` quando a keyword está na blocklist (genérica/colidente). */
+/** Tamanho mínimo útil — 1–2 caracteres casam em qualquer texto. */
+export const KEYWORD_MIN_LENGTH = 3;
+
+/**
+ * `true` quando a keyword não pode identificar um parceiro: está na blocklist,
+ * é curta demais, ou está vazia. Mesma régua do runtime (`keyword-matcher.ts`).
+ */
 export function isGenericKeyword(keyword: string): boolean {
   const n = norm(keyword);
-  if (!n) return false;
+  if (!n) return true;
+  if (n.replace(/\s/g, "").length < KEYWORD_MIN_LENGTH) return true;
   return GENERIC_KEYWORD_BLOCKLIST.some((g) => norm(g) === n);
 }

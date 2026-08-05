@@ -142,29 +142,38 @@ export function ScheduleStep({ config, onChange, totalContacts }: Props) {
         </div>
       </div>
 
-      {/* Post-send action */}
+      {/* Quando o lead responder */}
       <div className="rounded-xl border border-border/40 bg-secondary/10 p-3 space-y-3">
-        <div className="flex items-center gap-2"><Zap className="w-4 h-4 text-muted-foreground" /><span className="text-sm font-bold">Após o envio</span></div>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="flex items-center gap-2">
+          <Zap className="w-4 h-4 text-muted-foreground" aria-hidden="true" />
+          <span className="text-sm font-bold">Quando o lead responder</span>
+        </div>
+        <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="O que acontece quando o lead responder">
           <button
-            type="button" onClick={() => onChange({ ...config, afterSendAction: "handoff" })}
-            className={`px-3 py-2 rounded-lg text-left border transition-all ${config.afterSendAction !== "grupo_a" ? "border-primary/50 bg-primary/10" : "border-border/40 bg-secondary/20"}`}
+            type="button"
+            role="radio"
+            aria-checked={config.afterSendAction !== "grupo_a"}
+            onClick={() => onChange({ ...config, afterSendAction: "handoff" })}
+            className={`px-3 py-2 rounded-lg text-left border transition-all ${config.afterSendAction !== "grupo_a" ? "border-primary/50 bg-primary/10" : "border-border/40 bg-secondary/20 hover:bg-secondary/40"}`}
           >
-            <p className="text-xs font-bold">Aguardar Humano</p>
-            <p className="text-[10px] text-muted-foreground">Pausa o bot (Handoff 48h)</p>
+            <p className="text-xs font-bold">Só humano atende</p>
+            <p className="text-[10px] text-muted-foreground">Robô fica calado, você responde</p>
           </button>
           <button
-            type="button" onClick={() => onChange({ ...config, afterSendAction: "grupo_a" })}
-            className={`px-3 py-2 rounded-lg text-left border transition-all ${config.afterSendAction === "grupo_a" ? "border-primary/50 bg-primary/10" : "border-border/40 bg-secondary/20"}`}
+            type="button"
+            role="radio"
+            aria-checked={config.afterSendAction === "grupo_a"}
+            onClick={() => onChange({ ...config, afterSendAction: "grupo_a" })}
+            className={`px-3 py-2 rounded-lg text-left border transition-all ${config.afterSendAction === "grupo_a" ? "border-primary/50 bg-primary/10" : "border-border/40 bg-secondary/20 hover:bg-secondary/40"}`}
           >
-            <p className="text-xs font-bold">Auto-Cadastro (IA)</p>
-            <p className="text-[10px] text-muted-foreground">Inicia funil Sofia Grupo A</p>
+            <p className="text-xs font-bold">Sofia atende (Grupo A)</p>
+            <p className="text-[10px] text-muted-foreground">Funil de cadastro automático</p>
           </button>
         </div>
-        <p className="text-[10px] text-muted-foreground leading-tight">
-          {config.afterSendAction === "grupo_a" 
-            ? "Os leads serão direcionados para o funil automático de cadastro (Grupo A) assim que receberem a mensagem."
-            : "O robô será pausado para cada lead, permitindo que você assuma a conversa manualmente no WhatsApp."}
+        <p className="text-[11px] text-muted-foreground leading-snug">
+          {config.afterSendAction === "grupo_a"
+            ? "Quem responder cai no funil de cadastro do Grupo A: a Sofia pede o nome, a conta de luz e o documento, e segue até o portal sozinha. Você acompanha pelo chat e pode assumir a qualquer momento."
+            : "O robô é pausado para cada contato do disparo. Quem responder fica esperando você no chat — nem a Sofia nem a cadência automática falam com essa pessoa. A pausa não expira sozinha: para devolver o lead ao automático, reative o robô na conversa."}
         </p>
       </div>
 

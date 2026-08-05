@@ -8,7 +8,9 @@
 // O próximo tick retoma de onde parou (sempre lendo targets status='queued').
 
 import { corsHeaders } from "npm:@supabase/supabase-js@2/cors";
-import { createClient } from "npm:@supabase/supabase-js@2";
+// Mesmo especificador usado pelos helpers de _shared (outbound-gate, etc.).
+// Misturar npm: e esm.sh gera dois tipos SupabaseClient incompatíveis.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { checkSendQuota, registerSend, typingDurationMs } from "../_shared/anti-ban.ts";
 import { canSendProactive, logProactiveBlock } from "../_shared/proactive-send-guard.ts";
 import { isAutomationEnabled, logSkipped } from "../_shared/automation-gate.ts";
@@ -353,7 +355,9 @@ Deno.serve(async (req) => {
       // F12/F16: O áudio da Sofia (ou customizado no wizard) deve ser respeitado se configurado.
       // O usuário solicitou que entrem em handoff por padrão.
       const action = cfg.afterSendAction || "handoff";
-      const tDigits = t.phone.replace(/\D/g, "");
+      // `tDigits` já foi calculado no topo deste loop (checagem de DNC).
+      // Redeclarar aqui derrubava a função inteira com
+      // "SyntaxError: Identifier 'tDigits' has already been declared".
 
       const { data: lead } = await supabase.from("customers")
         .select("id")
@@ -456,13 +460,33 @@ Deno.serve(async (req) => {
         }
 
         const hasMedia = mediaItems.length > 0;
-        
+
+        // Acumula o resultado de CADA peça (texto + anexos). Antes `ok` era
+        // sobrescrito a cada anexo: se a imagem falhava e o áudio passava, o
+        // alvo virava 'sent' com error=null (falha silenciosa por anexo).
+        const failures: string[] = [];
+        let attempted = 0;
+        const noteResult = (label: string, res: { ok: boolean } & Record<string, unknown>) => {
+          attempted++;
+          if (!res.ok) {
+            const why = (res as { detail?: string }).detail ||
+              (res as { reason?: string }).reason || "erro desconhecido";
+            failures.push(`${label}: ${why}`);
+          }
+        };
+
         if (hasMedia) {
-          // Se configurado para texto primeiro
+          const firstKind = String(mediaItems[0].kind || "");
+          // Áudio e documento não aceitam legenda no WhatsApp — nesses casos o
+          // texto precisa sair como mensagem separada, inclusive em caption_only.
+          const firstAcceptsCaption = firstKind === "image" || firstKind === "video";
+          const captionMode = mediaOrder === "caption_only" || mediaOrder === "media_first";
+          const useCaptionOnFirst = captionMode && firstAcceptsCaption && Boolean(finalMsg);
+
+          // Texto antes do anexo
           if (mediaOrder === "text_first" && finalMsg) {
             const tr = await channel.adapter.sendText(jid, finalMsg, sendCtx as any);
-            ok = tr.ok;
-            if (!tr.ok) errText = (tr as { detail?: string }).detail || (tr as { reason?: string }).reason;
+            noteResult("texto", tr as any);
             await new Promise(r => setTimeout(r, 1000));
           }
 
@@ -470,10 +494,11 @@ Deno.serve(async (req) => {
           for (let mIdx = 0; mIdx < mediaItems.length; mIdx++) {
             const m = mediaItems[mIdx];
             const mediaKind = m.kind as "image" | "video" | "audio" | "document";
-            
-            // Legenda apenas na primeira mídia e se não foi enviado como texto separado
-            const useCaption = mIdx === 0 && mediaOrder !== "text_first" && mediaKind !== "audio";
-            
+
+            // Legenda só na primeira mídia, só se ela aceita legenda e só se o
+            // texto não vai (ou não foi) enviado separadamente.
+            const useCaption = mIdx === 0 && useCaptionOnFirst;
+
             const mr = await channel.adapter.sendMedia(
               jid,
               {
@@ -484,11 +509,7 @@ Deno.serve(async (req) => {
               } as any,
               { ...sendCtx, idempotencyKey: `${bulkKey}:media:${mIdx}` } as any,
             );
-            
-            ok = mr.ok;
-            if (!mr.ok) {
-              errText = (mr as { detail?: string }).detail || (mr as { reason?: string }).reason;
-            }
+            noteResult(`anexo ${mIdx + 1} (${mediaKind})`, mr as any);
 
             // Pequeno delay entre anexos do mesmo destino
             if (mIdx < mediaItems.length - 1) {
@@ -496,59 +517,78 @@ Deno.serve(async (req) => {
             }
           }
 
-          // Se for áudio ou media_first sem caption e não enviou texto ainda
-          if (ok && finalMsg && mediaOrder === "media_first" && (mediaItems[0].kind === "audio" || !["image", "video"].includes(mediaItems[0].kind))) {
-             await new Promise(r => setTimeout(r, 1000));
-             const tr = await channel.adapter.sendText(jid, finalMsg, { ...sendCtx, idempotencyKey: `${bulkKey}:text_after` } as any);
-             ok = tr.ok;
-             if (!tr.ok) errText = (tr as { detail?: string }).detail || (tr as { reason?: string }).reason;
+          // Texto depois do anexo: sempre que ele NÃO saiu como legenda nem antes.
+          // Cobre media_first e caption_only com áudio/documento — casos em que
+          // antes o texto simplesmente nunca era enviado.
+          const textAlreadySent = mediaOrder === "text_first" || useCaptionOnFirst;
+          if (finalMsg && !textAlreadySent) {
+            await new Promise(r => setTimeout(r, 1000));
+            const tr = await channel.adapter.sendText(
+              jid,
+              finalMsg,
+              { ...sendCtx, idempotencyKey: `${bulkKey}:text_after` } as any,
+            );
+            noteResult("texto", tr as any);
           }
         } else {
           // Apenas texto
           if (finalMsg) {
             const tr = await channel.adapter.sendText(jid, finalMsg, sendCtx as any);
-            ok = tr.ok;
-            if (!tr.ok) errText = (tr as { detail?: string }).detail || (tr as { reason?: string }).reason;
+            noteResult("texto", tr as any);
           }
         }
+
+        // Só é sucesso se TODAS as peças passaram e ao menos uma foi tentada.
+        ok = attempted > 0 && failures.length === 0;
+        if (failures.length) errText = failures.join(" | ");
+        else if (attempted === 0) errText = "nada para enviar (sem texto e sem anexo)";
 
         if (ok) {
           await registerSend(supabase, instance);
           await finishOutboundEffect(supabase, eff.effectId, "sent");
           
-          // Orquestração Multicanal (SMS/Voz)
-          if (cfg.sendSms && cfg.smsText) {
-            const smsFinal = renderText(cfg.smsText, {
-              name: t.name || undefined,
-              bill: t.vars?.bill ?? null,
-              city: t.vars?.city ?? null,
+          // ─── Reforço SMS / Ligação: NÃO IMPLEMENTADO ────────────────────
+          // O código anterior chamava `send-velip-sms` (função que não existe)
+          // e `voice-dialer-webhook` (callback da Velip, exige ?auth → 401).
+          // Ambas eram fire-and-forget com .catch(), então falhavam em silêncio:
+          // nada saía e nada era gravado em voice_sms_log / voice_campaigns.
+          //
+          // Enquanto não houver implementação real, registramos o pedido em
+          // automation_skip_log para o consultor ver que NÃO foi enviado, em
+          // vez de fingir que foi. As edges corretas (voice-sms-send e
+          // voice-dialer-enqueue) são JWT-only e não aceitam chamada de cron —
+          // portar isso exige extrair a lógica para _shared/ (tarefa separada).
+          if ((cfg.sendSms && cfg.smsText) || cfg.makeCall || cfg.callAudioClipId) {
+            const pedidos: string[] = [];
+            if (cfg.sendSms && cfg.smsText) pedidos.push("sms");
+            if (cfg.makeCall || cfg.callAudioClipId) pedidos.push("call");
+            console.warn(
+              `[bulk-scheduler] reforço ${pedidos.join("+")} solicitado mas NÃO implementado — campanha ${camp.id}, alvo ${t.id}`,
+            );
+            // Colunas reais da tabela são (key, meta) — usa o helper canônico.
+            await logSkipped(supabase, "bulk_campaigns_runner", {
+              reason: `multichannel_not_implemented:${pedidos.join("+")}`,
+              campaign_id: camp.id,
+              target_id: t.id,
+              consultant_id: camp.consultant_id,
+              requested: pedidos,
+              note: "WhatsApp enviado; SMS/ligação do Disparo PRO ainda não têm implementação de servidor.",
             });
-            // Invoke server-side (sem await para não travar o loop principal)
-            supabase.functions.invoke("send-velip-sms", {
-              body: { to: t.phone, text: smsFinal, consultantId: camp.consultant_id }
-            }).catch(e => console.error("[bulk-scheduler] SMS fail:", e));
-          }
-
-          if (cfg.makeCall || cfg.callAudioClipId) {
-            // Se makeCall for true mas sem clipId, tenta usar o 'sofia-a2' padrão
-            const clipId = cfg.callAudioClipId || "sofia-a2";
-            supabase.functions.invoke("voice-dialer-webhook", {
-              body: { 
-                to: t.phone, 
-                audioClipId: clipId, 
-                consultantId: camp.consultant_id, 
-                source: `bulk-scheduler:${camp.id}` 
-              }
-            }).catch(e => console.error("[bulk-scheduler] Call fail:", e));
           }
 
         } else {
-          await finishOutboundEffect(supabase, eff.effectId, "failed_final", errText);
+          // `detail` é objeto — passar string deixava p_error_code=null e o
+          // motivo da falha nunca chegava em outbound_effects.
+          await finishOutboundEffect(supabase, eff.effectId, "failed_final", {
+            errorCode: errText ? errText.slice(0, 200) : null,
+          });
         }
       } catch (e: any) {
         sendThrew = true;
         errText = e?.message || "Internal Error";
-        await finishOutboundEffect(supabase, eff.effectId, "failed_final", errText);
+        await finishOutboundEffect(supabase, eff.effectId, "failed_final", {
+          errorCode: errText ? errText.slice(0, 200) : null,
+        });
       }
 
       await supabase.from("bulk_campaign_targets").update({
@@ -566,7 +606,7 @@ Deno.serve(async (req) => {
 
       // Circuit breaker: se 5 falhas seguidas, pausa a campanha
       if (consecutiveFailures >= 5) {
-        await supabase.from("bulk_campaign_campaigns").update({ status: "paused" }).eq("id", camp.id);
+        await supabase.from("bulk_campaigns").update({ status: "paused" }).eq("id", camp.id);
         break;
       }
 

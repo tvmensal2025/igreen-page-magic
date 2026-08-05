@@ -31,6 +31,12 @@ import { runBotFlow } from "./handlers/bot-flow.ts";
 import { runConversationalFlow, CADASTRO_STEPS } from "./handlers/conversational/index.ts";
 import { normalizeOutgoing, stripPrefix } from "./handlers/step-namespace.ts";
 import { markManualReview, logRodizioOutcome } from "../_shared/rodizio-cas.ts";
+import {
+  evaluatePartnerKeywordGate,
+  orderPartnersByScope,
+  pickPartnerByScope,
+  resolvePartnerScopeConsultantIds,
+} from "../_shared/partner-attribution-gate.ts";
 import { assignRodizioLead, bindCustomerCampaign } from "../_shared/rodizio-assign.ts";
 import {
   resolveCanonicalFlowVariant,
@@ -55,7 +61,7 @@ import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled, isCustomerPausedByHuman, wrapSenderWithLivePauseGuard } from "../_shared/bot/paused.ts";
 import { evaluateLowBillReentry } from "../_shared/bot/low-bill-reentry.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
-import { matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
+import { findGenericKeywords, matchKeyword, type PartnerKeywords } from "../_shared/keyword-matcher.ts";
 import { extractShortCodeMarker } from "../_shared/qr-phrase.ts";
 import { makeIdempotentEnviarTexto } from "../_shared/bot/conversational-send-idempotency.ts";
 import { extractMultiField, buildMultiFieldPatch } from "../_shared/multi-field-extractor.ts";
@@ -1477,19 +1483,32 @@ Deno.serve(async (req) => {
     //     keyword digitada). Sem fuzzy: "Nilza"≠"nilma". Preferir `#R{code}`.
     if (customer && !(customer as any).referral_partner_id && messageText && !isFile) {
       try {
-        const leadSourceText = JSON.stringify((customer as any).lead_source || "").toLowerCase();
-        const blockKeywordForMetaLead =
-          !!(customer as any).source_campaign_id ||
-          !!(customer as any).source_ad_id ||
-          !!(customer as any).source_ctwa_clid ||
-          !!(customer as any).ctwa_clid ||
-          leadSourceText.includes("meta") ||
-          matchesMetaCtwaPhrase(messageText);
+        // Gate canônico (paridade com whapi): só sinal FORTE de Meta bloqueia.
+        // Frase que "parece CTWA" é sinal FRACO e não veta keyword exata / `#R`.
+        const partnerGate = evaluatePartnerKeywordGate({
+          sourceCampaignId: (customer as any).source_campaign_id,
+          sourceAdId: (customer as any).source_ad_id,
+          sourceCtwaClid: (customer as any).source_ctwa_clid,
+          ctwaClid: (customer as any).ctwa_clid,
+          leadSource: (customer as any).lead_source,
+          messageText,
+        });
+        const blockKeywordForMetaLead = partnerGate.blocked;
 
         if (blockKeywordForMetaLead) {
           // Meta sem pool: não chuta keyword de parceiro; lead fica com o dono.
           console.warn(`[partner-match] keyword bloqueada (Meta) customer=${customer.id} — lead do dono`);
+        } else if (partnerGate.weakCtwaPhraseOnly) {
+          console.log(
+            `[partner-match] frase parece CTWA mas sem sinal forte — segue para keyword customer=${customer.id}`,
+          );
         }
+
+        // Escopo: parceiros do DONO do lead e do hub superadmin (nesta ordem).
+        const partnerScopeIds = resolvePartnerScopeConsultantIds(
+          (customer as any).consultant_id,
+          instanceData.consultant_id,
+        );
 
         const { count: inboundCount } = await supabase
           .from("conversations")
@@ -1507,14 +1526,14 @@ Deno.serve(async (req) => {
           // 1º) Marcador determinístico.
           const markerCode = extractShortCodeMarker(messageText);
           if (markerCode) {
-            const { data: byCode } = await supabase
+            const { data: byCodeRows } = await supabase
               .from("referral_partners")
-              .select("id, keywords")
-              .eq("consultant_id", instanceData.consultant_id)
+              .select("id, keywords, consultant_id")
+              .in("consultant_id", partnerScopeIds)
               .eq("is_active", true)
               .eq("short_code", markerCode)
-              .limit(1)
-              .maybeSingle();
+              .limit(5);
+            const byCode = pickPartnerByScope(byCodeRows as any[], partnerScopeIds);
             if (byCode?.id) {
               matchedPartnerId = byCode.id as string;
               matchedKeyword = `#R${markerCode}`;
@@ -1533,17 +1552,28 @@ Deno.serve(async (req) => {
 
           // 2º) Fallback: keyword no texto (parceiros).
           if (!matchedPartnerId) {
-            const { data: partners } = await supabase
+            const { data: partnerRows } = await supabase
               .from("referral_partners")
-              .select("id, keywords")
-              .eq("consultant_id", instanceData.consultant_id)
+              .select("id, keywords, consultant_id")
+              .in("consultant_id", partnerScopeIds)
               .eq("is_active", true);
+            const partners = orderPartnersByScope(partnerRows as any[], partnerScopeIds);
 
             if (partners?.length) {
               const partnerKeywords: PartnerKeywords[] = partners.map((p: any) => ({
                 partnerId: p.id,
                 keywords: p.keywords || [],
               }));
+              // Keyword genérica nunca atribui (caso "Zap" do José). Avisa qual
+              // parceiro precisa trocar a palavra em vez de falhar calado.
+              const kwRuins = findGenericKeywords(partnerKeywords);
+              if (kwRuins.length) {
+                console.warn(
+                  `[partner-match] keywords genéricas ignoradas: ${
+                    kwRuins.map((k) => `${k.partnerId}="${k.keyword}"`).join(", ")
+                  } — parceiro precisa trocar por algo único`,
+                );
+              }
               const match = matchKeyword(messageText, partnerKeywords);
               if (match) {
                 matchedPartnerId = match.partnerId;
@@ -1556,27 +1586,42 @@ Deno.serve(async (req) => {
 
           // 3º) Banner do CONSULTOR (sem parceiro).
           if (!matchedPartnerId) {
+            // Banner é do consultor DONO do lead (não da instância que recebeu).
+            const bannerConsultantId = partnerScopeIds[0] || instanceData.consultant_id;
             const { data: consBanner } = await supabase
               .from("consultants")
               .select("banner_keywords")
-              .eq("id", instanceData.consultant_id)
+              .eq("id", bannerConsultantId)
               .maybeSingle();
             const bannerKws = Array.isArray(consBanner?.banner_keywords)
               ? (consBanner!.banner_keywords as string[]).filter(Boolean)
               : [];
             if (bannerKws.length > 0) {
               const loc = matchKeyword(messageText, [
-                { partnerId: instanceData.consultant_id, keywords: bannerKws },
+                { partnerId: bannerConsultantId, keywords: bannerKws },
               ]);
               if (loc?.keyword) {
                 matchedKeyword = loc.keyword;
+                matchedSource = "keyword";
                 await supabase.from("customers").update({
                   referral_keyword_matched: matchedKeyword,
                   referral_detected_at: new Date().toISOString(),
                 }).eq("id", customer.id);
                 console.log(
-                  `[banner-keyword] customer=${customer.id} consultant=${instanceData.consultant_id} keyword="${matchedKeyword}"`,
+                  `[banner-keyword] customer=${customer.id} consultant=${bannerConsultantId} keyword="${matchedKeyword}"`,
                 );
+                // Paridade com whapi: auditoria do match de banner.
+                try {
+                  await supabase.from("campaign_match_log").insert({
+                    customer_id: customer.id,
+                    campaign_id: null,
+                    method: "banner_keyword",
+                    similarity: 1,
+                    message_sample: messageText ? String(messageText).slice(0, 200) : null,
+                  });
+                } catch (e) {
+                  console.warn("[campaign-match-log] banner insert falhou:", (e as Error).message);
+                }
               }
             }
           }
@@ -1588,15 +1633,43 @@ Deno.serve(async (req) => {
               referral_detected_at: new Date().toISOString(),
             }).eq("id", customer.id);
             if (partnerLinkErr) {
-              console.warn(
+              // NÃO pode morrer em console.warn: o parceiro perde o lead em
+              // silêncio (causa típica: trigger de guarda Meta com ERRCODE 23514).
+              // Vira pendência visível para alguém atribuir manualmente.
+              console.error(
                 `[partner-match] update falhou customer=${customer.id} partner=${matchedPartnerId}:`,
                 partnerLinkErr.message,
               );
+              await markManualReview(
+                supabase as any,
+                customer.id,
+                "partner_attribution_write_failed",
+              ).catch(() => {});
+              try {
+                await supabase.from("campaign_match_log").insert({
+                  customer_id: customer.id,
+                  campaign_id: null,
+                  method: "keyword_write_failed",
+                  similarity: matchedScore,
+                  message_sample: messageText ? String(messageText).slice(0, 200) : null,
+                });
+              } catch { /* auditoria best-effort */ }
             } else {
               (customer as any).referral_partner_id = matchedPartnerId;
               console.log(
                 `[partner-match] customer=${customer.id} partner=${matchedPartnerId} source=${matchedSource} marker="${matchedKeyword}" score=${matchedScore}`,
               );
+              try {
+                await supabase.from("campaign_match_log").insert({
+                  customer_id: customer.id,
+                  campaign_id: null,
+                  method: matchedSource === "short_code" ? "short_code" : "keyword",
+                  similarity: matchedScore,
+                  message_sample: messageText ? String(messageText).slice(0, 200) : null,
+                });
+              } catch (e) {
+                console.warn("[campaign-match-log] insert falhou:", (e as Error).message);
+              }
               // Só notifica se o vínculo ficou gravado no banco.
               (async () => {
                 const { assignProtocolToCustomer } = await import("../_shared/protocol.ts");

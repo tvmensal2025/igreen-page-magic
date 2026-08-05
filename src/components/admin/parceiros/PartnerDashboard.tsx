@@ -21,6 +21,7 @@ import { PartnerRankingTable } from "./PartnerRankingTable";
 import { PartnerPodium } from "./PartnerPodium";
 import { PartnerBannersPanel } from "./PartnerBannersPanel";
 import { usePartnerAnalytics } from "./hooks/usePartnerAnalytics";
+import { isGenericKeyword } from "./qrPhrase";
 import type { ReferralPartner } from "./hooks/useReferralPartners";
 
 type TabId = "overview" | string; // overview | partner.id
@@ -47,12 +48,33 @@ interface Props {
   focusPartnerId?: string | null;
 }
 
+/**
+ * Keywords do parceiro que NÃO servem como identificador (genéricas ou curtas).
+ * O runtime ignora essas na atribuição (`keyword-matcher.isGenericKeyword`), então
+ * a UI precisa mostrar — senão o consultor acha que está configurado e não está.
+ * Caso real: o parceiro José usou "Zap".
+ */
+function splitPartnerKeywords(p: ReferralPartner): {
+  usaveis: string[];
+  genericas: string[];
+} {
+  const todas = (p.keywords || []).filter(Boolean);
+  return {
+    usaveis: todas.filter((k) => !isGenericKeyword(k)),
+    genericas: todas.filter((k) => isGenericKeyword(k)),
+  };
+}
+
+/** Parceiro só atribui lead com keyword USÁVEL ou frase própria. */
+function partnerIsConfigured(p: ReferralPartner): boolean {
+  return splitPartnerKeywords(p).usaveis.length > 0 || !!p.qr_phrase;
+}
+
 function partnerHealth(
   p: ReferralPartner,
   leads30: number,
 ): "ok" | "warn" | "bad" {
-  const configured = (p.keywords?.length ?? 0) > 0 || !!p.qr_phrase;
-  if (!configured) return "bad";
+  if (!partnerIsConfigured(p)) return "bad";
   if (leads30 === 0) return "warn";
   return "ok";
 }
@@ -96,8 +118,7 @@ export function PartnerDashboard({
 
   const unhealthy = partners.filter((p) => {
     const a = analytics.find((x) => x.partner_id === p.id);
-    const configured = (p.keywords?.length ?? 0) > 0 || !!p.qr_phrase;
-    return !configured || (a?.leads_30d ?? 0) === 0;
+    return !partnerIsConfigured(p) || (a?.leads_30d ?? 0) === 0;
   }).length;
 
   if (isLoading || analyticsLoading) {
@@ -341,8 +362,9 @@ function PartnerWorkspace(props: PartnerWorkspaceProps) {
     onQrCode,
     onPartnersChanged,
   } = props;
-  const configured =
-    (partner.keywords?.length ?? 0) > 0 || !!partner.qr_phrase;
+  const configured = partnerIsConfigured(partner);
+  const { usaveis: kwUsaveis, genericas: kwGenericas } =
+    splitPartnerKeywords(partner);
   const health = partnerHealth(partner, analytics?.leads_30d ?? 0);
 
   return (
@@ -415,6 +437,22 @@ function PartnerWorkspace(props: PartnerWorkspaceProps) {
             </div>
           )}
 
+          {kwGenericas.length > 0 && (
+            <div className="flex items-start gap-2 p-2.5 rounded-lg bg-destructive/5 border border-destructive/20 text-xs text-destructive">
+              <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>
+                {kwGenericas.map((k) => `"${k}"`).join(", ")}{" "}
+                {kwGenericas.length > 1 ? "são palavras" : "é palavra"} comum
+                demais e <strong>não atribui lead</strong> — qualquer pessoa
+                digita isso sem conhecer o parceiro. Troque por algo único, tipo{" "}
+                <strong>sobrenome + cidade</strong> ou o nome do ponto.{" "}
+                {kwUsaveis.length === 0 && !partner.qr_phrase
+                  ? "Hoje este parceiro está sem nenhuma palavra válida."
+                  : ""}
+              </span>
+            </div>
+          )}
+
           <div className="grid gap-2 sm:grid-cols-2 text-xs">
             <div
               className="rounded-lg border border-border/60 bg-muted/20 p-2.5"
@@ -424,8 +462,14 @@ function PartnerWorkspace(props: PartnerWorkspaceProps) {
                 Palavras-chave
               </p>
               <p className="mt-0.5 text-foreground">
-                {(partner.keywords || []).filter(Boolean).join(", ") || "—"}
+                {kwUsaveis.join(", ") || "—"}
               </p>
+              {kwGenericas.length > 0 && (
+                <p className="mt-1 text-[11px] text-destructive">
+                  ignorada{kwGenericas.length > 1 ? "s" : ""}:{" "}
+                  <span className="line-through">{kwGenericas.join(", ")}</span>
+                </p>
+              )}
             </div>
             <div
               className="rounded-lg border border-border/60 bg-muted/20 p-2.5"

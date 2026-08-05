@@ -1,6 +1,7 @@
 import { motion } from "framer-motion";
 import {
   BadgeCheck,
+  Hourglass,
   MessageCircle,
   Orbit,
   QrCode,
@@ -20,6 +21,7 @@ export function PartnerPortalKpis({
   leituras,
   leads,
   fechamentos,
+  emAnalise = 0,
   countA,
   countB,
   countC,
@@ -27,6 +29,9 @@ export function PartnerPortalKpis({
   leituras: number;
   leads: number;
   fechamentos: number;
+  /** Cadastro enviado e ainda sem aprovação. Antes esse lead ficava invisível:
+   *  saía das pizzas A/B/C (já converteu) e não entrava em Fechamentos. */
+  emAnalise?: number;
   countA: number;
   countB: number;
   countC: number;
@@ -54,6 +59,13 @@ export function PartnerPortalKpis({
       accent: "from-amber-500/25 to-transparent",
     },
     {
+      label: "Em análise",
+      value: emAnalise,
+      hint: "Cadastro enviado, aguardando",
+      Icon: Hourglass,
+      accent: "from-yellow-500/20 to-transparent",
+    },
+    {
       label: "Em conversa (A)",
       value: countA,
       hint: "Leads novos",
@@ -77,7 +89,7 @@ export function PartnerPortalKpis({
 
   return (
     <div className="max-w-5xl mx-auto px-4 sm:px-6">
-      <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-6 gap-2.5 sm:gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-7 gap-2.5 sm:gap-3">
         {items.map((item, i) => (
           <motion.div
             key={item.label}

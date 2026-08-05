@@ -486,7 +486,7 @@ flowchart TD
   - Rollback: `UPDATE consultants SET use_engine_v3 = false WHERE id = '0c2711ad-4836-41e6-afba-edd94f698ae3'` — next inbound routes back to legacy (Requirement 11.4)
   - _Validates: Requirements 1.1, 1.2, 2.1, 3.1, 4.1, 5.1, 6.1, 7.1, 11.1, 11.4, 14.1_
 
-- [~] 37. Phase 2: Flag ON for 5 hand-picked pilot consultors, 7-day validation
+- [ ] 37. Phase 2: Flag ON for 5 hand-picked pilot consultors, 7-day validation
   - Identify 5 pilots (mix of variants A, B, D; mix of low- and high-volume)
   - Run `UPDATE consultants SET use_engine_v3 = true WHERE id IN ('<uuid1>', ..., '<uuid5>')`
   - Wait 7 days, monitor `flow-engine-rollout-cron` daily report
@@ -495,7 +495,7 @@ flowchart TD
   - Per-consultor rollback: `UPDATE consultants SET use_engine_v3 = false WHERE id = '<uuid>'`
   - _Validates: Requirements 11.1, 11.4, 14.1_
 
-- [~] 38. Phase 3: Flag ON for all consultors, 30-day stable observation
+- [ ] 38. Phase 3: Flag ON for all consultors, 30-day stable observation
   - Run `UPDATE consultants SET use_engine_v3 = true` (all consultors)
   - Monitor `flow-engine-rollout-cron` daily for 30 days
   - Metric gate to advance to Phase 4: legacy idle (0 calls observed via legacy-handler instrumentation); G1–G6 = 0; AI cost within ±10% of pre-rewrite baseline
@@ -504,7 +504,7 @@ flowchart TD
   - During this phase, freeze legacy code: only security fixes accepted; product bugs fixed in v3 only and affected consultor migrated to v3 to receive fix (per design §R1)
   - _Validates: Requirements 11.1, 11.4_
 
-- [~] 39. Phase 4: DESTRUCTIVE cleanup — delete legacy engine code
+- [ ] 39. Phase 4: DESTRUCTIVE cleanup — delete legacy engine code
   - **DESTRUCTIVE: This task deletes legacy code. REQUIRES EXPLICIT OPERATOR CONFIRMATION before execution. Do not proceed unless Phase 3 has been stable for 30 consecutive days with G1–G6 = 0 and the operator has acknowledged this in the PR description.**
   - Files to delete (explicit list):
     - `supabase/functions/evolution-webhook/handlers/bot-flow.ts`
@@ -543,15 +543,15 @@ Total active engineering: ~14–18 days. Total elapsed time including Phase 3: ~
 
 ### Critério de pronto (Definition of Done)
 
-- [~] Wave 1: Migration applied to production; `src/integrations/supabase/types.ts` regenerated and committed; `v3-types.ts` exports compile; CI purity lint job runs green on every PR.
-- [~] Wave 2: `runEngine` is purely functional — no `Date.now`, no `fetch`, no Supabase imports (verified by lint rule from T4); all variant strategies + fallback handlers exported and integrated.
-- [~] Wave 3: All 8 PBT properties pass at `numRuns: 100` (or documented downgrade with rationale); unit test coverage of branches in design §2.7 is 100%.
-- [~] Wave 4: Webhook entry points contain zero business logic; dispatcher writes engine_logs within 5s of every turn; handoff alerts insert exactly once with DLQ fallback.
-- [~] Wave 5: All `bot-e2e-runner` scenarios (V_A1, V_B1, V_D1, V_D2, AI1, AI2, SILENT, A1–A4, B1–B2) green; migration script idempotent (verified by re-running); rollout cron writes daily report.
-- [~] Wave 6 — Phase 1: 24h with G1–G6 = 0 on super-admin Fluxo D; smoke from test phone confirmed.
-- [~] Wave 6 — Phase 2: 7 days with G1–G6 = 0 across 5 pilots; CSAT within tolerance; AI cost within tolerance.
-- [~] Wave 6 — Phase 3: 30 days with G1–G6 = 0 across all consultors; legacy handlers idle (zero calls).
-- [~] Wave 6 — Phase 4: Legacy files deleted; final cleanup PR merged; full test suite green on the v3-only codebase.
+- [ ] Wave 1: Migration applied to production; `src/integrations/supabase/types.ts` regenerated and committed; `v3-types.ts` exports compile; CI purity lint job runs green on every PR.
+- [ ] Wave 2: `runEngine` is purely functional — no `Date.now`, no `fetch`, no Supabase imports (verified by lint rule from T4); all variant strategies + fallback handlers exported and integrated.
+- [ ] Wave 3: All 8 PBT properties pass at `numRuns: 100` (or documented downgrade with rationale); unit test coverage of branches in design §2.7 is 100%.
+- [ ] Wave 4: Webhook entry points contain zero business logic; dispatcher writes engine_logs within 5s of every turn; handoff alerts insert exactly once with DLQ fallback.
+- [ ] Wave 5: All `bot-e2e-runner` scenarios (V_A1, V_B1, V_D1, V_D2, AI1, AI2, SILENT, A1–A4, B1–B2) green; migration script idempotent (verified by re-running); rollout cron writes daily report.
+- [ ] Wave 6 — Phase 1: 24h with G1–G6 = 0 on super-admin Fluxo D; smoke from test phone confirmed.
+- [ ] Wave 6 — Phase 2: 7 days with G1–G6 = 0 across 5 pilots; CSAT within tolerance; AI cost within tolerance.
+- [ ] Wave 6 — Phase 3: 30 days with G1–G6 = 0 across all consultors; legacy handlers idle (zero calls).
+- [ ] Wave 6 — Phase 4: Legacy files deleted; final cleanup PR merged; full test suite green on the v3-only codebase.
 
 ### Rollback procedure summary
 

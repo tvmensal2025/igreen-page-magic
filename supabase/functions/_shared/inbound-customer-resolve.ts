@@ -96,6 +96,77 @@ export async function findCustomerForInboundPhone(
 }
 
 /**
+ * Copia a atribuição de parceiro do lead sombra para a linha de CARTEIRA do
+ * mesmo telefone, quando a carteira ainda não tem parceiro.
+ *
+ * Por que existe: a absorção de sombra marca `do_not_contact=true` na linha do
+ * lead. O portal do parceiro (`get_partner_banner_portal`) e o
+ * `notifyPartnerNewLead` filtram DNC, então o parceiro perdia o crédito de um
+ * cliente que ele mesmo indicou assim que o cadastro entrava na carteira.
+ *
+ * CAS: só escreve se a carteira estiver com `referral_partner_id` nulo — nunca
+ * sobrescreve atribuição existente (rodízio ou outro parceiro).
+ */
+async function carryPartnerAttributionToWalletRow(
+  supabase: SB,
+  consultantId: string,
+  shadow: InboundCustomerRow,
+): Promise<boolean> {
+  const partnerId = String(shadow?.referral_partner_id ?? "").trim();
+  if (!partnerId) return false;
+
+  const basePhone = toWhatsappCanonical(shadow?.phone_whatsapp ?? "") ||
+    String(shadow?.phone_whatsapp ?? "").replace(/\D/g, "");
+  if (basePhone.length < 12) return false;
+
+  const walletSelect = "id, referral_partner_id";
+  const walletBase = () =>
+    supabase
+      .from("customers")
+      .select(walletSelect)
+      .eq("consultant_id", consultantId)
+      .in("customer_origin", ["igreen_sync", "igreen_extension"]);
+
+  // Tipo NOMEADO: `as typeof target` seria resolvido como `as null` pelo
+  // control-flow (target acabou de receber null) e apagaria a tipagem.
+  type WalletTarget = { id: string; referral_partner_id?: string | null };
+  let target: WalletTarget | null = null;
+  {
+    const { data } = await walletBase().eq("whatsapp_chat_id", basePhone).limit(1);
+    target = ((data || [])[0] as WalletTarget | undefined) ?? null;
+  }
+  if (!target) {
+    const { data } = await walletBase().like("phone_whatsapp", `${basePhone}_%`).limit(1);
+    target = ((data || [])[0] as WalletTarget | undefined) ?? null;
+  }
+  if (!target?.id || target.referral_partner_id) return false;
+
+  const { data: applied, error } = await supabase
+    .from("customers")
+    .update({
+      referral_partner_id: partnerId,
+      referral_keyword_matched: shadow?.referral_keyword_matched ?? null,
+      referral_detected_at: shadow?.referral_detected_at ?? new Date().toISOString(),
+    })
+    .eq("id", target.id)
+    .is("referral_partner_id", null)
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    console.warn("[absorb-lead-shadows] carry parceiro falhou:", error.message);
+    return false;
+  }
+  if (applied) {
+    console.log(
+      `[absorb-lead-shadows] parceiro ${partnerId} migrado sombra=${shadow.id} -> carteira=${target.id}`,
+    );
+    return true;
+  }
+  return false;
+}
+
+/**
  * Após sync: leads com o mesmo dígito de uma carteira não podem continuar
  * no funil A/B/C. Pausa + DNC (não apaga — histórico/conversas).
  */
@@ -142,7 +213,9 @@ export async function absorbLeadShadowsForWalletPhones(
     const chunk = shadowPhones.slice(i, i + 100);
     const { data: leads, error: leadErr } = await supabase
       .from("customers")
-      .select("id")
+      .select(
+        "id, phone_whatsapp, referral_partner_id, referral_keyword_matched, referral_detected_at",
+      )
       .eq("consultant_id", consultantId)
       .in("phone_whatsapp", chunk)
       .or("customer_origin.is.null,customer_origin.eq.whatsapp_lead,customer_origin.eq.manual");
@@ -152,6 +225,16 @@ export async function absorbLeadShadowsForWalletPhones(
     }
     const ids = ((leads || []) as Array<{ id: string }>).map((r) => r.id);
     if (!ids.length) continue;
+
+    // ANTES de marcar DNC: leva a atribuição de parceiro para a linha de
+    // carteira. Sem isso o crédito do parceiro ficava numa linha
+    // `do_not_contact=true`, que o portal do parceiro e o `notifyPartnerNewLead`
+    // ignoram — o parceiro indicou, o cliente entrou na carteira, e o parceiro
+    // simplesmente desaparecia do lead.
+    for (const shadow of (leads || []) as InboundCustomerRow[]) {
+      await carryPartnerAttributionToWalletRow(supabase, consultantId, shadow);
+    }
+
     const { error } = await supabase
       .from("customers")
       .update({

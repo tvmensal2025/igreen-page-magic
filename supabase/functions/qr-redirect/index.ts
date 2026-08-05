@@ -18,7 +18,7 @@ import {
 } from "../_shared/attendance-channel-env.ts";
 
 const SITE_URL = "https://igreen.institutodossonhos.com.br";
-const QR_REDIRECT_VERSION = "2026-08-03-keyword-only-v5";
+const QR_REDIRECT_VERSION = "2026-08-05-ctwa-safe-phrase-v6";
 const DEFAULT_MESSAGE =
   "Oi! 👋 Vi sobre a iGreen Energy e quero saber como economizar na minha conta de luz.";
 const QR_PHRASE_MAX = 600;
@@ -30,6 +30,32 @@ function tidyPhrase(value: string): string {
 function normalizePhrase(value: string): string {
   return tidyPhrase(value.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/[^\w\s]/g, " "));
+}
+
+/** Teto usado só para montar a frase PADRÃO (espelho de `_shared/qr-phrase.ts`). */
+const QR_DEFAULT_PHRASE_MAX = 90;
+
+/**
+ * Frase padrão local — espelho de `buildDefaultQrPhrase` em `_shared/qr-phrase.ts`.
+ * Mantém a keyword INTEIRA (é ela que atribui o lead ao parceiro no webhook).
+ *
+ * ⚠️ Nenhuma variante pode casar com `matchesMetaCtwaPhrase` (autofill Meta):
+ * a frase antiga usava "quero saber mais", que é frase-âncora de CTWA, e por
+ * isso o webhook tratava o lead do QR do parceiro como lead Meta e pulava a
+ * atribuição — o parceiro nunca recebia o lead.
+ */
+function buildDefaultPhrase(keyword: string): string {
+  const kw = tidyPhrase(keyword ?? "");
+  if (!kw) return "Oi! Quero garantir meu desconto na energia.";
+  const withKw = tidyPhrase(`Oi! Vim pelo ${kw} e quero garantir meu desconto na energia.`);
+  if (withKw.length <= QR_DEFAULT_PHRASE_MAX) return withKw;
+  const short = tidyPhrase(`Oi! Vim pelo ${kw}, quero meu desconto na energia.`);
+  if (short.length <= QR_DEFAULT_PHRASE_MAX) return short;
+  const minimal = tidyPhrase(`Oi! Vim pelo ${kw}.`);
+  if (minimal.length <= QR_DEFAULT_PHRASE_MAX) return minimal;
+  const prefix = "Oi! Vim pelo ";
+  const budget = Math.max(0, QR_DEFAULT_PHRASE_MAX - prefix.length - 1);
+  return tidyPhrase(`${prefix}${kw.slice(0, budget)}`);
 }
 
 /**
@@ -48,9 +74,7 @@ function resolveQrMessage(
   const kw = tidyPhrase(keyword ?? "");
   let message = custom
     ? tidyPhrase(custom.slice(0, QR_PHRASE_MAX))
-    : kw
-    ? tidyPhrase(`Oi! Vim pelo ${kw} e quero saber mais sobre o desconto na energia.`)
-    : "Oi! Quero saber mais sobre o desconto na energia.";
+    : buildDefaultPhrase(kw);
   if (kw && !normalizePhrase(message).includes(normalizePhrase(kw))) {
     const withKeyword = tidyPhrase(`${message} ${kw}`);
     if (withKeyword.length <= QR_PHRASE_MAX) message = withKeyword;
@@ -260,7 +284,12 @@ Deno.serve(async (req) => {
 
     let message = msgParam || DEFAULT_MESSAGE;
 
-    let partner: {
+    // Tipo NOMEADO de propósito: com `let partner: {...} | null = null`, o
+    // `data as typeof partner` era resolvido como `as null` (o CFA já tinha
+    // narrowado `partner` para null), o que apagava a tipagem e deixava 20+
+    // erros `Property ... does not exist on type 'never'` neste arquivo — em
+    // pleno caminho do QR de parceiro.
+    type PartnerRow = {
       id?: string;
       nome: string;
       keywords: unknown;
@@ -268,7 +297,8 @@ Deno.serve(async (req) => {
       consultant_id: string;
       is_active: boolean;
       short_code: string | null;
-    } | null = null;
+    };
+    let partner: PartnerRow | null = null;
 
     let eventTarget = "panfleto";
     let partnerSpotCode: string | null = null;
@@ -320,7 +350,7 @@ Deno.serve(async (req) => {
           .eq("id", partnerId)
           .maybeSingle();
         if (data && data.consultant_id === consultant.id && data.is_active) {
-          partner = data as typeof partner;
+          partner = data as PartnerRow;
         }
       }
 
@@ -335,7 +365,7 @@ Deno.serve(async (req) => {
             .eq("short_code", code)
             .limit(1)
             .maybeSingle();
-          if (data) partner = data as typeof partner;
+          if (data) partner = data as PartnerRow;
         }
       }
 
@@ -350,7 +380,7 @@ Deno.serve(async (req) => {
             .contains("keywords", [kw])
             .limit(1)
             .maybeSingle();
-          if (data) partner = data as typeof partner;
+          if (data) partner = data as PartnerRow;
         }
       }
     }
@@ -360,11 +390,13 @@ Deno.serve(async (req) => {
       eventTarget = short ? `partner:${short}` : "partner";
 
       // Local nomeado do parceiro: ?s=posto-shell (ou keyword casando spot).
-      let partnerSpot: {
+      // Tipo nomeado pelo mesmo motivo de `PartnerRow` (ver comentário acima).
+      type PartnerSpotRow = {
         code: string;
         keyword: string;
         phrase: string | null;
-      } | null = null;
+      };
+      let partnerSpot: PartnerSpotRow | null = null;
       if (partner.id && spotParam) {
         const { data: spot } = await supabase
           .from("referral_partner_banner_spots")
@@ -372,7 +404,7 @@ Deno.serve(async (req) => {
           .eq("partner_id", partner.id)
           .eq("code", spotParam)
           .maybeSingle();
-        if (spot) partnerSpot = spot as typeof partnerSpot;
+        if (spot) partnerSpot = spot as PartnerSpotRow;
       }
       if (!partnerSpot && partner.id && keywordParam) {
         const kw = decodeURIComponent(keywordParam).trim();
@@ -384,7 +416,7 @@ Deno.serve(async (req) => {
             .eq("keyword", kw)
             .eq("is_active", true)
             .maybeSingle();
-          if (spot) partnerSpot = spot as typeof partnerSpot;
+          if (spot) partnerSpot = spot as PartnerSpotRow;
         }
       }
 

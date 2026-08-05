@@ -692,10 +692,14 @@ export function WhatsAppTab({
 
         {activeSubTab === "envio_massa" && (
           <div className="p-3 overflow-auto h-full min-w-0" data-tour="wa-panel-envio_massa">
-            {isConnected && instanceName ? (
+            {/* Gate por `channelReady`: em Whapi o `isConnected` (status Evolution)
+                é falso mesmo com o canal saudável em AUTH, e o Disparo PRO
+                aparecia como "Conecte o WhatsApp" sem motivo. */}
+            {channelReady && instanceName ? (
               <Suspense fallback={<LazyFallback />}>
                 <BulkProPanel
                   instanceName={instanceName}
+                  isWhapi={!!isWhapi}
                   customers={customers}
                   templates={templates}
                   consultantId={userId}
