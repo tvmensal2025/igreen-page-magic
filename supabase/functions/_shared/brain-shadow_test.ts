@@ -81,7 +81,9 @@ function fakeAdmin(writes: Write[], overrides: Record<string, unknown> = {}) {
     from(table: string) {
       const q: Record<string, unknown> = {};
       const chain = () => q;
-      for (const m of ["select", "eq", "in", "gte", "lt", "or", "order", "limit"]) {
+      for (
+        const m of ["select", "eq", "in", "gte", "lte", "lt", "or", "order", "limit", "is"]
+      ) {
         q[m] = chain;
       }
       for (const m of ["insert", "update", "upsert", "delete"]) {
