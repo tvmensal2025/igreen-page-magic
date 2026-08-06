@@ -20,7 +20,7 @@ describe("partnerPortalCycle", () => {
     expect(c?.sliceId).toBe("ask_name");
     expect(c?.displayName).toBe("Maria Silva");
     expect(c?.phoneDisplay).toMatch(/11/);
-    expect(c?.stageNotice).toMatch(/WhatsApp/i);
+    expect(c?.stageNotice).toMatch(/Zap|Sofia/i);
   });
 
   it("sem stage e sem fila fica fora da pizza", () => {
@@ -47,7 +47,29 @@ describe("partnerPortalCycle", () => {
     });
     expect(c?.group).toBe("A");
     expect(c?.sliceId).toBe("flow");
-    expect(c?.stageNotice).toMatch(/consultor/i);
+    expect(c?.stageNotice).toMatch(/consultor está atendendo|Sofia/i);
+  });
+
+  it("portal_group do RPC classifica sem depender do stage legado", () => {
+    const c = classifyPartnerCycleLead({
+      id: "rpc-handoff",
+      name: "Robinho",
+      phone_whatsapp: "5534999996489",
+      status: "pending",
+      stage: "AI_QUALIFYING",
+      stage_actual: "PAUSED",
+      portal_group: "A",
+      portal_slice: "flow",
+      paused_reason: "handoff_humano",
+      next_action_at: "2026-08-07T20:16:35Z",
+      active_cadence: true,
+    });
+    expect(c?.group).toBe("A");
+    expect(c?.sliceId).toBe("flow");
+    expect(c?.stageNotice).toMatch(/consultor está atendendo/i);
+    expect(c?.isHandoff).toBe(true);
+    expect(c?.nextActionAt).toBe("2026-08-07T20:16:35Z");
+    expect(c?.nextStepWhat).toMatch(/Sofia/i);
   });
 
   it("fila A tem prioridade sobre stage", () => {
@@ -124,7 +146,7 @@ describe("partnerPortalCycle", () => {
 
   it("stageNotice usa texto amigável", () => {
     expect(stageNoticeForSlice("sms", "A_SMS")).toMatch(/SMS/i);
-    expect(stageNoticeForSlice("call1", "A_CALL")).toMatch(/Ligação/i);
+    expect(stageNoticeForSlice("call1", "A_CALL")).toMatch(/ligar/i);
   });
 
   it("countBySlice agrega", () => {

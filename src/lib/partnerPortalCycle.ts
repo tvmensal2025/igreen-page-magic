@@ -4,7 +4,8 @@
  */
 import { CADENCE_CALENDAR } from "@/lib/cadenceCalendarMap";
 import { isCycleLeadEligible, isPausedGroupA } from "@/lib/cycleEligibility";
-import { labelCadenceStage, labelNextCadenceAction } from "@/lib/cadenceStageLabels";
+import { labelCadenceStage } from "@/lib/cadenceStageLabels";
+import { describePartnerNextStep, PARTNER_HANDOFF_NOW } from "@/lib/partnerPortalNextStep";
 import { safeFirstNameUi } from "@/lib/cadencePreview";
 import { formatBrazilPhone } from "@/lib/phone";
 import { formatPersonName, isUsableCustomerName, isAddressableNameSource } from "@/lib/customerDisplayName";
@@ -32,6 +33,10 @@ export type PartnerPortalCycleLeadRaw = {
   /** Fila diária (daily_reheat_queue) — prioridade sobre stage, como no admin. */
   queue_queue?: string | null;
   queue_step?: string | null;
+  /** Classificação canônica do RPC (funciona mesmo com bundle antigo do site). */
+  portal_group?: PartnerCycleGroup | string | null;
+  portal_slice?: string | null;
+  stage_actual?: string | null;
 };
 
 export type PartnerCycleStep = {
@@ -51,6 +56,10 @@ export type ClassifiedPartnerLead = {
   phoneTel: string;
   stageNotice: string;
   nextHint: string | null;
+  nextActionAt: string | null;
+  nextStepWhat: string;
+  nextStepChannel: string;
+  isHandoff: boolean;
 };
 
 /** Pizza A — mesmas fatias do admin. */
@@ -228,26 +237,26 @@ const CADENCE_TO_C: Record<string, string> = {
 };
 
 const SLICE_NOTICE: Record<string, string> = {
-  ask_name: "Acabou de entrar — pedindo nome no WhatsApp",
-  flow: "Em conversa no WhatsApp agora",
-  wait: "Aguardando resposta (~2h de silêncio)",
-  nudge: "Sem resposta — retomada no WhatsApp",
-  sms: "Reforço por SMS em andamento",
-  call1: "Ligação automática em andamento",
-  retry: "Última janela dos leads novos antes de quem esfriou",
-  d1: "Reengajamento D+1 — Zap → SMS → ligação se silêncio",
-  d2: "Dia 2 — Zap + SMS se silêncio",
-  d4: "Dia 4 — 2ª ligação se ainda em silêncio",
-  d6: "Dia 6 — SMS de novidades",
-  d7: "Dia 7 — Zap de resposta fácil",
-  d10: "Dia 10 — fecha a onda (ligação + Zap)",
-  meta: "Na audiência Meta / remarketing",
-  r30: "Recall (~30d) — Zap → SMS → ligação",
-  r90: "Recall (~90d) — Zap → SMS → ligação",
-  r5m: "Recall (~5 meses) — Zap → SMS → ligação",
-  r8m: "Recall (~8 meses) — Zap → SMS → ligação",
-  r12m: "Recall (~12 meses) — Zap → SMS → ligação",
-  ryear: "Recall anual — Zap → SMS → ligação",
+  ask_name: "Acabou de chegar — a Sofia pede o nome no Zap",
+  flow: "Conversando no Zap com a Sofia",
+  wait: "Esperando a pessoa responder",
+  nudge: "Vai mandar outra mensagem no Zap",
+  sms: "Vai mandar um SMS de lembrete",
+  call1: "Vai ligar para essa pessoa",
+  retry: "Última tentativa antes de quem esfriou",
+  d1: "Vai mandar mensagem no Zap (quem esfriou)",
+  d2: "Vai mandar Zap ou SMS de lembrete",
+  d4: "Vai tentar ligar de novo",
+  d6: "Vai mandar SMS com novidades",
+  d7: "Vai mandar mensagem fácil no Zap",
+  d10: "Último contato dessa onda",
+  meta: "Em campanha no Facebook",
+  r30: "Vai tentar falar de novo (retorno)",
+  r90: "Vai tentar falar de novo (retorno)",
+  r5m: "Vai tentar falar de novo (retorno)",
+  r8m: "Vai tentar falar de novo (retorno)",
+  r12m: "Vai tentar falar de novo (retorno)",
+  ryear: "Vai tentar falar de novo (retorno anual)",
 };
 
 export function stepsForGroup(group: PartnerCycleGroup): PartnerCycleStep[] {
@@ -283,16 +292,71 @@ export function stageNoticeForSlice(
   if (SLICE_NOTICE[sliceId]) return SLICE_NOTICE[sliceId];
   const long = labelCadenceStage(stage, "long");
   if (long && long !== "—") return long;
-  return "Em acompanhamento automático (WhatsApp, SMS ou ligação)";
+  return "A Sofia está cuidando dessa pessoa (Zap, SMS ou ligação)";
 }
 
 /**
  * Classifica um lead bruto do RPC no ciclo A/B/C.
  * Retorna null se fora do ciclo (CRM, bloqueado, carteira, etc.).
  */
+function isPortalGroup(value: string | null | undefined): value is PartnerCycleGroup {
+  return value === "A" || value === "B" || value === "C";
+}
+
+function partnerLeadScheduleFields(
+  raw: PartnerPortalCycleLeadRaw,
+  stage: string | null,
+): Pick<
+  ClassifiedPartnerLead,
+  "nextActionAt" | "nextStepWhat" | "nextStepChannel" | "nextHint" | "isHandoff"
+> {
+  const sched = describePartnerNextStep({
+    stage,
+    pausedReason: raw.paused_reason,
+    nextActionAt: raw.next_action_at,
+  });
+  return {
+    nextActionAt: sched.nextActionAt,
+    nextStepWhat: sched.what,
+    nextStepChannel: sched.channel,
+    nextHint: sched.shortLabel,
+    isHandoff: sched.isHandoff,
+  };
+}
+
 export function classifyPartnerCycleLead(
   raw: PartnerPortalCycleLeadRaw,
 ): ClassifiedPartnerLead | null {
+  const portalGroup = String(raw.portal_group || "").trim().toUpperCase();
+  const portalSlice = String(raw.portal_slice || "").trim();
+  if (isPortalGroup(portalGroup) && portalSlice) {
+    const stage = String(raw.stage_actual || raw.stage || "").trim() || null;
+    const paused = String(raw.paused_reason || "").trim().toLowerCase();
+    const isHandoff =
+      paused === "handoff_humano" || paused.startsWith("humano_assumiu");
+    const phoneRaw = String(raw.phone_whatsapp || "").trim();
+    const phoneDisplay = phoneRaw ? formatBrazilPhone(phoneRaw) : "—";
+    const digits = phoneRaw.replace(/\D/g, "");
+    const phoneTel = digits
+      ? digits.startsWith("55")
+        ? `+${digits}`
+        : digits.length >= 10
+          ? `+55${digits}`
+          : ""
+      : "";
+    return {
+      id: raw.id,
+      group: portalGroup,
+      sliceId: portalSlice,
+      stage,
+      displayName: displayPartnerLeadName(raw.name, raw.name_source),
+      phoneDisplay,
+      phoneTel,
+      stageNotice: isHandoff ? PARTNER_HANDOFF_NOW : stageNoticeForSlice(portalSlice, stage),
+      ...partnerLeadScheduleFields(raw, stage),
+    };
+  }
+
   if (
     !isCycleLeadEligible({
       customer_origin: raw.customer_origin,
@@ -383,12 +447,7 @@ export function classifyPartnerCycleLead(
   const paused = String(raw.paused_reason || "").trim().toLowerCase();
   const isHandoff =
     paused === "handoff_humano" || paused.startsWith("humano_assumiu");
-  const next = isHandoff
-    ? "Automação pausada — consultor no comando"
-    : labelNextCadenceAction(stage);
-  const notice = isHandoff
-    ? "Falando direto com o consultor (automação pausada)"
-    : stageNoticeForSlice(sliceId, stage);
+  const notice = isHandoff ? PARTNER_HANDOFF_NOW : stageNoticeForSlice(sliceId, stage);
 
   return {
     id: raw.id,
@@ -399,7 +458,7 @@ export function classifyPartnerCycleLead(
     phoneDisplay,
     phoneTel,
     stageNotice: notice,
-    nextHint: next,
+    ...partnerLeadScheduleFields(raw, stage),
   };
 }
 
