@@ -27,6 +27,7 @@
 import { adminClient, authConsultant } from "../_shared/fb-graph.ts";
 import { buildCors } from "../_shared/cors.ts";
 import { isServiceRoleAuth } from "../_shared/service-role-auth.ts";
+import { assertCronAuthStrict } from "../_shared/cron-auth.ts";
 import { measureConsultantCampaigns } from "../_shared/brain-measure.ts";
 import { type BrainDecision, decideCampaign } from "../_shared/brain-decide.ts";
 import { describeDataQuality } from "../_shared/brain-data-quality.ts";
@@ -109,22 +110,28 @@ Deno.serve(async (req) => {
     // Lote e desfechos varrem todos os consultores: é trabalho de cron, não de
     // tela. Um consultor logado só alcança as próprias campanhas.
     const isBatchMode = mode === "scheduled" || mode === "outcomes";
-    const serviceRole = isServiceRoleAuth(req);
+    const admin = adminClient();
 
-    if (serviceRole) {
-      if (!consultantId && !isBatchMode) {
+    if (isBatchMode) {
+      // Superfície financeira: `assertCronAuthStrict` nunca cai no ramo de
+      // grace, então header ausente é 403 mesmo em ambiente sem secret.
+      const cronAuth = await assertCronAuthStrict(req, admin);
+      if (!cronAuth.ok) {
+        return j(
+          req,
+          { error: "modo restrito ao agendador", reason: cronAuth.reason },
+          403,
+        );
+      }
+    } else if (isServiceRoleAuth(req)) {
+      if (!consultantId) {
         return j(req, { error: "consultant_id obrigatório" }, 400);
       }
     } else {
-      if (isBatchMode) {
-        return j(req, { error: "modo restrito ao agendador" }, 403);
-      }
       const auth = await authConsultant(req);
       if (!auth) return j(req, { error: "Unauthorized" }, 401);
       consultantId = auth.id;
     }
-
-    const admin = adminClient();
     const windowDays = Math.max(1, Math.min(30, Number(body?.window_days) || 2));
     const campaignIds = Array.isArray(body?.campaign_ids)
       ? body.campaign_ids.map(String)
