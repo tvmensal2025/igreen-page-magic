@@ -17,6 +17,7 @@ import type { BrainDecision } from "./brain-decide.ts";
 import type { BrainDecisionPolicy } from "./brain-policy.ts";
 
 export type IdempotencyInput = {
+  consultantId: string;
   campaignId: string;
   actionKind: string;
   snapshotVersion: string;
@@ -30,11 +31,16 @@ export type IdempotencyInput = {
  * Inclui origem e destino do orçamento: repetir a MESMA transição é a operação
  * que precisa ser bloqueada; uma transição diferente (3000 → 3300 depois de
  * 3300 → 3600) é legítima e tem chave própria.
+ *
+ * O consultor entra na chave porque `idempotency_key` é única na tabela
+ * inteira: sem o tenant, qualquer futuro identificador de campanha que não seja
+ * globalmente único faria a reserva de um consultor negar a execução de outro.
  */
 export function buildIdempotencyKey(
   input: IdempotencyInput,
 ): Promise<string> {
   return canonicalHash({
+    consultant_id: input.consultantId,
     campaign_id: input.campaignId,
     action: input.actionKind,
     snapshot_version: input.snapshotVersion,
@@ -47,6 +53,7 @@ export function idempotencyKeyForDecision(
   decision: BrainDecision,
 ): Promise<string> {
   return buildIdempotencyKey({
+    consultantId: decision.consultantId,
     campaignId: decision.campaignId,
     actionKind: decision.actionKind ?? decision.action,
     snapshotVersion: decision.snapshotVersion,

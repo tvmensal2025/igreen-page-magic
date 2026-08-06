@@ -71,6 +71,8 @@ CREATE TABLE IF NOT EXISTS public.ads_brain_decisions (
 
 -- O coração da idempotência: duas instâncias do cron, um retry de timeout ou
 -- um callback repetido colidem aqui em vez de escrever duas vezes na Meta.
+-- O UNIQUE é global, então a chave embute o consultor (`buildIdempotencyKey`
+-- em `_shared/brain-execution.ts`): a reserva de um tenant nunca nega a de outro.
 CREATE UNIQUE INDEX IF NOT EXISTS ads_brain_decisions_idempotency_key
   ON public.ads_brain_decisions (idempotency_key);
 

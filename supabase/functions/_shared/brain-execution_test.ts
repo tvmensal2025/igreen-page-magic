@@ -123,6 +123,7 @@ Deno.test("snapshot diferente gera chave diferente", async () => {
 
 Deno.test("chave não depende da ordem dos campos", async () => {
   const a = await buildIdempotencyKey({
+    consultantId: "c1",
     campaignId: "c",
     actionKind: "increase_budget",
     snapshotVersion: "v",
@@ -135,8 +136,28 @@ Deno.test("chave não depende da ordem dos campos", async () => {
     snapshotVersion: "v",
     actionKind: "increase_budget",
     campaignId: "c",
+    consultantId: "c1",
   } as never);
   assertEquals(a, b);
+});
+
+Deno.test("chave isola tenant: mesma campanha, outro consultor", async () => {
+  const base = {
+    campaignId: "camp-1",
+    actionKind: "increase_budget",
+    snapshotVersion: "v",
+    fromBudgetCents: 100,
+    toBudgetCents: 110,
+  };
+  const a = await buildIdempotencyKey({ ...base, consultantId: "c1" });
+  const b = await buildIdempotencyKey({ ...base, consultantId: "c2" });
+  assertNotEquals(a, b);
+  // E a decisão carrega o tenant até a chave — a reserva de um consultor não
+  // pode consumir o UNIQUE global e travar a execução de outro.
+  assertNotEquals(
+    await idempotencyKeyForDecision(decision()),
+    await idempotencyKeyForDecision(decision({ consultantId: "outro" })),
+  );
 });
 
 // ──────────────── Reserva atômica (duas instâncias) ────────────────

@@ -12,20 +12,32 @@
 -- "campaign_column")` em `_shared/brain-policy.ts` trata o legado 200 como
 -- "não configurado". Esta migration só alinha o banco à mesma fonte.
 --
--- Rollback:
+-- Só o DEFAULT futuro muda. Nenhuma linha existente é sobrescrita: não há como
+-- distinguir "herdou o DEFAULT 200" de "alguém digitou R$ 2,00 na tela", e
+-- reescrever o alvo de quem escolheu o valor seria mudar a régua da campanha
+-- alheia sem pedido. O resolvedor no código já neutraliza o legado em runtime.
+--
+-- Rollback (reverte tudo, sem perda de dado):
 --   ALTER TABLE public.facebook_campaigns
 --     ALTER COLUMN brain_scale_target_cpl_cents SET DEFAULT 200;
---   -- O UPDATE abaixo não é revertido automaticamente: guarde o snapshot de
---   -- (id, brain_scale_target_cpl_cents) antes de rodar, se quiser voltar.
 
 ALTER TABLE public.facebook_campaigns
   ALTER COLUMN brain_scale_target_cpl_cents SET DEFAULT 750;
 
--- Só as linhas que nunca foram tocadas (valor exatamente igual ao DEFAULT
--- antigo). Quem digitou outro valor na tela permanece como está.
-UPDATE public.facebook_campaigns
-   SET brain_scale_target_cpl_cents = 750
- WHERE brain_scale_target_cpl_cents = 200;
+-- Diagnóstico para revisão manual — rode ANTES de decidir qualquer correção de
+-- dado. Quem aparecer aqui continua com o alvo antigo no banco e é tratado
+-- como "não configurado" por resolveTargetCplCents(raw, "campaign_column").
+--
+--   SELECT c.consultant_id,
+--          c.id,
+--          c.name,
+--          c.status,
+--          c.brain_scale_target_cpl_cents,
+--          c.brain_scale_enabled,
+--          c.updated_at
+--     FROM public.facebook_campaigns c
+--    WHERE c.brain_scale_target_cpl_cents = 200
+--    ORDER BY c.brain_scale_enabled DESC, c.updated_at DESC;
 
 COMMENT ON COLUMN public.facebook_campaigns.brain_scale_target_cpl_cents IS
   'CPL-alvo em centavos para o Cérebro por campanha. Fonte única de resolução: _shared/brain-policy.ts (resolveTargetCplCents). Default oficial 750 (R$ 7,50).';
