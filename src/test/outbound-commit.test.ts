@@ -240,6 +240,20 @@ describe("guarda estática — caminho Whapi/Grupo A", () => {
   });
 });
 
+describe.each(["whapi-webhook", "evolution-webhook"])(
+  "guarda estática — FAQ não registra resposta que não saiu (%s)",
+  (channel) => {
+    it("só grava histórico e marca a dúvida como respondida após o envio", () => {
+      const src = readFileSync(path.join(FN, channel, "handlers/bot-flow.ts"), "utf8");
+      expect(src).toContain("const okQa = await sendText(remoteJid, it.text)");
+      expect(src).toMatch(/if \(okQa === false\)[\s\S]{0,200}continue;/);
+      expect(src).not.toMatch(
+        /await sendText\(remoteJid, it\.text\);\s*await supabase\.from\("conversations"\)\.insert/,
+      );
+    });
+  },
+);
+
 describe("guarda estática — caminho Evolution/Grupo A", () => {
   const src = readFileSync(path.join(FN, "evolution-webhook/index.ts"), "utf8");
 

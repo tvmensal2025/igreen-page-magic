@@ -11,9 +11,11 @@ import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 const FN = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../supabase/functions");
-const src = readFileSync(path.join(FN, "whapi-webhook/handlers/bot-flow.ts"), "utf8");
+const CHANNELS = ["whapi-webhook", "evolution-webhook"] as const;
 
-describe("FAQ/atalhos × etapa do Grupo A", () => {
+describe.each(CHANNELS)("FAQ/atalhos × etapa do Grupo A (%s)", (channel) => {
+  const src = readFileSync(path.join(FN, channel, "handlers/bot-flow.ts"), "utf8");
+
   it("keepStep devolve o turno sem tocar em conversation_step", () => {
     const block = src.slice(src.indexOf("if (opts?.keepStep) {"));
     const ret = block.slice(0, block.indexOf("\n    }\n    return"));

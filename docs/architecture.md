@@ -1,9 +1,15 @@
 # Arquitetura operacional
 
-## Turno inbound do Grupo A (Whapi)
+## Turno inbound do Grupo A (Whapi e Evolution)
 
-Fluxo oficial: Whapi → Grupo A determinístico → FAQ/atalhos → texto e áudio →
+Fluxo oficial: WhatsApp → Grupo A determinístico → FAQ/atalhos → texto e áudio →
 pizza/cadências → portal. Fluxo B e motor V3 permanecem desligados.
+
+Os dois canais rodam o mesmo Grupo A e compartilham guard de pausa, drain de
+rajada, gate de outreach e commit de outbound. A diferença é só de apresentação:
+**Whapi usa botões, Evolution usa opções numeradas** (`sendButtons` do Evolution
+formata "1. opção" no próprio texto). Nenhuma correção abaixo troca botão por
+número nem o contrário.
 
 Ordem canônica de um turno (2026-08):
 
@@ -22,7 +28,19 @@ Ordem canônica de um turno (2026-08):
    `last_bot_reply_at` e não entra em `conversations`.
 7. **Drain da rajada** — `_shared/bot/pending-inbound.ts` reprocessa todos os
    inbounds da janela do turno, em ordem, sem repetir a mensagem já tratada.
+   A janela é o início do turno (`turnWindowStartIso`), não `pending_inbound_at`:
+   a linha em `conversations` é gravada antes do marcador, então a janela do
+   marcador deixava a própria mensagem barrada de fora.
 8. **Release do lock**.
+
+O `evolution-webhook` persiste o estado **antes** do envio, porque o drain da
+fila roda no meio do turno e inverter a ordem mudaria a serialização. Para o
+lead não ficar parado numa etapa cuja pergunta nunca chegou, o resultado real
+do canal alimenta `shouldRevertStepAfterFailedSend`, que desfaz só o avanço de
+etapa. Conservador de propósito: não reverte em `queued`, não reverte se a
+rajada foi drenada depois e não reverte quando o silêncio é intencional
+(`paused_by_human`, `dnc`, `opt_out`) — nesse caso quem manda é o humano.
+Dados extraídos do lead (nome, e-mail, valor da conta) nunca são revertidos.
 
 Isolamento e concorrência:
 
@@ -42,6 +60,9 @@ Isolamento e concorrência:
 - FAQ/atalhos dentro de cadastro rodam com `keepStep: true` e não alteram
   `conversation_step`; a regra comercial de fechamento (`is_closing`) continua
   valendo apenas fora dos passos de cadastro (`NO_QA_STEPS`).
+- Resposta de FAQ recusada pelo canal não entra em `conversations` e não marca
+  a dúvida como respondida — o turno segue para o tratamento normal em vez de
+  encerrar como se o lead tivesse sido atendido.
 
 ## Retomada após atendimento humano
 

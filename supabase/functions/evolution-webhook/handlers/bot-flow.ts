@@ -1984,7 +1984,14 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const isLast = mi === items.length - 1;
 
       if (it.kind === "text" && it.text) {
-        await sendText(remoteJid, it.text);
+        // Resposta de FAQ recusada pelo canal não pode virar histórico nem
+        // contar como "a dúvida foi respondida" — sem isso o turno seguia
+        // como atendido e o lead ficava sem resposta.
+        const okQa = await sendText(remoteJid, it.text);
+        if (okQa === false) {
+          console.warn(`[qa:${step}] envio de texto retornou false — sem histórico`);
+          continue;
+        }
         await supabase.from("conversations").insert({
           customer_id: customer.id, message_direction: "outbound",
           message_text: it.text, message_type: "text", conversation_step: step,
