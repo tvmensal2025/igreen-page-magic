@@ -124,7 +124,25 @@ Campanha Meta ↔ `facebook_campaigns.id` (UUID). Rodízio **só** por UUID.
 | UI | Controles + ajuda | `src/components/admin/ads/CampaignBrainPanel.tsx` |
 | UI escala | Brain por campanha | `src/components/admin/ads/CampaignBrainScaleDialog.tsx` |
 
-Persistência: `consultant_ad_settings.brain_config` (JSONB).
+**Camada de inteligência comercial (2026-08-06)** — ver §11:
+
+| Componente | Responsabilidade | Path |
+|------------|------------------|------|
+| Política | CPL-alvo único + limites operacionais + autorização por ação | `_shared/brain-policy.ts` (espelho UI: `src/lib/brainPolicy.ts`) |
+| Qualidade de dados | fresh/stale/incomplete/conflicting/unavailable | `_shared/brain-data-quality.ts` |
+| Atribuição | Confiança alta/média/baixa/não atribuída, sem duplicar cliente | `_shared/brain-attribution.ts` |
+| Snapshot | Amostra imutável + hash de versão | `_shared/brain-snapshot.ts` |
+| Medição (I/O) | Única camada que lê o banco | `_shared/brain-measure.ts` |
+| Saúdes | Dados / Meta / Comercial separadas | `_shared/brain-health.ts` |
+| Amostra | insufficient/early/moderate/reliable + confiança | `_shared/brain-sample.ts` |
+| Decisão | Snapshot → recomendação + bloqueios (sem Meta) | `_shared/brain-decide.ts` |
+| Execução | Idempotência + revalidação + leitura da resposta Meta | `_shared/brain-execution.ts` |
+| Histórico | Reserva atômica e desfecho | `_shared/brain-decision-store.ts` |
+| CAPI (preparo) | Elegibilidade de evento comercial — **não envia** | `_shared/brain-capi-eligibility.ts` |
+| Shadow/backtest | analyze · shadow · backtest | `supabase/functions/campaign-brain-shadow/` |
+| UI diagnóstico | Card dentro do painel existente | `src/components/admin/ads/CampaignBrainDiagnostics.tsx` |
+
+Persistência: `consultant_ad_settings.brain_config` (JSONB) + `ads_brain_decisions` (migration aditiva **proposta, não executada**).
 
 ### 3.0 Onde editar (sem código)
 
@@ -156,6 +174,12 @@ Salva estratégia geográfica (sede × cidades), raio, CPL, budgets, mensagem ob
 
 Âncora = `facebook_campaigns.id === brain_config.anchor_campaign_id`.  
 Prefixo `AUTO_PERF_PAUSE:` — health/rotator **não** reativam; só Play.
+
+**Waste adaptativo (2026-08-06):** `evaluateAdaptiveCampaignWaste` escala o limiar por
+CPL-alvo (`targetCplCents × wasteSpendMultiplier`), respeita `minCampaignAgeHours` e
+nunca devolve `pause` — no máximo `recommend_pause`. Quem decide executar é
+`waste_guard_mode` (default **`recommend`**). Os limiares fixos acima continuam
+ativos como proteção de produção; o adaptativo não os substitui.
 
 ### 3.3 Escala da âncora
 
@@ -390,6 +414,7 @@ UI do painel pode mostrar defaults “otimistas”; o backend é fail-closed (`d
 
 | Data | Mudança |
 |------|---------|
+| 2026-08-06 | v1.4 — camada de inteligência comercial (§11): medição/decisão/execução separadas, CPL-alvo único, qualidade de dados, atribuição com confiança, três saúdes, waste adaptativo em `recommend`, idempotência, shadow/backtest, preparo CAPI |
 | 2026-07-26 | v1.3 — Campanha Inteligente 1-clique · molde cidade sede · waste âncora R$40 · escada de escala · DDD só backend |
 | 2026-07-25 | v1.2 — UI Controles: sede/raio/`geo_mode`/`require_initial_message` editáveis por consultor |
 | 2026-07-25 | v1.1 — sede 50 km + `geo_mode=radius_sede` + `max_explorers=0` + `require_initial_message` |
@@ -427,4 +452,98 @@ UI do painel pode mostrar defaults “otimistas”; o backend é fail-closed (`d
 3. Não ligar expansão multi-cidade sem âncora saudável + pedido explícito.  
 4. Preferir mudança de **config/operação** a mudança de **motor**.  
 5. Qualquer mudança de motor: pedido explícito do usuário + KPI quebrado 3 dias.  
-6. Não confundir: publisher CTWA já está certo; o erro operacional é **fragmentar** campanhas ativas.
+6. Não confundir: publisher CTWA já está certo; o erro operacional é **fragmentar** campanhas ativas.  
+7. Ao mexer em decisão de orçamento/pausa: usar **§11**, não reimplementar CPL, saúde ou atribuição.
+
+---
+
+## 11. Camada de inteligência comercial (v1.4 — 2026-08-06)
+
+Camada **aditiva**. O motor legado (§3.2, §3.3) continua rodando; nada foi removido.
+
+### 11.1 Três responsabilidades separadas
+
+| Etapa | Faz | Nunca faz | Path |
+|-------|-----|-----------|------|
+| **Medição** | Lê e normaliza Meta + CRM + carteira; monta snapshot imutável | Recomendar, executar | `brain-measure.ts` → `brain-snapshot.ts` |
+| **Decisão** | Snapshot → diagnóstico, confiança, recomendação, bloqueios, próxima avaliação | Chamar Meta, alterar campanha/orçamento | `brain-decide.ts` |
+| **Execução** | Revalida autorização, kill switch, modo, saldo, runway, atualidade, idempotência, estado atual | Marcar sucesso sem confirmação da Meta | `brain-execution.ts` + `brain-decision-store.ts` |
+
+**LLM não decide.** Pode explicar uma decisão já calculada, resumir, sugerir hipótese de
+criativo. Se o LLM falhar, o número continua de pé.
+
+### 11.2 CPL-alvo — fonte única
+
+`resolveTargetCplCents(raw, source)` em `_shared/brain-policy.ts`. Oficial: **750** (R$ 7,50).  
+O legado **R$ 2,00** era o DEFAULT da coluna `facebook_campaigns.brain_scale_target_cpl_cents`
+(migration `20260723044000`), não uma escolha — por isso `source: "campaign_column"` trata
+200 como "não configurado". Nas outras origens R$ 2 foi digitado por alguém e vale.  
+UI usa o espelho `src/lib/brainPolicy.ts`; ao mudar um, mude o outro.
+
+### 11.3 Política operacional (`DEFAULT_BRAIN_DECISION_POLICY`)
+
+| Item | Valor | Motivo |
+|------|-------|--------|
+| Execução na mesma campanha | 1× / **24 h** | Avaliar pode ser frequente; escrever não |
+| Degrau padrão / máximo | **5% / 10%** | Não os 15–30% do motor legado |
+| Amostra mínima | 8 conversas · 3 leads confiáveis | Duas conversas não são prova |
+| Multiplicador de desperdício | 3× CPL-alvo | Limiar acompanha o alvo |
+| Runway mínimo | 2 dias | Aumento não pode secar a carteira |
+| Idade máxima das métricas | 26 h | Sync falho bloqueia ação |
+| Idade mínima da campanha p/ waste | 24 h | Campanha nova não é pausada por 3 h caras |
+
+Degrau por confiança: baixa **0%** · moderada **5%** · boa **8%** · alta **10%**.
+
+### 11.4 Modos e autorização por ação
+
+`BrainMode`: `off` · `recommend` · `assisted` · `automatic`, derivado de
+`automation_mode`/`kill_switch` e sobreponível por ação em
+`brain_config.action_modes` (`pause_waste`, `reduce_budget`, `increase_budget`,
+`resume_campaign`, `recommend_creative_review`).
+
+- **Kill switch ativo:** análise e recomendação continuam; **toda escrita na Meta é bloqueada**.
+- Padrão de produção hoje: recomenda, **não executa**. `waste_guard_mode = recommend`.
+
+### 11.5 Qualidade de dados e atribuição
+
+Estados: `fresh` · `stale` · `incomplete` · `conflicting` · `unavailable`.
+Só `fresh` libera ação financeira; o resto vira decisão `hold` com bloqueio explicado.
+
+Atribuição por confiança: **alta** = AD ID confirmado · **média** = `ctwa_clid` sem AD ID ·
+**baixa** = campanha sem sinal forte Meta · **não atribuída**. Aprovado com atribuição baixa
+aparece em `approvedLowConfidence` e **nunca** entra na base que autoriza escalar.
+Dedupe por `customers.id`.
+
+### 11.6 Saúdes separadas
+
+Dados · Meta · Comercial, cada uma com nível próprio e notas em pt-BR. Sem score verde único.
+Sem dado comercial suficiente: não declara vencedor, limita ação expansiva, mostra
+"aguardando dados comerciais".
+
+### 11.7 Idempotência
+
+Chave = hash de (campanha, ação, versão do snapshot, orçamento de origem, orçamento de destino).
+Reserva atômica por `INSERT ... ON CONFLICT DO NOTHING` em `ads_brain_decisions.idempotency_key`.
+Erro ou timeout da Meta **nunca** viram sucesso local — orçamento local não é atualizado e a
+reconciliação posterior é quem resolve.
+
+A mesma versão de snapshot não autoriza dois aumentos (`snapshot_ja_utilizado`).
+
+### 11.8 Shadow e backtest
+
+`campaign-brain-shadow` — **nunca chama a Meta**:
+
+- `analyze`: mede e decide, zero escrita;
+- `shadow`: registra recomendação em `ads_brain_decisions`, zero escrita na Meta;
+- `backtest`: reprocessa janelas passadas, zero escrita, e compara com o que o motor atual fez.
+
+Automação só pode ser cogitada com: volume mínimo de decisões avaliadas, taxa baixa de
+recomendações prejudiciais, zero execução duplicada, zero ação sobre dado velho e **aprovação humana**.
+
+### 11.9 CAPI — preparo, não envio
+
+Infra existente é a única: `facebook_capi_outbox` + `facebook-capi-dispatch` + `_shared/capi-event.ts`.
+`brain-capi-eligibility.ts` só responde se um marco comercial pode virar evento e com qual nome.
+
+Campanha **Click-to-WhatsApp otimiza conversa iniciada** — evento de cliente aprovado nela é
+**medição**, não sinal de otimização. Envio real permanece desligado até revisão.

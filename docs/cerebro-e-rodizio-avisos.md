@@ -37,7 +37,12 @@ Campanha Meta ↔ UUID `facebook_campaigns.id`. Rodízio usa **só** esse UUID (
 
 ### Config (`consultant_ad_settings.brain_config`)
 
-Campos típicos: `autopilot`, `anchor_budget_cents`, `max_anchor_budget_cents`, `target_cpl_cents` (ex. 200), `scale_step_pct` (15), `explorer_budget_cents` (~517), `max_explorers` (4), `preferred_slugs`, `age_min`, `last_anchor_scale_at`.
+Campos típicos: `autopilot`, `anchor_budget_cents`, `max_anchor_budget_cents`, `target_cpl_cents`, `scale_step_pct`, `explorer_budget_cents` (~517), `max_explorers`, `preferred_slugs`, `age_min`, `last_anchor_scale_at`.
+
+> **Desatualizado aqui:** os valores de CPL-alvo e degrau que este arquivo citava (200 / 15%)
+> não valem mais. Fonte única: `docs/CEREBRO-ADS-OFICIAL.md` §11.2–11.3 —
+> alvo **750** e degrau **5% padrão / 10% máximo**, resolvidos por
+> `_shared/brain-policy.ts`.
 
 ### Modelo no ar
 
