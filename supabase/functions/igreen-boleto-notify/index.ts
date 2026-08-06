@@ -31,7 +31,9 @@ import {
   loadBoletoNotifyConfig,
   parseMesFromStageKey,
   buildBoletoAudioSpoken,
+  buildBoletoButtonPrompt,
   renderBoletoNotifyTemplate,
+  stripBoletoButtonCta,
   shouldRunBoletoNotifyNow,
   type BoletoNotifyConfig,
 } from "../_shared/boleto-notify.ts";
@@ -356,11 +358,25 @@ async function sendOne(
     console.warn("[boleto-notify] tts/audio:", e instanceof Error ? e.message : e);
   }
 
+  // Texto formatado sozinho (links das lojas clicáveis) e, só depois, o convite
+  // com o botão. Junto numa mensagem só o WhatsApp achata a formatação.
+  const bodyText = cfg.button_enabled ? stripBoletoButtonCta(waText) : waText;
   try {
-    if (cfg.button_enabled) {
-      const r = await resolved.adapter.sendChoice(
+    const r = await resolved.adapter.sendText(
+      jid,
+      bodyText,
+      { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:text`, supabase },
+    );
+    textOk = !!r.ok;
+  } catch (e) {
+    console.warn("[boleto-notify] text:", e instanceof Error ? e.message : e);
+  }
+
+  if (cfg.button_enabled) {
+    try {
+      await resolved.adapter.sendChoice(
         jid,
-        waText,
+        buildBoletoButtonPrompt(cfg.button_boleto_label),
         {
           preferred: "button",
           options: [
@@ -370,20 +386,11 @@ async function sendOne(
             },
           ],
         },
-        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:text`, supabase },
+        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:button`, supabase },
       );
-      // downgraded (Evolution numerado) ainda entregou o texto
-      textOk = !!r.ok || r.reason === "downgraded";
-    } else {
-      const r = await resolved.adapter.sendText(
-        jid,
-        waText,
-        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:text`, supabase },
-      );
-      textOk = !!r.ok;
+    } catch (e) {
+      console.warn("[boleto-notify] button:", e instanceof Error ? e.message : e);
     }
-  } catch (e) {
-    console.warn("[boleto-notify] text/buttons:", e instanceof Error ? e.message : e);
   }
 
   const status = textOk
@@ -524,11 +531,24 @@ async function runTestSend(
     console.warn("[boleto-notify] test audio:", e instanceof Error ? e.message : e);
   }
 
+  const bodyText = cfg.button_enabled ? stripBoletoButtonCta(waText) : waText;
   try {
-    if (cfg.button_enabled) {
+    const r = await resolved.adapter.sendText(
+      jid,
+      bodyText,
+      { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:text:${Date.now()}`, supabase },
+    );
+    textOk = !!r.ok;
+  } catch (e) {
+    console.warn("[boleto-notify] test text:", e instanceof Error ? e.message : e);
+  }
+
+  let buttonOk = false;
+  if (cfg.button_enabled) {
+    try {
       const r = await resolved.adapter.sendChoice(
         jid,
-        waText,
+        buildBoletoButtonPrompt(cfg.button_boleto_label),
         {
           preferred: "button",
           options: [
@@ -538,19 +558,12 @@ async function runTestSend(
             },
           ],
         },
-        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:text:${Date.now()}`, supabase },
+        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:button:${Date.now()}`, supabase },
       );
-      textOk = !!r.ok || r.reason === "downgraded";
-    } else {
-      const r = await resolved.adapter.sendText(
-        jid,
-        waText,
-        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:text:${Date.now()}`, supabase },
-      );
-      textOk = !!r.ok;
+      buttonOk = !!r.ok || r.reason === "downgraded";
+    } catch (e) {
+      console.warn("[boleto-notify] test button:", e instanceof Error ? e.message : e);
     }
-  } catch (e) {
-    console.warn("[boleto-notify] test text:", e instanceof Error ? e.message : e);
   }
 
   // Teste = produção: áudio + texto/botão. Arquivo só no clique “Receber boleto”.
@@ -590,6 +603,7 @@ async function runTestSend(
     success: textOk || audioOk,
     audio_ok: audioOk,
     text_ok: textOk,
+    button_ok: buttonOk,
     doc_ok: false,
     click_armed: clickArmed,
     spoken,

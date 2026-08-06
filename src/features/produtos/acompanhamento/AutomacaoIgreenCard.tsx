@@ -28,6 +28,8 @@ import {
   DEFAULT_BOLETO_AUDIO_BODY,
   IGREEN_CLUB_PLAY_STORE_URL,
   IGREEN_CLUB_APP_STORE_URL,
+  buildBoletoButtonPrompt,
+  stripBoletoButtonCta,
   type BoletoNotifyConfig,
 } from "./boletoNotifyConfig";
 
@@ -333,13 +335,13 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
       });
 
       // 1) Texto formatado sozinho (*negrito* + links das lojas) — sem misturar botão.
-      await whapiSendText(phone, waText, { intent: "reply", customerId: cust?.id });
+      const bodyText = cfg.button_enabled ? stripBoletoButtonCta(waText) : waText;
+      await whapiSendText(phone, bodyText, { intent: "reply", customerId: cust?.id });
 
       // 2) Botão em mensagem curta à parte (Whapi quick_reply). Se proxy antigo, cai em *1.*
       let buttonMode: "quick_reply" | "numbered_fallback" | "text_only" = "text_only";
       if (cfg.button_enabled) {
-        const btnBody =
-          `Se quiser o *boleto aqui no Zap*, toque no botão abaixo (ou digite *1*).`;
+        const btnBody = buildBoletoButtonPrompt(buttonLabel);
         try {
           const btnRes = await whapiSendButtons(
             phone,

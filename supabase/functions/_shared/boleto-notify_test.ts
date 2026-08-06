@@ -3,7 +3,9 @@ import {
   BOLETO_RECEBER_DOC_BUTTON_ID,
   boletoChegouStageKey,
   buildBoletoAudioSpoken,
+  buildBoletoButtonPrompt,
   buildClubLink,
+  stripBoletoButtonCta,
   isBoletoFearOrDoubtText,
   isBoletoReceberDocIntent,
   parseMesFromStageKey,
@@ -14,6 +16,33 @@ import {
 Deno.test("stage_key boleto_chegou", () => {
   assertEquals(boletoChegouStageKey("03/2026"), "boleto_chegou:03/2026");
   assertEquals(parseMesFromStageKey("boleto_chegou:03/2026"), "03/2026");
+});
+
+Deno.test("convite do botão em mensagem própria", () => {
+  assertEquals(
+    buildBoletoButtonPrompt("Receber boleto"),
+    "Quer o boleto aqui no Zap? É só tocar em *Receber boleto* 👇",
+  );
+  assertEquals(
+    buildBoletoButtonPrompt(""),
+    "Quer o boleto aqui no Zap? É só tocar em *Receber boleto* 👇",
+  );
+});
+
+Deno.test("texto legado perde a CTA duplicada do botão", () => {
+  const legado = [
+    "Seu acesso no Club:",
+    "https://club.igreenenergy.com.br/?id=1",
+    "",
+    "Se quiser o boleto aqui no Zap, toque em *Receber boleto* (ou digite *1*).",
+  ].join("\n");
+  assertEquals(
+    stripBoletoButtonCta(legado),
+    "Seu acesso no Club:\nhttps://club.igreenenergy.com.br/?id=1",
+  );
+  // Texto já limpo não deve ser alterado.
+  const limpo = "Seu acesso no Club:\nhttps://club.igreenenergy.com.br/?id=1";
+  assertEquals(stripBoletoButtonCta(limpo), limpo);
 });
 
 Deno.test("club link", () => {

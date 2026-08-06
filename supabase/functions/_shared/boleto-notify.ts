@@ -59,9 +59,7 @@ O lugar oficial é o app *iGreen Club* — lá você vê a fatura e os descontos
 {{link_appstore}}
 
 Seu acesso no Club:
-{{link_club}}
-
-Se quiser o boleto aqui no Zap, toque em *Receber boleto* (ou digite *1*).`,
+{{link_club}}`,
   button_boleto_label: "Receber boleto",
   button_enabled: true,
   doc_caption: "Segue seu boleto. O lugar oficial continua no app iGreen Club 👆",
@@ -80,6 +78,29 @@ export function buildBoletoAudioSpoken(opts: {
   const first = safeFirstNameForAddress(opts.name, opts.nameSource);
   if (!first) return body;
   return `Olá, ${first}! Tudo bem? ${body}`;
+}
+
+/**
+ * Convite do botão, sempre em mensagem própria (nunca colado no texto longo).
+ * Whapi vira quick_reply; Evolution vira "*1.* <label>" numa mensagem curta.
+ */
+export function buildBoletoButtonPrompt(buttonLabel?: string | null): string {
+  const label = String(buttonLabel || "Receber boleto").trim() || "Receber boleto";
+  return `Quer o boleto aqui no Zap? É só tocar em *${label}* 👇`;
+}
+
+/**
+ * Remove a chamada do botão do corpo do texto. Configs antigas (e textos que o
+ * consultor editar) ainda terminam com "toque em Receber boleto (ou digite 1)";
+ * sem isso o convite apareceria duas vezes.
+ */
+export function stripBoletoButtonCta(waText: string): string {
+  return String(waText || "")
+    .split("\n")
+    .filter((line) => !/(toque|clique|digite|responda)[^\n]*\b(receber\s+boleto|\*1\*)\b/i.test(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 export function boletoChegouStageKey(mesReferencia: string): string {
