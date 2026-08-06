@@ -33,6 +33,9 @@ type DecisionRow = {
   clientes_aprovados: number;
   amostra: string;
   confianca: string;
+  atribuicao: string;
+  atribuicao_descricao: string;
+  atribuicao_motivo: string;
   decisao: string;
   motivo: string;
   orcamento_atual_cents: number;
@@ -67,6 +70,17 @@ type Payload = {
     minRunwayDays: number;
     maxMetricsAgeHours: number;
   };
+  atividade?: {
+    ultima_decisao: string | null;
+    ultimo_lote_automatico: string | null;
+    ultimo_lote_correlation_id: string | null;
+    decisoes_7d: number;
+    desfecho_24h: string | null;
+    desfecho_72h: string | null;
+    desfecho_7d: string | null;
+    desfechos_pendentes: number;
+    historico_indisponivel: boolean;
+  };
   decisoes: DecisionRow[];
 };
 
@@ -97,6 +111,46 @@ const DECISION_LABEL: Record<string, string> = {
   pause_waste: "pausar por desperdício",
   recommend_creative_review: "revisar criativo",
 };
+
+const OUTCOME_LABEL: Record<string, string> = {
+  improved: "melhorou",
+  worsened: "piorou",
+  neutral: "neutro",
+  inconclusive: "inconclusivo",
+  insufficient_data: "dados insuficientes",
+};
+
+/** Atribuição fraca não pode parecer erro nem parecer vitória. */
+function supportTone(support: string): string {
+  switch (support) {
+    case "commercial_attribution_full":
+      return "border-emerald-500/40 bg-emerald-500/10 text-emerald-700";
+    case "commercial_attribution_partial":
+      return "border-amber-500/40 bg-amber-500/10 text-amber-700";
+    default:
+      return "border-muted-foreground/30 bg-muted/40 text-muted-foreground";
+  }
+}
+
+function quando(iso: string | null | undefined): string {
+  if (!iso) return "nunca";
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return "nunca";
+  const horas = (Date.now() - t) / 3_600_000;
+  if (horas < 1) return "há menos de 1h";
+  if (horas < 48) return `há ${Math.round(horas)}h`;
+  return `há ${Math.round(horas / 24)} dias`;
+}
+
+/** O cron do lote roda a cada 6h; o dobro disso já é atraso visível. */
+const SHADOW_ATRASO_HORAS = 13;
+
+function loteAtrasado(iso: string | null | undefined): boolean {
+  if (!iso) return true;
+  const t = Date.parse(iso);
+  if (!Number.isFinite(t)) return true;
+  return (Date.now() - t) / 3_600_000 > SHADOW_ATRASO_HORAS;
+}
 
 export default function CampaignBrainDiagnostics(
   { consultantId }: { consultantId: string },
@@ -194,6 +248,51 @@ export default function CampaignBrainDiagnostics(
             )}
           </div>
 
+          {data.atividade && (
+            <div className="rounded-lg border border-border bg-muted/20 p-3 mb-3 space-y-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[11px] font-medium">Análise automática</span>
+                {data.atividade.historico_indisponivel
+                  ? (
+                    <Badge variant="outline" className="border-destructive/40 text-destructive">
+                      <AlertTriangle className="w-3 h-3 mr-1" />
+                      histórico indisponível
+                    </Badge>
+                  )
+                  : loteAtrasado(data.atividade.ultimo_lote_automatico)
+                  ? (
+                    <Badge variant="outline" className="border-amber-500/40 text-amber-700">
+                      <AlertTriangle className="w-3 h-3 mr-1" />
+                      {data.atividade.ultimo_lote_automatico
+                        ? "lote atrasado"
+                        : "lote ainda não rodou"}
+                    </Badge>
+                  )
+                  : (
+                    <Badge variant="outline" className="border-emerald-500/40 text-emerald-700">
+                      <ShieldCheck className="w-3 h-3 mr-1" />
+                      em dia
+                    </Badge>
+                  )}
+              </div>
+              <p className="text-[11px] text-muted-foreground">
+                Último lote {quando(data.atividade.ultimo_lote_automatico)}
+                {data.atividade.ultimo_lote_correlation_id &&
+                  ` (${data.atividade.ultimo_lote_correlation_id})`}{" "}
+                · última decisão {quando(data.atividade.ultima_decisao)} ·{" "}
+                {data.atividade.decisoes_7d} decisão(ões) em 7 dias
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                Desfechos — 24h:{" "}
+                {OUTCOME_LABEL[data.atividade.desfecho_24h ?? ""] ?? "aguardando"} · 72h:{" "}
+                {OUTCOME_LABEL[data.atividade.desfecho_72h ?? ""] ?? "aguardando"} · 7 dias:{" "}
+                {OUTCOME_LABEL[data.atividade.desfecho_7d ?? ""] ?? "aguardando"}
+                {data.atividade.desfechos_pendentes > 0 &&
+                  ` · ${data.atividade.desfechos_pendentes} pendente(s)`}
+              </p>
+            </div>
+          )}
+
           {data.decisoes.length === 0 && (
             <p className="text-xs text-muted-foreground">
               Nenhuma campanha ativa na janela.
@@ -230,6 +329,13 @@ export default function CampaignBrainDiagnostics(
                   </Badge>
                   <Badge variant="outline" className="text-[10px]">
                     amostra: {d.amostra} · confiança: {d.confianca}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={`text-[10px] ${supportTone(d.atribuicao)}`}
+                    title={d.atribuicao_motivo}
+                  >
+                    {d.atribuicao_descricao}
                   </Badge>
                 </div>
 
