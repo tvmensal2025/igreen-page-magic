@@ -26,6 +26,9 @@ export const IGREEN_CLUB_PLAY_STORE_URL =
 export const IGREEN_CLUB_APP_STORE_URL =
   "https://apps.apple.com/br/app/igreen-club/id6444493340";
 
+export const BOLETO_APP_ANDROID_BUTTON_ID = "boleto_app_android";
+export const BOLETO_APP_IOS_BUTTON_ID = "boleto_app_ios";
+
 /** Corpo do áudio (abertura “Olá, Nome! Tudo bem?” é prefixada no envio). */
 export const DEFAULT_BOLETO_AUDIO_BODY =
   "seu boleto de energia do mês já está disponível. A iGreen cuida do envio oficial do boleto — e o lugar mais seguro e completo para você acompanhar tudo é o aplicativo iGreen Club. Lá você confere a fatura, o vencimento e ainda aproveita descontos em farmácias, restaurantes, cinemas e milhares de parceiros. Baixa o app, entra com o seu acesso e fica tranquilo. Qualquer dúvida, é só responder aqui.";
@@ -54,19 +57,37 @@ Qualquer dúvida, responde aqui 💚`,
   doc_caption: "Segue seu boleto. O lugar oficial continua no app iGreen Club 👆",
 };
 
-/** Espelha `supabase/functions/_shared/boleto-notify.ts`. */
-export function buildAppStoreInviteMessage(linkClub?: string | null): string {
+export function buildAppStoreButtonsPrompt(linkClub?: string | null): string {
   const club = String(linkClub || "https://club.igreenenergy.com.br/").trim();
-  return `📱 *Baixe o iGreen Club no celular:*
+  return `📱 *Baixe o iGreen Club* — qual celular você usa?
 
-🤖 *Android — Play Store:*
+Seu acesso no Club:
+${club}
+
+Toque no botão 👇`;
+}
+
+export function buildAppStoreNumberedMessage(linkClub?: string | null): string {
+  const club = String(linkClub || "https://club.igreenenergy.com.br/").trim();
+  return `📱 *Baixe o iGreen Club — escolha seu celular:*
+
+*1.* 🤖 *Android* (Play Store)
 ${IGREEN_CLUB_PLAY_STORE_URL}
 
-🍎 *iPhone — App Store:*
+*2.* 🍎 *iPhone* (App Store)
 ${IGREEN_CLUB_APP_STORE_URL}
 
 Seu acesso no Club:
-${club}`;
+${club}
+
+_Digite *1* ou *2*, ou toque no link._`;
+}
+
+export function boletoAppStoreChoiceOptions(): Array<{ id: string; title: string }> {
+  return [
+    { id: BOLETO_APP_ANDROID_BUTTON_ID, title: "Android" },
+    { id: BOLETO_APP_IOS_BUTTON_ID, title: "iPhone" },
+  ];
 }
 
 export function buildBoletoButtonPrompt(buttonLabel?: string | null): string {
@@ -110,17 +131,25 @@ export function useUpdateBoletoNotifyConfig() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (patch: Partial<BoletoNotifyConfig>) => {
-      const { error } = await supabase
+      const payload = {
+        id: "global",
+        ...DEFAULT_BOLETO_NOTIFY_CONFIG,
+        ...patch,
+        updated_at: new Date().toISOString(),
+      };
+      // UPDATE primeiro (linha global já existe); upsert só se faltar a linha.
+      const { data: updated, error: updErr } = await supabase
         .from("boleto_notify_config" as never)
-        .upsert(
-          {
-            id: "global",
-            ...patch,
-            updated_at: new Date().toISOString(),
-          } as never,
-          { onConflict: "id" },
-        );
-      if (error) throw error;
+        .update(payload as never)
+        .eq("id", "global")
+        .select("id");
+      if (updErr) throw updErr;
+      if (!updated || (Array.isArray(updated) && updated.length === 0)) {
+        const { error: insErr } = await supabase
+          .from("boleto_notify_config" as never)
+          .insert(payload as never);
+        if (insErr) throw insErr;
+      }
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ["boleto-notify-config"] }),
   });

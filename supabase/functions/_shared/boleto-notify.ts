@@ -15,6 +15,8 @@ type SB = any;
 
 /** Id interno do botão (nunca mostrado ao cliente). */
 export const BOLETO_RECEBER_DOC_BUTTON_ID = "boleto_receber_doc";
+export const BOLETO_APP_ANDROID_BUTTON_ID = "boleto_app_android";
+export const BOLETO_APP_IOS_BUTTON_ID = "boleto_app_ios";
 
 export const BOLETO_CHEGOU_STAGE_PREFIX = "boleto_chegou:";
 
@@ -108,18 +110,82 @@ export function stripBoletoButtonCta(waText: string): string {
     .trim();
 }
 
-/**
- * Mensagem curta e fixa com botões/links das lojas — sempre vai no pacote,
- * independente dos toggles de áudio/texto/boleto.
- */
-export function buildAppStoreInviteMessage(linkClub?: string | null): string {
+/** Prompt curto p/ Whapi (botões reais Android / iPhone). */
+export function buildAppStoreButtonsPrompt(linkClub?: string | null): string {
   const club = String(linkClub || "https://club.igreenenergy.com.br/").trim();
-  return `📱 *Baixe o iGreen Club no celular:*
+  return `📱 *Baixe o iGreen Club* — qual celular você usa?
 
-🤖 *Android — Play Store:*
+Seu acesso no Club:
+${club}
+
+Toque no botão 👇`;
+}
+
+/**
+ * Evolution (sem botão visual): lista numerada com links clicáveis.
+ * Não usar sendChoice aqui — ele re-numera e esconde as URLs.
+ */
+export function buildAppStoreNumberedMessage(linkClub?: string | null): string {
+  const club = String(linkClub || "https://club.igreenenergy.com.br/").trim();
+  return `📱 *Baixe o iGreen Club — escolha seu celular:*
+
+*1.* 🤖 *Android* (Play Store)
 ${IGREEN_CLUB_PLAY_STORE_URL}
 
-🍎 *iPhone — App Store:*
+*2.* 🍎 *iPhone* (App Store)
+${IGREEN_CLUB_APP_STORE_URL}
+
+Seu acesso no Club:
+${club}
+
+_Digite *1* ou *2*, ou toque no link._`;
+}
+
+/** @deprecated — preferir buttons/numbered específicos do canal. */
+export function buildAppStoreInviteMessage(linkClub?: string | null): string {
+  return buildAppStoreNumberedMessage(linkClub);
+}
+
+export function boletoAppStoreChoiceOptions(): Array<{ id: string; title: string }> {
+  return [
+    { id: BOLETO_APP_ANDROID_BUTTON_ID, title: "Android" },
+    { id: BOLETO_APP_IOS_BUTTON_ID, title: "iPhone" },
+  ];
+}
+
+/**
+ * Clique Android/iPhone (Whapi buttonId) ou texto "android"/"iphone".
+ * Evolution: links já vão na lista numerada — não usa "1"/"2" aqui
+ * (conflita com Receber boleto = *1*).
+ */
+export function resolveBoletoAppStoreChoice(opts: {
+  buttonId?: string | null;
+  text?: string | null;
+}): "android" | "ios" | null {
+  const id = String(opts.buttonId || "").trim().toLowerCase();
+  if (id === BOLETO_APP_ANDROID_BUTTON_ID) return "android";
+  if (id === BOLETO_APP_IOS_BUTTON_ID) return "ios";
+
+  const raw = String(opts.text || "").trim().toLowerCase();
+  if (!raw) return null;
+  if (/^(android|play\s*store)$/i.test(raw)) return "android";
+  if (/^(iphone|ios|app\s*store)$/i.test(raw)) return "ios";
+  return null;
+}
+
+export function buildAppStoreLinkReply(
+  kind: "android" | "ios",
+  linkClub?: string | null,
+): string {
+  const club = String(linkClub || "https://club.igreenenergy.com.br/").trim();
+  if (kind === "android") {
+    return `🤖 *Android — Play Store:*
+${IGREEN_CLUB_PLAY_STORE_URL}
+
+Seu acesso no Club:
+${club}`;
+  }
+  return `🍎 *iPhone — App Store:*
 ${IGREEN_CLUB_APP_STORE_URL}
 
 Seu acesso no Club:

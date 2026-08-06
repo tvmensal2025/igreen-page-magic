@@ -3,7 +3,11 @@ import {
   BOLETO_RECEBER_DOC_BUTTON_ID,
   boletoChegouStageKey,
   buildBoletoAudioSpoken,
-  buildAppStoreInviteMessage,
+  BOLETO_APP_ANDROID_BUTTON_ID,
+  BOLETO_APP_IOS_BUTTON_ID,
+  buildAppStoreNumberedMessage,
+  buildAppStoreButtonsPrompt,
+  resolveBoletoAppStoreChoice,
   buildBoletoButtonPrompt,
   buildBoletoFearFaqReply,
   buildClubLink,
@@ -20,13 +24,19 @@ Deno.test("stage_key boleto_chegou", () => {
   assertEquals(parseMesFromStageKey("boleto_chegou:03/2026"), "03/2026");
 });
 
-Deno.test("apps Android/iOS sempre em mensagem própria", () => {
-  const msg = buildAppStoreInviteMessage("https://club.igreenenergy.com.br/?id=1");
-  assertEquals(msg.includes("Play Store"), true);
-  assertEquals(msg.includes("App Store"), true);
-  assertEquals(msg.includes("play.google.com"), true);
-  assertEquals(msg.includes("apps.apple.com"), true);
-  assertEquals(msg.includes("?id=1"), true);
+Deno.test("apps Android/iOS: numerado (Evolution) e botões (Whapi)", () => {
+  const numbered = buildAppStoreNumberedMessage("https://club.igreenenergy.com.br/?id=1");
+  assertEquals(numbered.includes("*1.*"), true);
+  assertEquals(numbered.includes("*2.*"), true);
+  assertEquals(numbered.includes("play.google.com"), true);
+  assertEquals(numbered.includes("apps.apple.com"), true);
+  const prompt = buildAppStoreButtonsPrompt("https://club.igreenenergy.com.br/?id=1");
+  assertEquals(prompt.includes("qual celular"), true);
+  assertEquals(resolveBoletoAppStoreChoice({ buttonId: BOLETO_APP_ANDROID_BUTTON_ID }), "android");
+  assertEquals(resolveBoletoAppStoreChoice({ buttonId: BOLETO_APP_IOS_BUTTON_ID }), "ios");
+  assertEquals(resolveBoletoAppStoreChoice({ text: "iphone" }), "ios");
+  // "1" fica pro Receber boleto — não confundir com Android
+  assertEquals(resolveBoletoAppStoreChoice({ text: "1" }), null);
 });
 
 Deno.test("convite do botão em mensagem própria", () => {

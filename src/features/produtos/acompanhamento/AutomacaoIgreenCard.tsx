@@ -28,7 +28,9 @@ import {
   DEFAULT_BOLETO_AUDIO_BODY,
   IGREEN_CLUB_PLAY_STORE_URL,
   IGREEN_CLUB_APP_STORE_URL,
-  buildAppStoreInviteMessage,
+  boletoAppStoreChoiceOptions,
+  buildAppStoreButtonsPrompt,
+  buildAppStoreNumberedMessage,
   buildBoletoButtonPrompt,
   stripBoletoButtonCta,
   type BoletoNotifyConfig,
@@ -146,13 +148,15 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
   };
 
   const saveCfg = () => {
-    if (!draft) return;
     const patch = {
+      ...cfg,
       ...draft,
-      button_boleto_label: String(draft.button_boleto_label || "Receber boleto").slice(0, 25),
-      send_audio: draft.send_audio !== false,
-      send_text: draft.send_text !== false,
-      button_enabled: draft.button_enabled === true,
+      button_boleto_label: String(
+        (draft?.button_boleto_label ?? cfg.button_boleto_label) || "Receber boleto",
+      ).slice(0, 25),
+      send_audio: (draft?.send_audio ?? cfg.send_audio) !== false,
+      send_text: (draft?.send_text ?? cfg.send_text) !== false,
+      button_enabled: (draft?.button_enabled ?? cfg.button_enabled) === true,
     };
     updateCfg.mutate(patch, {
       onSuccess: () => {
@@ -361,11 +365,20 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         });
       }
 
-      // Sempre: Android + iOS
-      await whapiSendText(phone, buildAppStoreInviteMessage(linkClub), {
-        intent: "reply",
-        customerId: cust?.id,
-      });
+      // Sempre: Android + iOS (botões Whapi; se falhar, lista *1.* / *2.* com links)
+      try {
+        await whapiSendButtons(
+          phone,
+          buildAppStoreButtonsPrompt(linkClub),
+          boletoAppStoreChoiceOptions(),
+          { intent: "reply", customerId: cust?.id },
+        );
+      } catch {
+        await whapiSendText(phone, buildAppStoreNumberedMessage(linkClub), {
+          intent: "reply",
+          customerId: cust?.id,
+        });
+      }
 
       if (wantBoletoBtn) {
         const btnBody = buildBoletoButtonPrompt(buttonLabel);
@@ -612,8 +625,8 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                       </Label>
                     </div>
                     <p className="text-[11px] text-muted-foreground">
-                      Apps Android e iPhone: <span className="font-medium text-foreground">sempre</span>{" "}
-                      (mensagem própria com Play Store + App Store).
+                      Apps Android e iPhone: <span className="font-medium text-foreground">sempre</span>
+                      {" "}— botões no Whapi; no Evolution vira *1.* / *2.* com os links.
                     </p>
                     {cfg.button_enabled === true && (
                       <div>
@@ -643,7 +656,7 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                   <Button
                     type="button"
                     size="sm"
-                    disabled={!draft || updateCfg.isPending}
+                    disabled={updateCfg.isPending}
                     onClick={saveCfg}
                   >
                     {updateCfg.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar textos"}

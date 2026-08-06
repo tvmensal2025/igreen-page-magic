@@ -26,7 +26,9 @@ import { renderPersonalizedTtsAudio } from "../_shared/pos-venda-tts.ts";
 import {
   BOLETO_CHEGOU_STAGE_PREFIX,
   BOLETO_RECEBER_DOC_BUTTON_ID,
-  buildAppStoreInviteMessage,
+  boletoAppStoreChoiceOptions,
+  buildAppStoreButtonsPrompt,
+  buildAppStoreNumberedMessage,
   buildBoletoButtonPrompt,
   buildClubLink,
   formatBoletoValor,
@@ -381,14 +383,33 @@ async function sendOne(
     }
   }
 
-  // Sempre: botões/links Android + iOS (mensagem própria).
+  // Sempre: Android/iOS — Whapi = botões; Evolution = lista numerada com links.
   try {
-    const r = await resolved.adapter.sendText(
-      jid,
-      buildAppStoreInviteMessage(linkClub),
-      { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps`, supabase },
-    );
-    appsOk = !!r.ok;
+    const canButtons = !!resolved.adapter.capabilities?.supportsButtons;
+    if (canButtons) {
+      const r = await resolved.adapter.sendChoice(
+        jid,
+        buildAppStoreButtonsPrompt(linkClub),
+        { preferred: "button", options: boletoAppStoreChoiceOptions() },
+        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps`, supabase },
+      );
+      appsOk = !!r.ok || r.reason === "downgraded";
+      if (!appsOk) {
+        const fb = await resolved.adapter.sendText(
+          jid,
+          buildAppStoreNumberedMessage(linkClub),
+          { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps_fb`, supabase },
+        );
+        appsOk = !!fb.ok;
+      }
+    } else {
+      const r = await resolved.adapter.sendText(
+        jid,
+        buildAppStoreNumberedMessage(linkClub),
+        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps`, supabase },
+      );
+      appsOk = !!r.ok;
+    }
   } catch (e) {
     console.warn("[boleto-notify] apps:", e instanceof Error ? e.message : e);
   }
@@ -578,12 +599,31 @@ async function runTestSend(
   }
 
   try {
-    const r = await resolved.adapter.sendText(
-      jid,
-      buildAppStoreInviteMessage(vars.linkClub),
-      { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps:${ts}`, supabase },
-    );
-    appsOk = !!r.ok;
+    const canButtons = !!resolved.adapter.capabilities?.supportsButtons;
+    if (canButtons) {
+      const r = await resolved.adapter.sendChoice(
+        jid,
+        buildAppStoreButtonsPrompt(vars.linkClub),
+        { preferred: "button", options: boletoAppStoreChoiceOptions() },
+        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps:${ts}`, supabase },
+      );
+      appsOk = !!r.ok || r.reason === "downgraded";
+      if (!appsOk) {
+        const fb = await resolved.adapter.sendText(
+          jid,
+          buildAppStoreNumberedMessage(vars.linkClub),
+          { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps_fb:${ts}`, supabase },
+        );
+        appsOk = !!fb.ok;
+      }
+    } else {
+      const r = await resolved.adapter.sendText(
+        jid,
+        buildAppStoreNumberedMessage(vars.linkClub),
+        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps:${ts}`, supabase },
+      );
+      appsOk = !!r.ok;
+    }
   } catch (e) {
     console.warn("[boleto-notify] test apps:", e instanceof Error ? e.message : e);
   }

@@ -10,8 +10,11 @@
 
 import { safeFirstNameForAddress } from "./customer-display-name.ts";
 import {
+  buildAppStoreLinkReply,
   buildBoletoFearFaqReply,
+  buildClubLink,
   isBoletoFearOrDoubtText,
+  resolveBoletoAppStoreChoice,
   tryHandleBoletoReceberDoc,
 } from "./boleto-notify.ts";
 
@@ -98,6 +101,25 @@ export async function tryReplyClienteCanalNovidades(opts: {
   text?: string | null;
   now?: Date;
 }): Promise<{ handled: boolean; sent: boolean; reason: string }> {
+  // 0) Clique Android / iPhone (botões Whapi do aviso boleto)
+  const appChoice = resolveBoletoAppStoreChoice({
+    buttonId: opts.buttonId,
+    text: opts.text,
+  });
+  if (appChoice) {
+    const reply = buildAppStoreLinkReply(
+      appChoice,
+      buildClubLink(opts.customer.igreen_code),
+    );
+    let ok = false;
+    try {
+      ok = await opts.sendText(reply);
+    } catch (e) {
+      console.warn("[cliente-canal] boleto-app:", (e as Error)?.message);
+    }
+    return { handled: true, sent: ok, reason: ok ? `boleto_app_${appChoice}` : "boleto_app_failed" };
+  }
+
   // 1) Clique / "1" / "Receber boleto" → manda o documento (sem falar "PDF")
   if (opts.sendDocument) {
     try {
