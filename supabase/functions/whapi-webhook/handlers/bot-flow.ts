@@ -4887,9 +4887,28 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       if (detectedType === "outro") {
         const motivoTxt = detectMotivo ? ` (parece *${detectMotivo}*)` : "";
         console.log(`🚫 [doc-auto] rejeitado: não é RG/CNH${motivoTxt}`);
-        reply = `❌ Esse arquivo não parece ser um *RG* ou *CNH*${motivoTxt}.\n\n` +
+        // Auditoria 2026-08: esta recusa não contava tentativa. `ocr_doc_attempts`
+        // ficava em 0, a escalada para humano nunca disparava e o lead podia
+        // reenviar o arquivo errado para sempre sem ninguém ser avisado.
+        const docTries = (customer.ocr_doc_attempts || 0) + 1;
+        updates.ocr_doc_attempts = docTries;
+        const recusaDocText = `❌ Esse arquivo não parece ser um *RG* ou *CNH*${motivoTxt}.\n\n` +
                 `📸 Por favor, me envia uma foto/PDF da *frente do seu RG* ou da sua *CNH*.\n\n` +
                 `Formatos aceitos: JPG, PNG ou PDF.`;
+        // Só o `escalate` interessa: o texto específico (com o motivo detectado)
+        // ajuda mais o lead que o `retry_text` genérico do passo.
+        const { escalate: escalateDoc } = await resolveOcrFallback(
+          supabase, customer.id, customer.consultant_id, "capture_documento",
+          docTries, recusaDocText, (customer as any)?.flow_variant,
+        );
+        if (escalateDoc) {
+          updates.bot_paused = true;
+          updates.bot_paused_reason = "doc_tipo_invalido_max_retries";
+          updates.bot_paused_at = new Date().toISOString();
+          reply = `${recusaDocText}\n\nVou chamar ${nomeRepresentante} para te ajudar pessoalmente 🙌`;
+        } else {
+          reply = recusaDocText;
+        }
         // NÃO atualiza document_front_url, NÃO avança conversation_step.
         break;
       }

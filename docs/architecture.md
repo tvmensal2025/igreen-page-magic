@@ -104,6 +104,24 @@ preview de link, e deduplica leituras repetidas do mesmo alvo em 15 segundos.
 `get_partner_banner_portal` aplica a mesma janela ao histórico e devolve
 `outside_cycle`, explicando por que cada lead não está na pizza A/B/C.
 
+## Recusa de documento por tipo errado
+
+Quando `detectDocumentTypeDetailed` devolve `outro` (conta de luz, selfie,
+boleto, página em branco), o handler recusa o arquivo, mantém o lead no passo
+e **conta a tentativa** em `ocr_doc_attempts`. Ao atingir `max_retries` do
+passo `capture_documento` com `then: "humano"`, pausa o bot com
+`bot_paused_reason = doc_tipo_invalido_max_retries` e avisa que vai chamar o
+consultor.
+
+Antes a recusa não contava tentativa. Como o texto da recusa é idêntico a cada
+envio e o turno suprime outbound repetido dentro de 60 s (`isDuplicate` em
+`whapi-webhook/index.ts`), o lead recebia o aviso duas vezes e depois só
+silêncio — sem escalada, porque o contador nunca saía de 0. A mensagem de
+escalada difere da recusa simples, então ela passa pelo filtro de repetição.
+
+Variantes D/MG usam `fallback: {mode: "repeat"}`: contam a tentativa mas não
+escalam. É configuração do fluxo, não do código.
+
 ## Conversa E2E do Grupo A (sem envio real)
 
 Duas formas de rodar a mesma conversa simulada; ambas usam o roteiro único em
