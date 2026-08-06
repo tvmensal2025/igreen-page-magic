@@ -2683,6 +2683,24 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       };
     }
 
+    // Corte de conta baixa na PORTA da simulação. O corte da fase de captura
+    // só pega o turno em que o valor chega; quando a captura acontece fora do
+    // conversacional (OCR da conta, motor legado) o lead abaixo do mínimo
+    // escapava e ouvia "economia de R$ 4 a R$ 12" antes de pedir documento.
+    // Aqui é o gargalo: toda simulação passa por este ponto.
+    if (_needsBill) {
+      const _cutGoto = evaluateLowBillCutoff(true, _billNow);
+      if (_cutGoto.reject) {
+        console.log(
+          `[valor-baixo] ${ctx.customer.id} conta R$ ${_cutGoto.value} < ${LOW_BILL_MIN_VALUE} — barrado em "${s.step_key}"`,
+        );
+        return {
+          reply: _cutGoto.reply,
+          updates: { ..._cutGoto.updates, ...extra } as Record<string, any>,
+        };
+      }
+    }
+
     const first = await emitStep(s, !willCascade);
     let replyText = first.replyText;
     let inlineSent = first.inlineSent;

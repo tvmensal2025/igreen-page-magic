@@ -37,6 +37,18 @@ describe.each(CHANNELS)("corte de conta baixa (%s)", (channel) => {
     expect(corte).toBeLessThan(avanco);
   });
 
+  it("corta também na porta da simulação, não só no turno da captura", () => {
+    // O corte da fase de captura só vê `captureUpdates` — ele pega o turno em
+    // que o lead digita o valor. Quando a captura vem de fora (OCR da conta,
+    // motor legado) o lead de R$ 60 chegava ao passo da simulação, ouvia
+    // "economia de R$ 4 a R$ 12" e seguia até o pedido de documento.
+    const goto = src.slice(src.indexOf("const _needsBill"), src.indexOf("const first = await emitStep"));
+    expect(goto).toContain("evaluateLowBillCutoff(true, _billNow)");
+    expect(goto).toMatch(/if \(_cutGoto\.reject\)[\s\S]{0,320}return \{/);
+    // Precisa devolver os updates do corte (rejected + bot_paused + motivo).
+    expect(goto).toContain("..._cutGoto.updates");
+  });
+
   it("não confunde passo do valor com passo do nome por causa do título", () => {
     // O passo do valor tem título "Áudio (nome) + texto pedir valor da conta" e
     // slot "a2_audio_activate_name" — os dois citam o nome porque o ÁUDIO é
