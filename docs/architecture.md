@@ -202,6 +202,21 @@ pausa virava `low_value`, inclusive pausa por documento recusado. `classifyStop`
 passou a olhar `bot_paused_reason`, e o check exige que o lead **não** tenha
 chegado a `aguardando_conta`/`aguardando_doc_auto`.
 
+### O corte definitivo mora na porta da simulação
+
+Mesmo com a captura consertada, o lead de R$ 60 ainda passava. A telemetria de
+`ai_decisions` mostrou por quê: no turno em que o lead responde "60", o
+`step_before` registrado já é `a3_explain_with_buttons` — a captura e o avanço
+acontecem antes, e o corte da fase de captura só enxerga `captureUpdates` do
+turno corrente. Qualquer caminho que preencha o valor fora dali (OCR da conta,
+motor legado) escapava.
+
+O corte passou a valer também dentro de `goToStep`, colado na guarda R6: o passo
+cujo texto cita `{{valor_conta}}`/`{{economia_*}}` não é emitido se o valor
+faltar **nem** se estiver abaixo de `LOW_BILL_MIN_VALUE`. É o gargalo por onde
+toda simulação passa, então independe de onde o valor foi capturado. O corte da
+fase de captura continua no lugar — ele responde mais cedo, no mesmo turno.
+
 ## Uma mensagem do lead avança um passo, não dois
 
 `a1_ask_name` tem transição `default` para `a2_text_ask_bill_value`, que tem
