@@ -262,35 +262,53 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         .limit(1)
         .maybeSingle();
 
-      // Precisa de um boleto recente só para preencher mês/valor/vencimento no texto.
-      let boletoQuery = supabase
-        .from("igreen_customer_boletos")
-        .select("url_boleto, total, vencimento, mes_referencia, nome, idcliente, customer_id")
-        .eq("consultant_id", consultantId)
-        .order("synced_at", { ascending: false })
-        .limit(30);
-      if (cust?.id) {
-        boletoQuery = boletoQuery.eq("customer_id", cust.id);
-      }
-      const { data: boletos, error: bolErr } = await boletoQuery;
-      if (bolErr) throw bolErr;
-      const list = (boletos || []) as Array<{
-        url_boleto: string;
+      // Boleto só preenche mês/valor/vencimento. Sem boleto → placeholders (teste de layout).
+      type BoletoRow = {
+        url_boleto: string | null;
         total: number | null;
         vencimento: string | null;
         mes_referencia: string | null;
         nome: string | null;
         idcliente: number | null;
         customer_id: string | null;
-      }>;
-      if (list.length === 0) {
+      };
+      const pickBoleto = async (customerOnly: boolean): Promise<BoletoRow[]> => {
+        let q = supabase
+          .from("igreen_customer_boletos")
+          .select("url_boleto, total, vencimento, mes_referencia, nome, idcliente, customer_id")
+          .eq("consultant_id", consultantId)
+          .order("synced_at", { ascending: false })
+          .limit(30);
+        if (customerOnly && cust?.id) q = q.eq("customer_id", cust.id);
+        const { data, error } = await q;
+        if (error) throw error;
+        return (data || []) as BoletoRow[];
+      };
+      let list = await pickBoleto(true);
+      if (list.length === 0 && cust?.id) list = await pickBoleto(false);
+
+      const now = new Date();
+      const mesDemo = `${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
+      const boleto: BoletoRow = list[0] || {
+        url_boleto: null,
+        total: 189.9,
+        vencimento: new Date(now.getFullYear(), now.getMonth(), 15).toISOString().slice(0, 10),
+        mes_referencia: mesDemo,
+        nome: cust?.name || previewName || "Maria",
+        idcliente: Number(String(cust?.igreen_code || "").replace(/\D/g, "")) || null,
+        customer_id: cust?.id || null,
+      };
+      const usedDemo = list.length === 0;
+
+      const wantAudio = cfg.send_audio !== false;
+      const wantText = cfg.send_text !== false;
+      const wantBoletoBtn = cfg.button_enabled === true;
+      if (wantBoletoBtn && !String(boleto.url_boleto || "").trim()) {
         throw new Error(
-          cust?.id
-            ? "Esse número é cliente, mas sem boleto com link. Rode o sync de boletos."
-            : "Nenhum boleto com link na carteira. Rode o sync de boletos antes.",
+          "Botão “Receber boleto” está ligado, mas não há boleto com link. Desligue o botão para testar o aviso, ou rode o sync de boletos.",
         );
       }
-      const boleto = list[Math.floor(Math.random() * list.length)];
+
       const clubId = String(boleto.idcliente || cust?.igreen_code || "").replace(/\D/g, "");
       const linkClub = clubId
         ? `https://club.igreenenergy.com.br/?id=${clubId}`
@@ -302,7 +320,6 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         firstName(boleto.nome || "") ||
         "Maria";
       const saudacao = `Oi ${nome}, `;
-      // Texto com *negrito* WhatsApp + links das lojas (Android / iPhone).
       const waText = renderWaTemplate(cfg.wa_text, {
         saudacao,
         nome,
@@ -314,9 +331,6 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         link_appstore: IGREEN_CLUB_APP_STORE_URL,
         url_boleto: boleto.url_boleto || "",
       });
-      const wantAudio = cfg.send_audio !== false;
-      const wantText = cfg.send_text !== false;
-      const wantBoletoBtn = cfg.button_enabled === true;
       const buttonLabel = (cfg.button_boleto_label || "Receber boleto").slice(0, 25);
       const BOLETO_BTN_ID = "boleto_receber_doc";
 
@@ -392,7 +406,9 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
       ].filter(Boolean);
       toast({
         title: "Teste enviado",
-        description: `${formatBrazilPhone(phone)} · ${boleto.mes_referencia || "?"} · ${parts.join(" + ")}`,
+        description: usedDemo
+          ? `${formatBrazilPhone(phone)} · dados de exemplo · ${parts.join(" + ")}`
+          : `${formatBrazilPhone(phone)} · ${boleto.mes_referencia || "?"} · ${parts.join(" + ")}`,
       });
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e || "");
@@ -562,7 +578,8 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                       <audio ref={audioRef} controls src={audioUrl} className="w-full mt-1" />
                     )}
                     <p className="text-[11px] text-muted-foreground">
-                      Respeita os toggles abaixo. Links Android/iOS do app vão sempre.
+                      Respeita os toggles abaixo. Links Android/iOS vão sempre.
+                      Sem boleto no cliente, usa mês/valor de exemplo só para o teste.
                     </p>
                   </div>
 
