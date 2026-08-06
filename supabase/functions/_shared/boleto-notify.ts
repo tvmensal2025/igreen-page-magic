@@ -1,9 +1,11 @@
 /**
  * Aviso "boleto chegou" → iGreen Club.
  * Copy leigo: NÃO usar a palavra "PDF" em textos ao cliente.
- * Produto (2026-08): a empresa já manda o boleto no Zap — aqui só avisamos
- * que chegou e animamos o app Club (credibilidade). Sem botão / sem arquivo.
- * O handler de "Receber boleto" fica no código (legado), mas o envio não arma mais.
+ *
+ * Pacote (toggles):
+ * - send_audio / send_text — áudio e/ou texto
+ * - button_enabled — opt-in do botão "Receber boleto" (arquivo no Zap)
+ * - Apps Android/iOS — SEMPRE (mensagem própria com links das lojas)
  */
 import { safeFirstNameForAddress } from "./customer-display-name.ts";
 import { hourBRT } from "./quiet-hours.ts";
@@ -29,7 +31,12 @@ export type BoletoNotifyConfig = {
   cron_daily: boolean;
   audio_script: string;
   wa_text: string;
+  /** Enviar áudio Sofia. */
+  send_audio: boolean;
+  /** Enviar texto (mensagem formatada). */
+  send_text: boolean;
   button_boleto_label: string;
+  /** Opt-in: botão que manda o arquivo no Zap. */
   button_enabled: boolean;
   doc_caption: string;
 };
@@ -49,22 +56,16 @@ export const DEFAULT_BOLETO_NOTIFY_CONFIG: BoletoNotifyConfig = {
 Valor: *R$ {{valor}}*
 Vencimento: *{{vencimento}}*
 
-A iGreen cuida do envio oficial do boleto. Aqui o nosso recado é te lembrar e te levar ao lugar mais completo: o app *iGreen Club* — fatura, vencimento e descontos em farmácia, restaurantes e milhares de parceiros.
-
-📱 *Baixe o app:*
-
-🤖 *Android — Play Store:*
-{{link_play}}
-
-🍎 *iPhone — App Store:*
-{{link_appstore}}
+A iGreen cuida do envio oficial do boleto. Aqui o nosso recado é te lembrar e te levar ao lugar mais completo: o app *iGreen Club*.
 
 Seu acesso no Club:
 {{link_club}}
 
 Qualquer dúvida, responde aqui 💚`,
+  send_audio: true,
+  send_text: true,
   button_boleto_label: "Receber boleto",
-  /** Sempre off no produto atual — empresa já envia o boleto. */
+  /** Default off — empresa já manda o boleto; toggle libera o arquivo no Zap. */
   button_enabled: false,
   doc_caption: "Segue seu boleto. O lugar oficial continua no app iGreen Club 👆",
 };
@@ -105,6 +106,24 @@ export function stripBoletoButtonCta(waText: string): string {
     .join("\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/**
+ * Mensagem curta e fixa com botões/links das lojas — sempre vai no pacote,
+ * independente dos toggles de áudio/texto/boleto.
+ */
+export function buildAppStoreInviteMessage(linkClub?: string | null): string {
+  const club = String(linkClub || "https://club.igreenenergy.com.br/").trim();
+  return `📱 *Baixe o iGreen Club no celular:*
+
+🤖 *Android — Play Store:*
+${IGREEN_CLUB_PLAY_STORE_URL}
+
+🍎 *iPhone — App Store:*
+${IGREEN_CLUB_APP_STORE_URL}
+
+Seu acesso no Club:
+${club}`;
 }
 
 export function boletoChegouStageKey(mesReferencia: string): string {
@@ -189,6 +208,8 @@ export async function loadBoletoNotifyConfig(supabase: SB): Promise<BoletoNotify
         : 8,
       cron_daily: data.cron_daily !== false,
       sync_enabled: data.sync_enabled !== false,
+      send_audio: data.send_audio !== false,
+      send_text: data.send_text !== false,
       // Opt-in explícito: default off (empresa já manda o boleto no Zap).
       button_enabled: data.button_enabled === true,
     };

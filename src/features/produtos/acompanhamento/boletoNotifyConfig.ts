@@ -1,7 +1,7 @@
 /**
  * Textos/horário do aviso "boleto chegou" (editável sem redeploy).
  * Copy leigo: sem a palavra "PDF".
- * Produto: só aviso + iGreen Club (empresa já manda o boleto no Zap).
+ * Toggles: áudio / texto; botão arquivo opcional; apps Android/iOS sempre.
  */
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,6 +13,8 @@ export type BoletoNotifyConfig = {
   cron_daily: boolean;
   audio_script: string;
   wa_text: string;
+  send_audio: boolean;
+  send_text: boolean;
   button_boleto_label: string;
   button_enabled: boolean;
   doc_caption: string;
@@ -39,26 +41,39 @@ export const DEFAULT_BOLETO_NOTIFY_CONFIG: BoletoNotifyConfig = {
 Valor: *R$ {{valor}}*
 Vencimento: *{{vencimento}}*
 
-A iGreen cuida do envio oficial do boleto. Aqui o nosso recado é te lembrar e te levar ao lugar mais completo: o app *iGreen Club* — fatura, vencimento e descontos em farmácia, restaurantes e milhares de parceiros.
-
-📱 *Baixe o app:*
-
-🤖 *Android — Play Store:*
-{{link_play}}
-
-🍎 *iPhone — App Store:*
-{{link_appstore}}
+A iGreen cuida do envio oficial do boleto. Aqui o nosso recado é te lembrar e te levar ao lugar mais completo: o app *iGreen Club*.
 
 Seu acesso no Club:
 {{link_club}}
 
 Qualquer dúvida, responde aqui 💚`,
+  send_audio: true,
+  send_text: true,
   button_boleto_label: "Receber boleto",
   button_enabled: false,
   doc_caption: "Segue seu boleto. O lugar oficial continua no app iGreen Club 👆",
 };
 
-/** Remove CTA legado de botão/arquivo do corpo (configs antigas). */
+/** Espelha `supabase/functions/_shared/boleto-notify.ts`. */
+export function buildAppStoreInviteMessage(linkClub?: string | null): string {
+  const club = String(linkClub || "https://club.igreenenergy.com.br/").trim();
+  return `📱 *Baixe o iGreen Club no celular:*
+
+🤖 *Android — Play Store:*
+${IGREEN_CLUB_PLAY_STORE_URL}
+
+🍎 *iPhone — App Store:*
+${IGREEN_CLUB_APP_STORE_URL}
+
+Seu acesso no Club:
+${club}`;
+}
+
+export function buildBoletoButtonPrompt(buttonLabel?: string | null): string {
+  const label = String(buttonLabel || "Receber boleto").trim() || "Receber boleto";
+  return `Quer o boleto aqui no Zap? É só tocar em *${label}* 👇`;
+}
+
 export function stripBoletoButtonCta(waText: string): string {
   return String(waText || "")
     .split("\n")
@@ -79,7 +94,14 @@ export function useBoletoNotifyConfig() {
         .eq("id", "global")
         .maybeSingle();
       if (error) throw error;
-      return { ...DEFAULT_BOLETO_NOTIFY_CONFIG, ...(data as object || {}) } as BoletoNotifyConfig;
+      const row = (data || {}) as Partial<BoletoNotifyConfig>;
+      return {
+        ...DEFAULT_BOLETO_NOTIFY_CONFIG,
+        ...row,
+        send_audio: row.send_audio !== false,
+        send_text: row.send_text !== false,
+        button_enabled: row.button_enabled === true,
+      };
     },
   });
 }
@@ -94,8 +116,6 @@ export function useUpdateBoletoNotifyConfig() {
           {
             id: "global",
             ...patch,
-            // Produto: nunca religar o botão de arquivo pelo card.
-            button_enabled: false,
             updated_at: new Date().toISOString(),
           } as never,
           { onConflict: "id" },

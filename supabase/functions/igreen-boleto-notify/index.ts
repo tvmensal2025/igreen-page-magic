@@ -1,5 +1,6 @@
 /**
- * Cron tick + envio do aviso "boleto chegou" (áudio Sofia + texto Club + botão Receber boleto).
+ * Cron tick + envio do aviso "boleto chegou".
+ * Toggles: áudio / texto; botão arquivo opcional; apps Android/iOS sempre.
  * Copy leigo: sem a palavra "PDF" ao cliente.
  *
  * action=tick → se hora BRT bater: dispara sync_boletos + processa fila claimed.
@@ -24,6 +25,9 @@ import {
 import { renderPersonalizedTtsAudio } from "../_shared/pos-venda-tts.ts";
 import {
   BOLETO_CHEGOU_STAGE_PREFIX,
+  BOLETO_RECEBER_DOC_BUTTON_ID,
+  buildAppStoreInviteMessage,
+  buildBoletoButtonPrompt,
   buildClubLink,
   formatBoletoValor,
   formatBoletoVencimento,
@@ -335,42 +339,88 @@ async function sendOne(
   }
 
   const sendCtxBase = ctx(row.consultant_id, customer.id, row.stage_key);
+  const wantAudio = cfg.send_audio !== false;
+  const wantText = cfg.send_text !== false;
+  const wantBoletoBtn = cfg.button_enabled === true;
 
-  let audioOk = false;
-  let textOk = false;
-  try {
-    const audioUrl = await renderPersonalizedTtsAudio(
-      supabase,
-      row.consultant_id,
-      audioSpoken,
-    );
-    if (audioUrl) {
-      const r = await resolved.adapter.sendMedia(
-        jid,
-        { kind: "audio", url: audioUrl, ptt: true },
-        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:audio`, supabase },
+  let audioOk = !wantAudio;
+  let textOk = !wantText;
+  let appsOk = false;
+  let buttonOk = !wantBoletoBtn;
+
+  if (wantAudio) {
+    try {
+      const audioUrl = await renderPersonalizedTtsAudio(
+        supabase,
+        row.consultant_id,
+        audioSpoken,
       );
-      audioOk = !!r.ok;
+      if (audioUrl) {
+        const r = await resolved.adapter.sendMedia(
+          jid,
+          { kind: "audio", url: audioUrl, ptt: true },
+          { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:audio`, supabase },
+        );
+        audioOk = !!r.ok;
+      }
+    } catch (e) {
+      console.warn("[boleto-notify] tts/audio:", e instanceof Error ? e.message : e);
     }
-  } catch (e) {
-    console.warn("[boleto-notify] tts/audio:", e instanceof Error ? e.message : e);
   }
 
-  // Só texto Club-first (sem botão/arquivo — a empresa já manda o boleto no Zap).
+  if (wantText) {
+    try {
+      const r = await resolved.adapter.sendText(
+        jid,
+        stripBoletoButtonCta(waText),
+        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:text`, supabase },
+      );
+      textOk = !!r.ok;
+    } catch (e) {
+      console.warn("[boleto-notify] text:", e instanceof Error ? e.message : e);
+    }
+  }
+
+  // Sempre: botões/links Android + iOS (mensagem própria).
   try {
     const r = await resolved.adapter.sendText(
       jid,
-      stripBoletoButtonCta(waText),
-      { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:text`, supabase },
+      buildAppStoreInviteMessage(linkClub),
+      { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps`, supabase },
     );
-    textOk = !!r.ok;
+    appsOk = !!r.ok;
   } catch (e) {
-    console.warn("[boleto-notify] text:", e instanceof Error ? e.message : e);
+    console.warn("[boleto-notify] apps:", e instanceof Error ? e.message : e);
   }
 
-  const status = textOk
-    ? (audioOk ? "sent" : "partial:audio_failed")
-    : (audioOk ? "partial:text_failed" : "failed");
+  if (wantBoletoBtn) {
+    try {
+      const r = await resolved.adapter.sendChoice(
+        jid,
+        buildBoletoButtonPrompt(cfg.button_boleto_label),
+        {
+          preferred: "button",
+          options: [
+            {
+              id: BOLETO_RECEBER_DOC_BUTTON_ID,
+              title: cfg.button_boleto_label.slice(0, 25),
+            },
+          ],
+        },
+        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:button`, supabase },
+      );
+      buttonOk = !!r.ok || r.reason === "downgraded";
+    } catch (e) {
+      console.warn("[boleto-notify] button:", e instanceof Error ? e.message : e);
+    }
+  }
+
+  const coreOk = appsOk || textOk || audioOk;
+  const status = !coreOk
+    ? "failed"
+    : (audioOk && textOk && appsOk && buttonOk)
+    ? "sent"
+    : "partial";
 
   await mark(supabase, row.id, status, waText.slice(0, 240), jid);
   return { status };
@@ -489,41 +539,119 @@ async function runTestSend(
   });
 
   const sendCtxBase = ctx(opts.consultantId, `test:${phone}`, "boleto_chegou:test");
-  let audioOk = false;
-  let textOk = false;
+  const wantAudio = cfg.send_audio !== false;
+  const wantText = cfg.send_text !== false;
+  const wantBoletoBtn = cfg.button_enabled === true;
+  const ts = Date.now();
+  let audioOk = !wantAudio;
+  let textOk = !wantText;
+  let appsOk = false;
+  let buttonOk = !wantBoletoBtn;
 
-  try {
-    const audioUrl = await renderPersonalizedTtsAudio(supabase, opts.consultantId, spoken);
-    if (audioUrl) {
-      const r = await resolved.adapter.sendMedia(
-        jid,
-        { kind: "audio", url: audioUrl, ptt: true },
-        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:audio:${Date.now()}`, supabase },
-      );
-      audioOk = !!r.ok;
+  if (wantAudio) {
+    try {
+      const audioUrl = await renderPersonalizedTtsAudio(supabase, opts.consultantId, spoken);
+      if (audioUrl) {
+        const r = await resolved.adapter.sendMedia(
+          jid,
+          { kind: "audio", url: audioUrl, ptt: true },
+          { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:audio:${ts}`, supabase },
+        );
+        audioOk = !!r.ok;
+      }
+    } catch (e) {
+      console.warn("[boleto-notify] test audio:", e instanceof Error ? e.message : e);
     }
-  } catch (e) {
-    console.warn("[boleto-notify] test audio:", e instanceof Error ? e.message : e);
+  }
+
+  if (wantText) {
+    try {
+      const r = await resolved.adapter.sendText(
+        jid,
+        stripBoletoButtonCta(waText),
+        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:text:${ts}`, supabase },
+      );
+      textOk = !!r.ok;
+    } catch (e) {
+      console.warn("[boleto-notify] test text:", e instanceof Error ? e.message : e);
+    }
   }
 
   try {
     const r = await resolved.adapter.sendText(
       jid,
-      stripBoletoButtonCta(waText),
-      { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:text:${Date.now()}`, supabase },
+      buildAppStoreInviteMessage(vars.linkClub),
+      { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps:${ts}`, supabase },
     );
-    textOk = !!r.ok;
+    appsOk = !!r.ok;
   } catch (e) {
-    console.warn("[boleto-notify] test text:", e instanceof Error ? e.message : e);
+    console.warn("[boleto-notify] test apps:", e instanceof Error ? e.message : e);
+  }
+
+  if (wantBoletoBtn) {
+    try {
+      const r = await resolved.adapter.sendChoice(
+        jid,
+        buildBoletoButtonPrompt(cfg.button_boleto_label),
+        {
+          preferred: "button",
+          options: [
+            {
+              id: BOLETO_RECEBER_DOC_BUTTON_ID,
+              title: cfg.button_boleto_label.slice(0, 25),
+            },
+          ],
+        },
+        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:button:${ts}`, supabase },
+      );
+      buttonOk = !!r.ok || r.reason === "downgraded";
+    } catch (e) {
+      console.warn("[boleto-notify] test button:", e instanceof Error ? e.message : e);
+    }
+  }
+
+  let clickArmed = false;
+  if (wantBoletoBtn) {
+    try {
+      const phoneVariants = Array.from(
+        new Set([phone, phone.slice(2), phone.length === 13 ? `${phone.slice(0, 4)}${phone.slice(5)}` : ""]),
+      ).filter(Boolean);
+      const { data: cust } = await supabase
+        .from("customers")
+        .select("id, name")
+        .eq("consultant_id", opts.consultantId)
+        .or(phoneVariants.map((p) => `phone_whatsapp.eq.${p}`).join(","))
+        .limit(1)
+        .maybeSingle();
+      if (cust?.id && boleto.mes_referencia) {
+        const { boletoChegouStageKey } = await import("../_shared/boleto-notify.ts");
+        await supabase.from("customer_auto_message_log").upsert(
+          {
+            customer_id: cust.id,
+            consultant_id: opts.consultantId,
+            stage_key: boletoChegouStageKey(String(boleto.mes_referencia)),
+            status: "sent",
+            customer_name: cust.name || opts.name,
+            message_preview: "teste boleto chegou",
+            remote_jid: jid,
+          },
+          { onConflict: "customer_id,stage_key" },
+        );
+        clickArmed = true;
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   return {
-    success: textOk || audioOk,
+    success: appsOk || textOk || audioOk,
     audio_ok: audioOk,
     text_ok: textOk,
-    button_ok: false,
+    apps_ok: appsOk,
+    button_ok: buttonOk,
     doc_ok: false,
-    click_armed: false,
+    click_armed: clickArmed,
     spoken,
     phone,
     boleto: {
@@ -533,6 +661,10 @@ async function runTestSend(
       nome: boleto.nome,
       has_url: !!boleto.url_boleto,
     },
-    hint: "Áudio + texto Club enviados. Sem arquivo no Zap (a empresa já manda o boleto).",
+    hint: wantBoletoBtn
+      ? (clickArmed
+        ? "Pacote enviado. Toque em Receber boleto no Zap para o arquivo."
+        : "Pacote enviado. Para o clique do arquivo, use WhatsApp de cliente da carteira.")
+      : "Pacote enviado (apps Android/iOS sempre). Arquivo no Zap só com o toggle do botão ligado.",
   };
 }

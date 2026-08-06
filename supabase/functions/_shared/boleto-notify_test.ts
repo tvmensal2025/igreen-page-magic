@@ -3,6 +3,7 @@ import {
   BOLETO_RECEBER_DOC_BUTTON_ID,
   boletoChegouStageKey,
   buildBoletoAudioSpoken,
+  buildAppStoreInviteMessage,
   buildBoletoButtonPrompt,
   buildBoletoFearFaqReply,
   buildClubLink,
@@ -17,6 +18,15 @@ import {
 Deno.test("stage_key boleto_chegou", () => {
   assertEquals(boletoChegouStageKey("03/2026"), "boleto_chegou:03/2026");
   assertEquals(parseMesFromStageKey("boleto_chegou:03/2026"), "03/2026");
+});
+
+Deno.test("apps Android/iOS sempre em mensagem própria", () => {
+  const msg = buildAppStoreInviteMessage("https://club.igreenenergy.com.br/?id=1");
+  assertEquals(msg.includes("Play Store"), true);
+  assertEquals(msg.includes("App Store"), true);
+  assertEquals(msg.includes("play.google.com"), true);
+  assertEquals(msg.includes("apps.apple.com"), true);
+  assertEquals(msg.includes("?id=1"), true);
 });
 
 Deno.test("convite do botão em mensagem própria", () => {

@@ -16,7 +16,7 @@ import {
 } from "@/lib/ttsEnhanceV3";
 import { VOICE_SOFIA_PROFESSIONAL } from "@/lib/sofiaTtsCache";
 import { uploadMedia } from "@/services/minioUpload";
-import { whapiSendMedia, whapiSendText } from "@/services/whapiApi";
+import { whapiSendMedia, whapiSendText, whapiSendButtons } from "@/services/whapiApi";
 import {
   useAutomationSettings,
   useUpdateAutomationSetting,
@@ -28,6 +28,8 @@ import {
   DEFAULT_BOLETO_AUDIO_BODY,
   IGREEN_CLUB_PLAY_STORE_URL,
   IGREEN_CLUB_APP_STORE_URL,
+  buildAppStoreInviteMessage,
+  buildBoletoButtonPrompt,
   stripBoletoButtonCta,
   type BoletoNotifyConfig,
 } from "./boletoNotifyConfig";
@@ -60,7 +62,7 @@ const GROUPS: { title: string; hint: string; items: { key: Key; label: string; d
       {
         key: "auto_wa_boleto_chegou",
         label: "Avisar quando o boleto do mês chegar (WhatsApp)",
-        desc: "Áudio + texto lembrando que o boleto chegou e animando o app iGreen Club. Sem enviar o arquivo (a empresa já manda). Desligado por padrão.",
+        desc: "Áudio e/ou texto + sempre os links do app (Android/iOS). Botão do arquivo no Zap é opcional. Desligado por padrão.",
       },
       { key: "auto_wa_boleto_vencendo", label: "Enfileirar aviso de boleto a vencer (WhatsApp)", desc: "Cria alerta no painel; envio real só com liberação na Central." },
       { key: "auto_wa_aniversariante", label: "Enfileirar parabéns de aniversário (WhatsApp)", desc: "Cria alerta no painel; envio real só com liberação na Central." },
@@ -145,7 +147,13 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
 
   const saveCfg = () => {
     if (!draft) return;
-    const patch = { ...draft, button_enabled: false as const };
+    const patch = {
+      ...draft,
+      button_boleto_label: String(draft.button_boleto_label || "Receber boleto").slice(0, 25),
+      send_audio: draft.send_audio !== false,
+      send_text: draft.send_text !== false,
+      button_enabled: draft.button_enabled === true,
+    };
     updateCfg.mutate(patch, {
       onSuccess: () => {
         setDraft(null);
@@ -306,39 +314,91 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         link_appstore: IGREEN_CLUB_APP_STORE_URL,
         url_boleto: boleto.url_boleto || "",
       });
-      const spoken = buildSpokenPreview(cfg.audio_script, nome);
-      toast({
-        title: "Gerando áudio Sofia…",
-        description: "Em seguida: texto com iGreen Club (sem arquivo).",
-      });
-      const blob = await generateMp3Blob(spoken);
-      const file = new File([blob], `boleto-teste-${Date.now()}.mp3`, { type: "audio/mpeg" });
-      const up = await uploadMedia(file, undefined, {
-        scope: "admin",
-        consultant_id: consultantId,
-        kind: "audio",
-        slug: "boleto-teste",
-      });
+      const wantAudio = cfg.send_audio !== false;
+      const wantText = cfg.send_text !== false;
+      const wantBoletoBtn = cfg.button_enabled === true;
+      const buttonLabel = (cfg.button_boleto_label || "Receber boleto").slice(0, 25);
+      const BOLETO_BTN_ID = "boleto_receber_doc";
 
-      await whapiSendMedia(phone, up.url, "audio", undefined, "boleto-teste.mp3", {
+      if (wantAudio) {
+        const spoken = buildSpokenPreview(cfg.audio_script, nome);
+        toast({
+          title: "Gerando áudio Sofia…",
+          description: "Em seguida: texto (se ligado) + apps + botão opcional.",
+        });
+        const blob = await generateMp3Blob(spoken);
+        const file = new File([blob], `boleto-teste-${Date.now()}.mp3`, { type: "audio/mpeg" });
+        const up = await uploadMedia(file, undefined, {
+          scope: "admin",
+          consultant_id: consultantId,
+          kind: "audio",
+          slug: "boleto-teste",
+        });
+        await whapiSendMedia(phone, up.url, "audio", undefined, "boleto-teste.mp3", {
+          intent: "reply",
+          customerId: cust?.id,
+        });
+      }
+
+      if (wantText) {
+        await whapiSendText(phone, stripBoletoButtonCta(waText), {
+          intent: "reply",
+          customerId: cust?.id,
+        });
+      }
+
+      // Sempre: Android + iOS
+      await whapiSendText(phone, buildAppStoreInviteMessage(linkClub), {
         intent: "reply",
         customerId: cust?.id,
       });
 
-      await whapiSendText(phone, stripBoletoButtonCta(waText), {
-        intent: "reply",
-        customerId: cust?.id,
-      });
+      if (wantBoletoBtn) {
+        const btnBody = buildBoletoButtonPrompt(buttonLabel);
+        try {
+          await whapiSendButtons(
+            phone,
+            btnBody,
+            [{ id: BOLETO_BTN_ID, title: buttonLabel }],
+            { intent: "reply", customerId: cust?.id },
+          );
+        } catch {
+          await whapiSendText(phone, `${btnBody}\n\n*1.* ${buttonLabel}`, {
+            intent: "reply",
+            customerId: cust?.id,
+          });
+        }
+        if (cust?.id && boleto.mes_referencia) {
+          await supabase.from("customer_auto_message_log").upsert(
+            {
+              customer_id: cust.id,
+              consultant_id: consultantId,
+              stage_key: `boleto_chegou:${boleto.mes_referencia}`,
+              status: "sent",
+              customer_name: cust.name || nome,
+              message_preview: "teste boleto chegou",
+              remote_jid: `${phone}@s.whatsapp.net`,
+            },
+            { onConflict: "customer_id,stage_key" },
+          );
+        }
+      }
 
+      const parts = [
+        wantAudio ? "áudio" : null,
+        wantText ? "texto" : null,
+        "apps",
+        wantBoletoBtn ? "botão boleto" : null,
+      ].filter(Boolean);
       toast({
         title: "Teste enviado",
-        description: `${formatBrazilPhone(phone)} · ${boleto.mes_referencia || "?"} · áudio + Club (sem arquivo no Zap)`,
+        description: `${formatBrazilPhone(phone)} · ${boleto.mes_referencia || "?"} · ${parts.join(" + ")}`,
       });
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e || "");
       let description = toUserFacingError(e);
       if (
-        /whapi|WhatsApp|boleto/i.test(raw) &&
+        /whapi|WhatsApp|boleto|send_buttons/i.test(raw) &&
         /Sessão expirou/i.test(description)
       ) {
         description = "Falha no envio pelo WhatsApp. Tente de novo em alguns segundos.";
@@ -502,9 +562,57 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                       <audio ref={audioRef} controls src={audioUrl} className="w-full mt-1" />
                     )}
                     <p className="text-[11px] text-muted-foreground">
-                      Envia áudio + texto (Play Store / App Store + link Club). Sem arquivo no Zap —
-                      a empresa já manda o boleto; aqui é o recado de credibilidade do Club.
+                      Respeita os toggles abaixo. Links Android/iOS do app vão sempre.
                     </p>
+                  </div>
+
+                  <div className="rounded-lg border p-3 space-y-2.5 bg-muted/10">
+                    <p className="text-xs font-semibold">O que enviar</p>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="send_audio"
+                        checked={cfg.send_audio !== false}
+                        onCheckedChange={(v) => setDraft((d) => ({ ...d, send_audio: v }))}
+                      />
+                      <Label htmlFor="send_audio" className="text-xs">Áudio Sofia</Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="send_text"
+                        checked={cfg.send_text !== false}
+                        onCheckedChange={(v) => setDraft((d) => ({ ...d, send_text: v }))}
+                      />
+                      <Label htmlFor="send_text" className="text-xs">Texto / mensagem</Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
+                        id="button_enabled"
+                        checked={cfg.button_enabled === true}
+                        onCheckedChange={(v) => setDraft((d) => ({ ...d, button_enabled: v }))}
+                      />
+                      <Label htmlFor="button_enabled" className="text-xs">
+                        Botão “Receber boleto” (arquivo no Zap)
+                      </Label>
+                    </div>
+                    <p className="text-[11px] text-muted-foreground">
+                      Apps Android e iPhone: <span className="font-medium text-foreground">sempre</span>{" "}
+                      (mensagem própria com Play Store + App Store).
+                    </p>
+                    {cfg.button_enabled === true && (
+                      <div>
+                        <Label className="text-xs">Texto do botão (máx. 25)</Label>
+                        <Input
+                          maxLength={25}
+                          value={cfg.button_boleto_label}
+                          onChange={(e) =>
+                            setDraft((d) => ({
+                              ...d,
+                              button_boleto_label: e.target.value.slice(0, 25),
+                            }))
+                          }
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <div>

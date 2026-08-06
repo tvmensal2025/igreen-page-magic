@@ -355,9 +355,9 @@ Evolution (opção numérica).
   Na hora configurada dispara `sync-igreen-customers` com `mode=sync_boletos`
   (exceção ao bloqueio Evomi do sync full).
 - Boleto novo → fila `customer_auto_message_log` (`boleto_chegou:{mes}`).
-- Pacote Zap: áudio Sofia + texto Club-first (Play Store / App Store + link).
-  **Sem arquivo e sem botão** — a empresa já manda o boleto no Zap; este canal
-  só avisa e anima o app Club (credibilidade). Sem a palavra “PDF” nos textos.
+- Pacote Zap (toggles): `send_audio` / `send_text` (áudio e/ou texto);
+  `button_enabled` opt-in do botão “Receber boleto” (arquivo). Links
+  **Android/iOS do app Club sempre** em mensagem própria. Sem a palavra “PDF”.
 - Helper: `_shared/boleto-notify.ts`. UI: Automações iGreen.
 
 ## Validação e implantação
