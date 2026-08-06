@@ -115,4 +115,15 @@ Deno.test("os modos de lote são restritos ao agendador", () => {
     "scheduled/outcomes não podem ser chamados por consultor logado",
   );
   assert(code.includes("isBatchMode"));
+  // Strict: a variante normal aceita ramo de grace quando não há secret
+  // configurado, o que abriria o lote em ambiente mal configurado.
+  assert(
+    code.includes("assertCronAuthStrict"),
+    "superfície financeira precisa da variante fail-closed",
+  );
+  assertEquals(
+    /assertCronAuth\s*\(/.test(codeOnly(code)),
+    false,
+    "não pode usar a variante com grace",
+  );
 });
