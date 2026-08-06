@@ -21,6 +21,18 @@ export type BrainDataQualityInput = {
   nowMs: number;
   /** `max(facebook_metrics_daily.updated_at)` da janela. */
   lastMetaSyncAtIso: string | null;
+  /**
+   * Prova de que o sync PASSOU pelas campanhas, independente de ter escrito
+   * linha (`max(facebook_campaigns.updated_at)`).
+   *
+   * Existe porque a Meta não emite linha de insights para dia sem entrega:
+   * campanha ativa que não gastou simplesmente não aparece. Sem este carimbo,
+   * "não gastou" e "sync quebrado" ficam indistinguíveis, e o Cérebro acusa
+   * dado indisponível quando o dado existe e diz zero.
+   *
+   * Ausente = comportamento antigo (só as linhas de métrica contam).
+   */
+  syncConfirmedAtIso?: string | null;
   /** Janela usada, em ISO date (YYYY-MM-DD). */
   windowStart: string;
   windowEnd: string;
@@ -58,6 +70,8 @@ export type BrainDataQuality = {
   hasCommercialData: boolean;
   duplicatesIgnored: number;
   gapsDetected: number;
+  /** Houve entrega (linha de insights) na janela? */
+  hasDelivery: boolean;
   conflicts: string[];
   /** Ação que mexe em dinheiro está liberada? */
   allowsFinancialAction: boolean;
@@ -81,18 +95,26 @@ export function evaluateBrainDataQuality(
   const conflicts = [...(input.conflicts ?? [])];
   const windowDays = daysBetween(input.windowStart, input.windowEnd);
 
-  const syncMs = input.lastMetaSyncAtIso
-    ? Date.parse(input.lastMetaSyncAtIso)
-    : NaN;
+  // O carimbo de "o sync rodou" vale mesmo sem linha escrita; o das linhas só
+  // existe quando houve entrega. O mais recente dos dois é a idade real.
+  const syncCandidates = [input.lastMetaSyncAtIso, input.syncConfirmedAtIso]
+    .map((iso) => (iso ? Date.parse(iso) : NaN))
+    .filter((ms) => Number.isFinite(ms));
+  const syncMs = syncCandidates.length > 0 ? Math.max(...syncCandidates) : NaN;
   const metricsAgeHours = Number.isFinite(syncMs)
     ? Math.max(0, (input.nowMs - syncMs) / 3_600_000)
     : null;
+  const syncConfirmed = Boolean(input.syncConfirmedAtIso) &&
+    metricsAgeHours != null && metricsAgeHours <= input.maxMetricsAgeHours;
 
   const expected = Math.max(0, Math.round(input.expectedMetricRows));
   const found = Math.max(0, Math.round(input.metricRowsFound));
-  const completenessPct = expected > 0
+  const rawCompleteness = expected > 0
     ? Math.max(0, Math.min(100, Math.round((found / expected) * 100)))
     : (found > 0 ? 100 : 0);
+  // Com o sync confirmado, dia sem entrega não é linha faltando: o denominador
+  // "campanhas × dias" pressupõe entrega diária, o que a Meta não garante.
+  const completenessPct = syncConfirmed ? 100 : rawCompleteness;
 
   const gapsDetected = Math.max(0, Math.round(input.activeCampaignsWithoutMetrics));
 
@@ -102,9 +124,9 @@ export function evaluateBrainDataQuality(
   }
 
   let state: DataQualityState;
-  if (input.campaignsFound <= 0 || (found <= 0 && expected > 0)) {
+  if (input.campaignsFound <= 0) {
     state = "unavailable";
-    reasons.push("sem_metricas_na_janela");
+    reasons.push("nenhuma_campanha_considerada");
   } else if (conflicts.length > 0) {
     state = "conflicting";
     reasons.push(...conflicts.map((c) => `conflito:${c}`));
@@ -112,10 +134,14 @@ export function evaluateBrainDataQuality(
     state = "unavailable";
     reasons.push("sem_horario_de_sincronizacao");
   } else if (metricsAgeHours > input.maxMetricsAgeHours) {
+    // Idade antes de volume: sync velho é sync velho, com ou sem linha.
     state = "stale";
     reasons.push(
       `metricas_com_${metricsAgeHours.toFixed(1)}h_limite_${input.maxMetricsAgeHours}h`,
     );
+  } else if (found <= 0 && expected > 0 && !syncConfirmed) {
+    state = "unavailable";
+    reasons.push("sem_metricas_na_janela");
   } else if (completenessPct < MIN_COMPLETENESS_PCT || gapsDetected > 0) {
     state = "incomplete";
     if (completenessPct < MIN_COMPLETENESS_PCT) {
@@ -126,7 +152,9 @@ export function evaluateBrainDataQuality(
     }
   } else {
     state = "fresh";
-    reasons.push("dados_atuais_e_completos");
+    reasons.push(
+      found > 0 ? "dados_atuais_e_completos" : "sem_entrega_na_janela",
+    );
   }
 
   if (!input.hasCommercialData) reasons.push("sem_dado_comercial_na_janela");
@@ -145,6 +173,7 @@ export function evaluateBrainDataQuality(
     hasCommercialData: input.hasCommercialData,
     duplicatesIgnored: input.duplicatesIgnored,
     gapsDetected,
+    hasDelivery: found > 0,
     conflicts,
     allowsFinancialAction: state === "fresh",
     reasons,
@@ -155,6 +184,9 @@ export function evaluateBrainDataQuality(
 export function describeDataQuality(quality: BrainDataQuality): string {
   switch (quality.state) {
     case "fresh":
+      if (!quality.hasDelivery) {
+        return "sincronização em dia, mas nenhuma campanha entregou na janela";
+      }
       return `dados atuais (${quality.completenessPct}% completos, ${
         quality.metricsAgeHours?.toFixed(1) ?? "?"
       }h)`;

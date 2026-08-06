@@ -237,6 +237,81 @@ Deno.test("métricas velhas bloqueiam ação financeira ponta a ponta", async ()
   assert(d.blockers.some((b) => b.code === "dados_stale"));
 });
 
+// Caso real de produção (2026-08-06): consultor sem campanha entregando. A
+// Meta não devolve linha de insights para dia sem entrega, então o Cérebro
+// acusava "dados indisponíveis" — como se o sync estivesse quebrado.
+Deno.test("campanha ativa sem entrega: dado existe, decisão é manter", async () => {
+  const writes: Write[] = [];
+  const admin = fakeAdmin(writes, {
+    facebook_metrics_daily: { rows: [] },
+    customers: { rows: [] },
+    facebook_campaigns: {
+      rows: [{
+        id: CAMPAIGN,
+        name: "Âncora parada",
+        consultant_id: CONSULTANT,
+        status: "active",
+        fb_campaign_id: "120200",
+        daily_budget_cents: 2300,
+        started_at: new Date(NOW - 11 * 86_400_000).toISOString(),
+        // Sync passou há 20 min e não escreveu linha: não houve entrega.
+        updated_at: new Date(NOW - 20 * 60_000).toISOString(),
+        brain_scale_enabled: false,
+        brain_scale_last_at: null,
+      }],
+    },
+  });
+
+  const measured = await measureConsultantCampaigns(admin, {
+    consultantId: CONSULTANT,
+    nowMs: NOW,
+    windowDays: 2,
+  });
+  assertEquals(measured.dataQuality.state, "fresh");
+  assertEquals(measured.dataQuality.hasDelivery, false);
+  assertEquals(measured.dataQuality.gapsDetected, 0);
+
+  const d = decideCampaign({
+    snapshot: measured.snapshots[0],
+    policy: measured.policy,
+    brainConfig: measured.brainConfig,
+    nowMs: NOW,
+    usedSnapshotVersions: [],
+  });
+  assertEquals(d.action, "hold");
+  assertEquals(d.canExecute, false);
+  // Sem gasto não existe desperdício: nada a pausar.
+  assertEquals(d.blockers.length, 0);
+});
+
+Deno.test("sync que não passou pela campanha continua bloqueando", async () => {
+  const writes: Write[] = [];
+  const admin = fakeAdmin(writes, {
+    facebook_metrics_daily: { rows: [] },
+    facebook_campaigns: {
+      rows: [{
+        id: CAMPAIGN,
+        name: "Âncora sem leitura",
+        consultant_id: CONSULTANT,
+        status: "active",
+        fb_campaign_id: "120200",
+        daily_budget_cents: 2300,
+        started_at: new Date(NOW - 11 * 86_400_000).toISOString(),
+        // Última passagem do sync há 3 dias: token quebrado, conta suspensa etc.
+        updated_at: new Date(NOW - 72 * 3_600_000).toISOString(),
+        brain_scale_enabled: false,
+      }],
+    },
+  });
+  const measured = await measureConsultantCampaigns(admin, {
+    consultantId: CONSULTANT,
+    nowMs: NOW,
+    windowDays: 2,
+  });
+  assertEquals(measured.dataQuality.state, "stale");
+  assertEquals(measured.dataQuality.allowsFinancialAction, false);
+});
+
 Deno.test("mesma amostra não autoriza um segundo aumento", async () => {
   const writes: Write[] = [];
   const admin = fakeAdmin(writes);

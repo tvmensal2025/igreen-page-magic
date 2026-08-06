@@ -89,7 +89,7 @@ export async function measureConsultantCampaigns(
       .maybeSingle(),
     admin.from("facebook_campaigns")
       .select(
-        "id, name, consultant_id, status, fb_campaign_id, daily_budget_cents, rejection_reason, started_at, created_at, brain_scale_enabled, brain_scale_last_at, brain_scale_target_cpl_cents",
+        "id, name, consultant_id, status, fb_campaign_id, daily_budget_cents, rejection_reason, started_at, created_at, updated_at, brain_scale_enabled, brain_scale_last_at, brain_scale_target_cpl_cents",
       )
       .eq("consultant_id", input.consultantId),
     admin.from("consultant_wallet")
@@ -170,15 +170,35 @@ export async function measureConsultantCampaigns(
   const leads = (leadsRes?.data ?? []) as AttributableCustomer[];
   const attribution = aggregateAttribution(leads);
 
+  // `facebook-sync-metrics` toca `facebook_campaigns.updated_at` (leads_count)
+  // depois de ler os insights com sucesso, mesmo quando a Meta não devolve
+  // nenhuma linha. É a única prova de que o sync passou por uma campanha que
+  // não entregou.
+  const campaignSyncMs = (c: Record<string, unknown>): number => {
+    const t = c.updated_at ? Date.parse(String(c.updated_at)) : NaN;
+    return Number.isFinite(t) ? t : 0;
+  };
+  const syncConfirmedMs = allCampaigns.reduce(
+    (max, c) => Math.max(max, campaignSyncMs(c)),
+    0,
+  );
+
+  // Lacuna real = o sync não conseguiu ler esta campanha. Campanha ativa que
+  // simplesmente não gastou não é lacuna.
+  const syncCutoffMs = nowMs - policy.maxMetricsAgeHours * 3_600_000;
   const activeWithoutMetrics = allCampaigns.filter((c) =>
     ACTIVE_STATUSES.includes(String(c.status)) &&
     Number(c.daily_budget_cents ?? 0) > 0 &&
-    !(byCampaign.get(String(c.id))?.length)
+    !(byCampaign.get(String(c.id))?.length) &&
+    campaignSyncMs(c) < syncCutoffMs
   ).length;
 
   const dataQuality = evaluateBrainDataQuality({
     nowMs,
     lastMetaSyncAtIso: lastSyncMs > 0 ? new Date(lastSyncMs).toISOString() : null,
+    syncConfirmedAtIso: syncConfirmedMs > 0
+      ? new Date(syncConfirmedMs).toISOString()
+      : null,
     windowStart,
     windowEnd,
     campaignsFound: allCampaigns.length,

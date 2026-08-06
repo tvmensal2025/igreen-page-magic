@@ -86,6 +86,71 @@ Deno.test("sem horário de sincronização não dá para confiar na janela", () 
   assertEquals(q.allowsFinancialAction, false);
 });
 
+// A Meta não emite linha de insights para dia sem entrega. Sem distinguir isso
+// de falha de sincronização, o Cérebro acusa "dados indisponíveis" para uma
+// conta que apenas não está anunciando.
+
+Deno.test("sem entrega, mas com sync confirmado, o dado existe e vale zero", () => {
+  const q = evaluateBrainDataQuality(
+    input({
+      metricRowsFound: 0,
+      lastMetaSyncAtIso: null,
+      syncConfirmedAtIso: "2026-08-06T11:30:00Z",
+    }),
+  );
+  assertEquals(q.state, "fresh");
+  assertEquals(q.hasDelivery, false);
+  assertEquals(q.reasons.includes("sem_entrega_na_janela"), true);
+});
+
+Deno.test("entrega parcial com sync confirmado não é dado faltando", () => {
+  const q = evaluateBrainDataQuality(
+    input({
+      metricRowsFound: 1,
+      expectedMetricRows: 10,
+      syncConfirmedAtIso: "2026-08-06T11:30:00Z",
+    }),
+  );
+  assertEquals(q.state, "fresh");
+  assertEquals(q.completenessPct, 100);
+  assertEquals(q.hasDelivery, true);
+});
+
+Deno.test("sync confirmado antigo continua bloqueando", () => {
+  const q = evaluateBrainDataQuality(
+    input({
+      metricRowsFound: 0,
+      lastMetaSyncAtIso: null,
+      syncConfirmedAtIso: "2026-08-03T11:30:00Z",
+    }),
+  );
+  assertEquals(q.state, "stale");
+  assertEquals(q.allowsFinancialAction, false);
+});
+
+Deno.test("sync que não passou pela campanha continua sendo lacuna", () => {
+  const q = evaluateBrainDataQuality(
+    input({
+      activeCampaignsWithoutMetrics: 1,
+      syncConfirmedAtIso: "2026-08-06T11:30:00Z",
+    }),
+  );
+  assertEquals(q.state, "incomplete");
+  assertEquals(q.gapsDetected, 1);
+});
+
+Deno.test("sem carimbo de sync o comportamento antigo é preservado", () => {
+  assertEquals(
+    evaluateBrainDataQuality(input({ metricRowsFound: 0 })).state,
+    "unavailable",
+  );
+  assertEquals(
+    evaluateBrainDataQuality(input({ metricRowsFound: 1, expectedMetricRows: 10 }))
+      .state,
+    "incomplete",
+  );
+});
+
 Deno.test("ausência de dado comercial é registrada sem derrubar o estado", () => {
   const q = evaluateBrainDataQuality(input({ hasCommercialData: false }));
   assertEquals(q.state, "fresh");
