@@ -44,6 +44,8 @@ import { nextSeparatedCadastroStep, isSofiaPortalOtpStep, sofiaPortalContaunicaP
 import { assignProtocolToCustomer } from "../../../_shared/protocol.ts";
 import { formatFaqReply } from "../../../_shared/format-reply.ts";
 import { withQaStepClose } from "../../../_shared/qa-step-close.ts";
+import { evaluateLowBillCutoff, LOW_BILL_MIN_VALUE } from "../../../_shared/bot/low-bill-reentry.ts";
+import { isSendConfirmed } from "../../../_shared/bot/outbound-commit.ts";
 import { reemitStepButtons } from "../../../_shared/bot/reemit-buttons.ts";
 import { handleMakeCallStep } from "../../../_shared/bot/make-call-step.ts";
 import { detectQuestionIntent } from "../../../_shared/conversation-helpers.ts";
@@ -697,7 +699,12 @@ async function sendStepMedia(
         if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       }
       try {
-        await ctx.sender.sendText(ctx.remoteJid, item.text);
+        // Sender pode negar sem lançar (guard de pausa humana, destino
+        // inválido, erro HTTP do canal). Tratar como falha reaproveita o catch
+        // abaixo, que registra `text_failed` em vez de mensagem falsa.
+        if (!isSendConfirmed(await ctx.sender.sendText(ctx.remoteJid, item.text))) {
+          throw new Error("send_refused_by_channel");
+        }
         textSentInline = true;
         prevForPause = { kind: "text" };
         // A1: log every inline text in conversations so CRM shows the real step trail
@@ -1472,7 +1479,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       if (mediaSent === true) anyMediaSent = true;
       if (restartWantsButtons) {
         try {
-          await ctx.sender.sendButtons(ctx.remoteJid, renderedText, restartStepButtons);
+          if (!isSendConfirmed(await ctx.sender.sendButtons(ctx.remoteJid, renderedText, restartStepButtons))) {
+            throw new Error("send_refused_by_channel");
+          }
           if (ctx.customer?.id) {
             await ctx.supabase.from("conversations").insert({
               customer_id: ctx.customer.id,
@@ -1486,14 +1495,15 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         } catch (e) {
           console.error(`[restart-cascade] sendButtons falhou step=${cursor.step_key} — fallback texto:`, (e as Error)?.message || e);
           try {
-            await ctx.sender.sendText(ctx.remoteJid, renderedText);
-            anyMediaSent = true;
+            if (isSendConfirmed(await ctx.sender.sendText(ctx.remoteJid, renderedText))) anyMediaSent = true;
           } catch (_) { /* noop */ }
         }
       } else if (renderedText && !textSentInline && !mediaSent) {
         // Fallback: step sem mídia E sem ordem configurada → manda como texto puro.
         try {
-          await ctx.sender.sendText(ctx.remoteJid, renderedText);
+          if (!isSendConfirmed(await ctx.sender.sendText(ctx.remoteJid, renderedText))) {
+            throw new Error("send_refused_by_channel");
+          }
           if (ctx.customer?.id) {
             await ctx.supabase.from("conversations").insert({
               customer_id: ctx.customer.id,
@@ -1662,6 +1672,16 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       await ctx.supabase.from("customers").update(captureUpdates).eq("id", ctx.customer.id);
       // Reflete no objeto em memória pra re-resolver landing step abaixo.
       Object.assign(ctx.customer as any, captureUpdates);
+    }
+
+    // Corte de conta baixa: precisa vir ANTES do avanço pós-captura, senão o
+    // lead abaixo do mínimo já saiu do passo do valor e segue para o cadastro.
+    const _stepPedeValor = Array.isArray(currentStep.captures) &&
+      currentStep.captures.some((c: any) => c?.field === "electricity_bill_value" && c?.enabled !== false);
+    const _cutoff = evaluateLowBillCutoff(_stepPedeValor, captureUpdates.electricity_bill_value);
+    if (_cutoff.reject) {
+      console.log(`[valor-baixo] ${ctx.customer.id} conta R$ ${_cutoff.value} < ${LOW_BILL_MIN_VALUE} — fora da esteira`);
+      return { reply: _cutoff.reply, updates: _cutoff.updates };
     }
 
     // A2: "gravando…" imediato ao receber o nome; reenvia a cada ~8s enquanto monta o stitch.
@@ -1836,7 +1856,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     for (const item of sequence) {
       if (item.kind === "text") {
         try {
-          await ctx.sender.sendText(ctx.remoteJid, item.text);
+          if (!isSendConfirmed(await ctx.sender.sendText(ctx.remoteJid, item.text))) {
+            throw new Error("send_refused_by_channel");
+          }
           anyEmitted = true;
           if (ctx.customer?.id) {
             await ctx.supabase.from("conversations").insert({
@@ -1867,7 +1889,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         }
       }
       try {
-        await ctx.sender.sendMedia(ctx.remoteJid, m.url, "", item.kind, Number((m as any).duration_sec || 0) || undefined);
+        const _okMedia = await ctx.sender.sendMedia(ctx.remoteJid, m.url, "", item.kind, Number((m as any).duration_sec || 0) || undefined);
+        if (!isSendConfirmed(_okMedia)) throw new Error("send_refused_by_channel");
         anyEmitted = true;
         if (item.kind === "audio") audioEmitted = true;
         if (ctx.customer?.id) {
@@ -1888,7 +1911,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     // Se áudio falhou/pulou → fallback texto já coberto abaixo.
     if (!anyEmitted && qaText) {
       try {
-        await ctx.sender.sendText(ctx.remoteJid, qaText);
+        if (!isSendConfirmed(await ctx.sender.sendText(ctx.remoteJid, qaText))) {
+          throw new Error("send_refused_by_channel");
+        }
         anyEmitted = true;
         if (ctx.customer?.id) {
           await ctx.supabase.from("conversations").insert({
@@ -2278,7 +2303,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
 
         // Envia inline + reemit para o lead não ficar sem opções após a dúvida.
         try {
-          await ctx.sender.sendText(ctx.remoteJid, renderedFaq);
+          if (!isSendConfirmed(await ctx.sender.sendText(ctx.remoteJid, renderedFaq))) {
+            throw new Error("send_refused_by_channel");
+          }
           if (ctx.customer?.id) {
             await ctx.supabase.from("conversations").insert({
               customer_id: ctx.customer.id,
@@ -2564,7 +2591,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     if (asReply && wantButtons && textComesBeforeAllMedia) {
       try {
         if (textDelay > 0 && !isMockMode()) await new Promise((r) => setTimeout(r, textDelay));
-        await ctx.sender.sendButtons(ctx.remoteJid, text, stepButtons);
+        if (!isSendConfirmed(await ctx.sender.sendButtons(ctx.remoteJid, text, stepButtons))) {
+          throw new Error("send_refused_by_channel");
+        }
         if (ctx.customer?.id) {
           await ctx.supabase.from("conversations").insert({
             customer_id: ctx.customer.id,
@@ -2637,7 +2666,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           return { replyText: fallbackText, inlineSent: false };
         }
         try {
-          await ctx.sender.sendText(ctx.remoteJid, fallbackText);
+          if (!isSendConfirmed(await ctx.sender.sendText(ctx.remoteJid, fallbackText))) {
+            throw new Error("send_refused_by_channel");
+          }
           if (ctx.customer?.id) {
             await ctx.supabase.from("conversations").insert({
               customer_id: ctx.customer.id,
@@ -2671,7 +2702,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       // os botões clicáveis exatamente como configurado no /admin/fluxos.
       if (wantButtons) {
         try {
-          await ctx.sender.sendButtons(ctx.remoteJid, text, stepButtons);
+          if (!isSendConfirmed(await ctx.sender.sendButtons(ctx.remoteJid, text, stepButtons))) {
+            throw new Error("send_refused_by_channel");
+          }
           if (ctx.customer?.id) {
             await ctx.supabase.from("conversations").insert({
               customer_id: ctx.customer.id,
@@ -2690,7 +2723,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       return { replyText: text, inlineSent: inlineMedia };
     }
     try {
-      await ctx.sender.sendText(ctx.remoteJid, text);
+      if (!isSendConfirmed(await ctx.sender.sendText(ctx.remoteJid, text))) {
+        throw new Error("send_refused_by_channel");
+      }
       // A1: log cascade text in conversations (was silently sent before)
       try {
         if (ctx.customer?.id) {
@@ -3535,7 +3570,9 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         // Envia a resposta e MANTÉM o lead no mesmo passo (after_ai='stay').
         // Lead clica num botão (transitions configuradas) pra avançar.
         try {
-          await ctx.sender.sendText(ctx.remoteJid, aiText);
+          if (!isSendConfirmed(await ctx.sender.sendText(ctx.remoteJid, aiText))) {
+            throw new Error("send_refused_by_channel");
+          }
           await ctx.supabase.from("conversations").insert({
             customer_id: ctx.customer.id,
             message_direction: "outbound",
@@ -3554,27 +3591,29 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           const stepButtons = extractStepButtons(currentStep);
           if (stepButtons.length > 0) {
             const prompt = "👇 É só escolher uma opção:";
-            await ctx.sender.sendButtons(ctx.remoteJid, prompt, stepButtons);
-            await ctx.supabase.from("conversations").insert({
-              customer_id: ctx.customer.id,
-              message_direction: "outbound",
-              message_text: prompt,
-              message_type: "text",
-              conversation_step: currentStep.step_key,
-              delivery_status: "sent",
-            });
+            if (isSendConfirmed(await ctx.sender.sendButtons(ctx.remoteJid, prompt, stepButtons))) {
+              await ctx.supabase.from("conversations").insert({
+                customer_id: ctx.customer.id,
+                message_direction: "outbound",
+                message_text: prompt,
+                message_type: "text",
+                conversation_step: currentStep.step_key,
+                delivery_status: "sent",
+              });
+            }
           } else {
             // F02: sem botões configurados — CTA textual para não ficar parado após áudio/dúvida
             const nudge = ACTIVATE_CTA_NUDGE;
-            await ctx.sender.sendText(ctx.remoteJid, nudge);
-            await ctx.supabase.from("conversations").insert({
-              customer_id: ctx.customer.id,
-              message_direction: "outbound",
-              message_text: nudge,
-              message_type: "text",
-              conversation_step: currentStep.step_key,
-              delivery_status: "sent",
-            });
+            if (isSendConfirmed(await ctx.sender.sendText(ctx.remoteJid, nudge))) {
+              await ctx.supabase.from("conversations").insert({
+                customer_id: ctx.customer.id,
+                message_direction: "outbound",
+                message_text: nudge,
+                message_type: "text",
+                conversation_step: currentStep.step_key,
+                delivery_status: "sent",
+              });
+            }
           }
         } catch (e) {
           console.warn("[ai_answer] sendButtons pós-IA falhou:", (e as any)?.message);

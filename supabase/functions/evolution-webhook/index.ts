@@ -61,6 +61,7 @@ import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isConsultantAIDisabled, isCustomerPausedByHuman, wrapSenderWithLivePauseGuard } from "../_shared/bot/paused.ts";
 import { handoffResumeAtIso } from "../_shared/bot/handoff-resume.ts";
 import { evaluateLowBillReentry } from "../_shared/bot/low-bill-reentry.ts";
+import { isSendConfirmed } from "../_shared/bot/outbound-commit.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
 import {
   deriveEffectiveKeywordList,
@@ -1996,12 +1997,15 @@ Deno.serve(async (req) => {
             if (awaitingDoc || confirmingDoc) { patch.doc_data_confirmed_at = now; patch.doc_data_confirmation_by = "client"; }
             await supabase.from("customers").update(patch).eq("id", customer.id);
             const reply = "✅ Dados confirmados.";
-            try { await sender.sendText(remoteJid, reply); } catch (_e) { /* ignore */ }
-            await supabase.from("conversations").insert({
-              customer_id: customer.id, message_direction: "outbound",
-              message_text: reply, message_type: "text",
-              conversation_step: customer.conversation_step,
-            });
+            let _okConfirm = false;
+            try { _okConfirm = isSendConfirmed(await sender.sendText(remoteJid, reply)); } catch (_e) { /* ignore */ }
+            if (_okConfirm) {
+              await supabase.from("conversations").insert({
+                customer_id: customer.id, message_direction: "outbound",
+                message_text: reply, message_type: "text",
+                conversation_step: customer.conversation_step,
+              });
+            }
             jsonLog("info", "capture_confirmed_manual_stop", {
               customer_id: customer.id,
               consultant_id: instanceData.consultant_id,
@@ -2336,17 +2340,19 @@ Deno.serve(async (req) => {
     // reenviar normalmente cai no mesmo step e refaz o caminho.
     if (mediaDownloadFailed) {
       try {
-        await sender.sendText(
+        const _okLost = await sender.sendText(
           remoteJid,
           "Desculpa 😅 não consegui receber sua imagem. Pode reenviar?"
         );
-        await supabase.from("conversations").insert({
-          customer_id: customer.id,
-          message_direction: "outbound",
-          message_text: "Desculpa 😅 não consegui receber sua imagem. Pode reenviar?",
-          message_type: "text",
-          conversation_step: customer.conversation_step,
-        });
+        if (isSendConfirmed(_okLost)) {
+          await supabase.from("conversations").insert({
+            customer_id: customer.id,
+            message_direction: "outbound",
+            message_text: "Desculpa 😅 não consegui receber sua imagem. Pode reenviar?",
+            message_type: "text",
+            conversation_step: customer.conversation_step,
+          });
+        }
       } catch (sendErr: any) {
         console.error("[evolution_media_lost] reply falhou:", sendErr?.message);
       }

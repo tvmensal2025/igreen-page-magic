@@ -72,6 +72,40 @@ Isolamento e concorrência:
   `canSendMediaOnce` (confirmação imediata) segue existindo para o envio manual
   do consultor, onde a falha é visível e ele pode reenviar.
 
+### Histórico só registra o que o canal aceitou
+
+`commitOutboundTurn` cobre a resposta principal do turno, mas os handlers também
+enviam fora dele: texto de abertura, cascata de passos, mídia da FAQ, CTA pós-IA,
+nudge, botão de finalizar, fallback de dispatch. Nesses pontos o send era
+`await`-ado e o `insert` em `conversations` vinha logo abaixo, sem olhar o
+retorno.
+
+Isso importa porque `sendText`/`sendMedia`/`sendButtons`/`sendOptions` **recusam
+sem lançar exceção**: guard de pausa humana, destino não resolvido
+(`whapi_dest_unresolved`), erro HTTP do canal. O `try/catch` em volta não pega
+nada e o consultor via no CRM uma conversa que o lead nunca recebeu — inclusive
+com `delivery_status: "sent"` gravado à mão em alguns pontos.
+
+Agora todo `insert` de outbound passa por `isSendConfirmed`
+(`_shared/bot/outbound-commit.ts`). Onde já existia `catch` que registra
+`message_type: "text_failed"`, a recusa sem exceção é convertida em
+`throw new Error("send_refused_by_channel")` para cair no mesmo tratamento, em
+vez de criar um segundo caminho de falha.
+
+Duas redes contra regressão, que precisam concordar:
+`scripts/audit-outbound-sem-guarda.ts` (levantamento, imprime o trecho) e
+`src/test/outbound-sempre-guardado.test.ts` (falha o CI). Ao adicionar um envio
+novo, os dois devem continuar em zero.
+
+### Áudio personalizado não vaza entre leads
+
+O stitch de áudio é chaveado por consultor + slot + gênero + **nome
+normalizado** (`stitch:<slot>:<ver>:<gênero>:<nome>`), e as intros seguem o mesmo
+padrão. Sem fonte confiável de nome (`resolveWaDisplayName`), não personaliza.
+`wa-audio-stitch.ts` não tem estado mutável de módulo, e o warm recebe
+`captureUpdates.name` do turno — não um `customer` relido depois que outro turno
+mexeu na linha. Coberto por `src/test/audio-turno-correto.test.ts`.
+
 ## Retomada após atendimento humano
 
 Quando o consultor assume uma conversa, todos os caminhos devem manter as duas
@@ -121,6 +155,32 @@ escalada difere da recusa simples, então ela passa pelo filtro de repetição.
 
 Variantes D/MG usam `fallback: {mode: "repeat"}`: contam a tentativa mas não
 escalam. É configuração do fluxo, não do código.
+
+## Corte de conta baixa (valor mínimo da esteira)
+
+`LOW_BILL_MIN_VALUE = 100` em `_shared/bot/low-bill-reentry.ts`. Lead que
+informa conta abaixo disso **no passo que pergunta o valor** sai da esteira:
+`status = rejected`, `bot_paused_reason = low_bill_value`,
+`conversation_step = valor_baixo`.
+
+A decisão vive em `evaluateLowBillCutoff`, chamada pelos dois handlers
+conversacionais logo depois de persistir a captura e **antes** do avanço
+pós-captura (`resolveLandingStep`) — invertida, o lead já teria saído do passo
+do valor e seguiria para foto da conta e documento.
+
+O corte só olha o passo cujas `captures` incluem `electricity_bill_value`. Um
+número citado de passagem em outro passo ("pago uns 50 de água") não
+desqualifica ninguém.
+
+A recusa é reversível: `low_bill_value` é exatamente o motivo que
+`evaluateLowBillReentry` reconhece, então o lead que volta dizendo que a conta
+subiu (ou com intenção clara de cadastro) é religado no Grupo A.
+
+O corte já existia nos passos conversacionais legados (`qualificacao`,
+`pos_video`), mas consultor com fluxo do construtor nunca cai neles — há lock
+explícito remapeando os legados. Na prática a regra não rodava: o E2E de
+2026-08 levou um lead de R$ 60 até o pedido de documento ouvindo "economia de
+R$ 4 a R$ 12".
 
 ## Conversa E2E do Grupo A (sem envio real)
 

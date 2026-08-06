@@ -55,6 +55,50 @@ export function parseBillValueFromText(text: string | null | undefined): number 
 }
 
 
+export type LowBillCutoffDecision =
+  | { reject: false }
+  | { reject: true; value: number; reply: string; updates: Record<string, unknown> };
+
+/**
+ * Corte de entrada da esteira, aplicado no passo que PERGUNTA o valor da conta.
+ *
+ * Os passos legados (`qualificacao`, `pos_video`) já barravam conta abaixo do
+ * mínimo, mas consultor com fluxo do construtor nunca cai neles — existe lock
+ * explícito remapeando os legados. Resultado (E2E 2026-08, cenário
+ * `valor_baixo`): lead de R$ 60 ouvia "economia de R$ 4 a R$ 12" e seguia até
+ * documento e cadastro.
+ *
+ * Só decide quando o passo atual é o que pede o valor: número citado de
+ * passagem noutro passo ("pago uns 50 de água") não pode desqualificar.
+ * A pausa usa `low_bill_value` de propósito — é a chave que
+ * `evaluateLowBillReentry` reconhece para trazer o lead de volta se a conta
+ * subir, então a recusa continua reversível.
+ */
+export function evaluateLowBillCutoff(
+  stepCapturesBillValue: boolean,
+  billValue: number | null | undefined,
+): LowBillCutoffDecision {
+  if (!stepCapturesBillValue) return { reject: false };
+  const value = Number(billValue);
+  if (!Number.isFinite(value) || value <= 0 || value >= LOW_BILL_MIN_VALUE) {
+    return { reject: false };
+  }
+  return {
+    reject: true,
+    value,
+    reply: `Obrigada por me falar. Com conta em torno de R$ ${value.toFixed(0)}, ` +
+      `normalmente a economia fica pequena e pode não compensar agora. Vou deixar ` +
+      `registrado e, se seu consumo subir, a gente retoma 💚`,
+    updates: {
+      electricity_bill_value: value,
+      status: "rejected",
+      bot_paused: true,
+      bot_paused_reason: "low_bill_value",
+      conversation_step: "valor_baixo",
+    },
+  };
+}
+
 export type LowBillReentrySignals = {
   bot_paused_reason?: string | null;
   assigned_human_id?: string | null;

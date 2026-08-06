@@ -1,7 +1,39 @@
 import { assertEquals } from "https://deno.land/std@0.208.0/assert/mod.ts";
-import { evaluateLowBillReentry, parseBillValueFromText } from "./low-bill-reentry.ts";
+import {
+  evaluateLowBillCutoff,
+  evaluateLowBillReentry,
+  parseBillValueFromText,
+} from "./low-bill-reentry.ts";
 
 const paused = { bot_paused_reason: "low_bill_value" };
+
+// Corte de entrada — E2E 2026-08 mostrou lead de R$ 60 indo até documento.
+Deno.test("corte: abaixo do mínimo no passo do valor desqualifica", () => {
+  const d = evaluateLowBillCutoff(true, 60);
+  assertEquals(d.reject, true);
+  if (!d.reject) return;
+  assertEquals(d.updates.status, "rejected");
+  assertEquals(d.updates.conversation_step, "valor_baixo");
+  // Motivo precisa ser exatamente o que a reentrada reconhece.
+  assertEquals(d.updates.bot_paused_reason, "low_bill_value");
+  assertEquals(evaluateLowBillReentry({ bot_paused_reason: String(d.updates.bot_paused_reason) }, "agora minha conta é 600").reactivate, true);
+});
+
+Deno.test("corte: no mínimo ou acima segue o fluxo", () => {
+  assertEquals(evaluateLowBillCutoff(true, 100).reject, false);
+  assertEquals(evaluateLowBillCutoff(true, 350).reject, false);
+});
+
+Deno.test("corte: só vale no passo que pede o valor", () => {
+  // "pago uns 50 de água" num passo qualquer não pode derrubar o lead.
+  assertEquals(evaluateLowBillCutoff(false, 50).reject, false);
+});
+
+Deno.test("corte: sem valor capturado não decide nada", () => {
+  assertEquals(evaluateLowBillCutoff(true, null).reject, false);
+  assertEquals(evaluateLowBillCutoff(true, undefined).reject, false);
+  assertEquals(evaluateLowBillCutoff(true, 0).reject, false);
+});
 
 Deno.test("parseBillValueFromText: formatos BR", () => {
   assertEquals(parseBillValueFromText("R$ 1.250,90"), 1250.9);

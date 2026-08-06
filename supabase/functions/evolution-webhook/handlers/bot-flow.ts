@@ -62,6 +62,7 @@ import {
 import { parseMoneyBR, extractMoneyFromText } from "../../_shared/parse-money.ts";
 import { getStepMediaOrder, makeKindComparator } from "../../_shared/step-media-order.ts";
 import { dispatchMediaOnce } from "../../_shared/media-dedupe.ts";
+import { isSendConfirmed } from "../../_shared/bot/outbound-commit.ts";
 import { detectPostponeIntent, buildPostponeReplyResolved } from "../../_shared/postpone-intent.ts";
 import { renderTemplateVars } from "../../_shared/render-vars.ts";
 import { buildCadastroLink } from "../../_shared/keyword-matcher.ts";
@@ -781,12 +782,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const encourageText = firstName
         ? `Ótimo, ${firstName}! Vamos lá então 😊`
         : `Ótimo! Vamos lá então 😊`;
-      try { await sendText(remoteJid, encourageText); } catch (_) { /* noop */ }
+      let _okEncourage = false;
+      try { _okEncourage = isSendConfirmed(await sendText(remoteJid, encourageText)); } catch (_) { /* noop */ }
       try {
-        await supabase.from("conversations").insert({
-          customer_id: customer.id, message_direction: "outbound",
-          message_text: encourageText, message_type: "text", conversation_step: stepNow,
-        });
+        if (_okEncourage) {
+          await supabase.from("conversations").insert({
+            customer_id: customer.id, message_direction: "outbound",
+            message_text: encourageText, message_type: "text", conversation_step: stepNow,
+          });
+        }
       } catch (_) { /* noop */ }
       // Reapresenta botões para o lead avançar
       try {
@@ -851,14 +855,17 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       ? `${answer}${reentryLine}${courtesyTail}`
       : `${reentryFull || reentryTail || ""}${courtesyTail}`.trim();
 
-    try { await sendText(remoteJid, finalMsg); } catch (e) {
+    let _okFinalMsg = false;
+    try { _okFinalMsg = isSendConfirmed(await sendText(remoteJid, finalMsg)); } catch (e) {
       console.warn("[respondAndReentry] sendText falhou:", (e as any)?.message);
     }
     try {
-      await supabase.from("conversations").insert({
-        customer_id: customer.id, message_direction: "outbound",
-        message_text: finalMsg, message_type: "text", conversation_step: stepNow,
-      });
+      if (_okFinalMsg) {
+        await supabase.from("conversations").insert({
+          customer_id: customer.id, message_direction: "outbound",
+          message_text: finalMsg, message_type: "text", conversation_step: stepNow,
+        });
+      }
     } catch (_) { /* noop */ }
 
     // 🔁 Reemite botões/lista numerada após FAQ/IA
@@ -1147,11 +1154,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           // Envia o texto inline aqui para garantir ordem: FAQ → botões.
           if (detourNext < 8 && text) {
             try {
-              await sendText(remoteJid, text);
-              await supabase.from("conversations").insert({
-                customer_id: customer.id, message_direction: "outbound",
-                message_text: text, message_type: "text", conversation_step: stepKey,
-              });
+              const _okQaText = await sendText(remoteJid, text);
+              if (isSendConfirmed(_okQaText)) {
+                await supabase.from("conversations").insert({
+                  customer_id: customer.id, message_direction: "outbound",
+                  message_text: text, message_type: "text", conversation_step: stepKey,
+                });
+              }
             } catch (_) { /* noop */ }
             try {
               const { reemitStepButtons } = await import("../../_shared/bot/reemit-buttons.ts");
@@ -1335,14 +1344,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 const msg = firstName
                   ? `${firstName}, vou te conectar com um especialista agora para tirar suas dúvidas com calma 🙌`
                   : "Vou te conectar com um especialista agora para tirar suas dúvidas com calma 🙌";
-                await sendText(remoteJid, msg);
-                await supabase.from("conversations").insert({
-                  customer_id: customer.id,
-                  message_direction: "outbound",
-                  message_text: msg,
-                  message_type: "text",
-                  conversation_step: stepKey,
-                });
+                const _okLimitMsg = await sendText(remoteJid, msg);
+                if (isSendConfirmed(_okLimitMsg)) {
+                  await supabase.from("conversations").insert({
+                    customer_id: customer.id,
+                    message_direction: "outbound",
+                    message_text: msg,
+                    message_type: "text",
+                    conversation_step: stepKey,
+                  });
+                }
                 return true;
               }
               if (then === "next") {
@@ -1414,14 +1425,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               : "Pode mandar sua dúvida, que eu explico tudo agora 😊";
           }
 
-          await sendText(remoteJid, answerText);
-          await supabase.from("conversations").insert({
-            customer_id: customer.id,
-            message_direction: "outbound",
-            message_text: answerText,
-            message_type: "text",
-            conversation_step: stepKey,
-          });
+          const _okAnswer = await sendText(remoteJid, answerText);
+          if (isSendConfirmed(_okAnswer)) {
+            await supabase.from("conversations").insert({
+              customer_id: customer.id,
+              message_direction: "outbound",
+              message_text: answerText,
+              message_type: "text",
+              conversation_step: stepKey,
+            });
+          }
 
           // 🔁 Reemite botões do passo após resposta IA (paridade Whapi)
           if (!orch.shouldHandoff) {
@@ -1465,14 +1478,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             const fallbackText = firstName
               ? `${firstName}, pode mandar sua dúvida que eu te explico tudo agora 😊`
               : "Pode mandar sua dúvida, que eu explico tudo agora 😊";
-            await sendText(remoteJid, fallbackText);
-            await supabase.from("conversations").insert({
-              customer_id: customer.id,
-              message_direction: "outbound",
-              message_text: fallbackText,
-              message_type: "text",
-              conversation_step: stepKey,
-            });
+            const _okFallback = await sendText(remoteJid, fallbackText);
+            if (isSendConfirmed(_okFallback)) {
+              await supabase.from("conversations").insert({
+                customer_id: customer.id,
+                message_direction: "outbound",
+                message_text: fallbackText,
+                message_type: "text",
+                conversation_step: stepKey,
+              });
+            }
           } catch (_) { /* best-effort */ }
           return true;
         }
@@ -1744,14 +1759,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         try {
           await new Promise((r) => setTimeout(r, 600));
           const promptText = "👇 *Escolha uma opção:*";
-          await sendButtons(remoteJid, promptText, _buttons);
-          await supabase.from("conversations").insert({
-            customer_id: customer.id,
-            message_direction: "outbound",
-            message_text: promptText,
-            message_type: "buttons",
-            conversation_step: stepKey,
-          });
+          const _okButtons = await sendButtons(remoteJid, promptText, _buttons);
+          if (isSendConfirmed(_okButtons)) {
+            await supabase.from("conversations").insert({
+              customer_id: customer.id,
+              message_direction: "outbound",
+              message_text: promptText,
+              message_type: "buttons",
+              conversation_step: stepKey,
+            });
+          }
           buttonsSent = true;
           console.log(`[dispatch:${stepKey}] enviou ${_buttons.length} botão(ões) como CTA (fallback pós-mídia)`);
         } catch (e) {
@@ -2037,11 +2054,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         safeFirstNameForAddress((customer as any).name, (customer as any).name_source) || null,
       ).trim();
       if (nudgeOnly) {
-        await sendText(remoteJid, nudgeOnly);
-        await supabase.from("conversations").insert({
-          customer_id: customer.id, message_direction: "outbound",
-          message_text: nudgeOnly, message_type: "text", conversation_step: step,
-        });
+        const _okNudge = await sendText(remoteJid, nudgeOnly);
+        if (isSendConfirmed(_okNudge)) {
+          await supabase.from("conversations").insert({
+            customer_id: customer.id, message_direction: "outbound",
+            message_text: nudgeOnly, message_type: "text", conversation_step: step,
+          });
+        }
       }
     }
 
@@ -2271,11 +2290,12 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
             const openingText = (openingQa as any).text_response;
             if (openingText) {
               try {
-                await sendText(remoteJid, renderTemplateVars(String(openingText), {
+                const _okOpening = await sendText(remoteJid, renderTemplateVars(String(openingText), {
                   name: customer.name || "",
                   name_source: (customer as any).name_source,
                   representante: nomeRepresentante || "",
                 }));
+                if (!isSendConfirmed(_okOpening)) throw new Error("send_refused_by_channel");
                 await supabase.from("conversations").insert({
                   customer_id: customer.id,
                   message_direction: "outbound",
@@ -2584,12 +2604,14 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       // Fluxo correto é conta → simulação → CTA → documento. Antes pulava
       // direto pro doc, quebrando a ordem do funil.
       const ctaMsg = `Perfeito! Pra eu calcular sua economia, me envia uma *foto ou PDF da sua conta de luz* 📸`;
-      await sendText(remoteJid, ctaMsg);
-      await supabase.from("conversations").insert({
-        customer_id: customer.id, message_direction: "outbound",
-        message_text: ctaMsg, message_type: "text",
-        conversation_step: "aguardando_conta",
-      });
+      const _okCta = await sendText(remoteJid, ctaMsg);
+      if (isSendConfirmed(_okCta)) {
+        await supabase.from("conversations").insert({
+          customer_id: customer.id, message_direction: "outbound",
+          message_text: ctaMsg, message_type: "text",
+          conversation_step: "aguardando_conta",
+        });
+      }
       return { reply: "", updates: { conversation_step: "aguardando_conta", __inline_sent: true } as any };
     }
     if (/\?|cancel|cancela|taxa|fidelidade|seguro|pagar|custa|club|clube|funciona/i.test(txt)) {
@@ -2741,12 +2763,14 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                 ? `${firstNm}, ficou alguma dúvida sobre o Conexão Club ou sobre como funciona? Pode mandar aqui que eu te explico 😊\n\nSe estiver tudo certo, é só me dizer *"pode seguir"* que a gente já avança pro cadastro.`
                 : `Ficou alguma dúvida sobre o Conexão Club ou sobre como funciona? Pode mandar aqui que eu te explico 😊\n\nSe estiver tudo certo, é só me dizer *"pode seguir"* que a gente já avança pro cadastro.`;
               try {
-                await sendText(remoteJid, duvidaMsg);
-                await supabase.from("conversations").insert({
-                  customer_id: customer.id, message_direction: "outbound",
-                  message_text: duvidaMsg, message_type: "text",
-                  conversation_step: "duvidas_pos_club",
-                });
+                const _okDuvida = await sendText(remoteJid, duvidaMsg);
+                if (isSendConfirmed(_okDuvida)) {
+                  await supabase.from("conversations").insert({
+                    customer_id: customer.id, message_direction: "outbound",
+                    message_text: duvidaMsg, message_type: "text",
+                    conversation_step: "duvidas_pos_club",
+                  });
+                }
               } catch (e) { console.warn("[club-followup] envio falhou:", (e as any)?.message); }
               updates.conversation_step = "duvidas_pos_club";
               console.log("🎬 [club-followup] vídeo do Conexão Club enviado → step=duvidas_pos_club");
@@ -2825,14 +2849,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         const reply = await buildPostponeReplyResolved(supabase, (customer as any)?.consultant_id, { firstName, when: intent.when, waitingDoc });
         console.log(`[postpone] customer=${customer.id} step=${step} when="${intent.when}" until=${intent.pauseUntil}`);
         try {
-          await sendText(remoteJid, reply);
-          await supabase.from("conversations").insert({
-            customer_id: customer.id,
-            message_direction: "outbound",
-            message_text: reply,
-            message_type: "text",
-            conversation_step: step,
-          });
+          const _okPostpone = await sendText(remoteJid, reply);
+          if (isSendConfirmed(_okPostpone)) {
+            await supabase.from("conversations").insert({
+              customer_id: customer.id,
+              message_direction: "outbound",
+              message_text: reply,
+              message_type: "text",
+              conversation_step: step,
+            });
+          }
         } catch (e) {
           console.warn("[postpone] send falhou:", (e as any)?.message);
         }
@@ -2889,11 +2915,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           const { full: reentry } = await resolveStepReentry(supabase, customer, step, nomeRepresentante);
           if (reentry) {
             try {
-              await sendText(remoteJid, reentry);
-              await supabase.from("conversations").insert({
-                customer_id: customer.id, message_direction: "outbound",
-                message_text: reentry, message_type: "text", conversation_step: step,
-              });
+              const _okReentry = await sendText(remoteJid, reentry);
+              if (isSendConfirmed(_okReentry)) {
+                await supabase.from("conversations").insert({
+                  customer_id: customer.id, message_direction: "outbound",
+                  message_text: reentry, message_type: "text", conversation_step: step,
+                });
+              }
             } catch (e) { console.warn("[off-topic] reentry falhou:", (e as any)?.message); }
           }
           return { reply: "", updates: { ...updates, __inline_sent: true } as any };
@@ -4398,16 +4426,18 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         const DOC_FALLBACK = `Para continuar, me envia uma foto da *frente do seu documento* 📄\n\nPode ser RG ou CNH, o que estiver mais à mão.`;
         const FINAL_FALLBACK_TEXT = `✅ *Tudo pronto!*\n\nSeus dados foram preenchidos. Podemos concluir no portal iGreen?`;
         const sendFallback = async (text: string, stepStr: string) => {
-          await sendText(remoteJid, text);
+          const _ok = await sendText(remoteJid, text);
+          if (!isSendConfirmed(_ok)) return;
           await supabase.from("conversations").insert({
             customer_id: customer.id, message_direction: "outbound",
             message_text: text, message_type: "text", conversation_step: stepStr,
           });
         };
         const sendFinalizarButton = async () => {
-          await sendOptions(remoteJid, FINAL_FALLBACK_TEXT, [
+          const _ok = await sendOptions(remoteJid, FINAL_FALLBACK_TEXT, [
             { id: "btn_finalizar", title: "✅ Finalizar cadastro" },
           ]);
+          if (!isSendConfirmed(_ok)) return;
           await supabase.from("conversations").insert({
             customer_id: customer.id, message_direction: "outbound",
             message_text: FINAL_FALLBACK_TEXT, message_type: "text", conversation_step: "ask_finalizar",
@@ -4453,13 +4483,15 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
                   const finalText = (rawText || FINAL_FALLBACK_TEXT)
                     .replaceAll("{{nome}}", firstName)
                     .replaceAll("{{representante}}", nomeRepresentante || "");
-                  await sendOptions(remoteJid, finalText, [
+                  const _okFinalGate = await sendOptions(remoteJid, finalText, [
                     { id: "btn_finalizar", title: "✅ Finalizar" },
                   ]);
-                  await supabase.from("conversations").insert({
-                    customer_id: customer.id, message_direction: "outbound",
-                    message_text: finalText, message_type: "text", conversation_step: "ask_finalizar",
-                  });
+                  if (isSendConfirmed(_okFinalGate)) {
+                    await supabase.from("conversations").insert({
+                      customer_id: customer.id, message_direction: "outbound",
+                      message_text: finalText, message_type: "text", conversation_step: "ask_finalizar",
+                    });
+                  }
                 }
               } catch (e) {
                 console.warn(`[post-confirm-conta] envio gate finalizar falhou:`, (e as Error).message);
@@ -4492,12 +4524,14 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
           console.error(`[post-confirm-conta] ❌ DISPATCH FALHOU customer=${customer.id} err=${msg}`, dispatchErr);
           try {
             const fallbackTxt = "✅ Recebido! Estou preparando os próximos passos do seu cadastro. Aguarde um instante 🙏";
-            await sendText(remoteJid, fallbackTxt);
-            await supabase.from("conversations").insert({
-              customer_id: customer.id, message_direction: "outbound",
-              message_text: fallbackTxt, message_type: "text",
-              conversation_step: "post_confirm_dispatch_fallback",
-            });
+            const _okDispFallback = await sendText(remoteJid, fallbackTxt);
+            if (isSendConfirmed(_okDispFallback)) {
+              await supabase.from("conversations").insert({
+                customer_id: customer.id, message_direction: "outbound",
+                message_text: fallbackTxt, message_type: "text",
+                conversation_step: "post_confirm_dispatch_fallback",
+              });
+            }
           } catch (_) { /* best-effort */ }
           try {
             await supabase.from("customers")
@@ -4542,12 +4576,14 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         /(quero|vamos|bora).*(cadastr|seguir|finaliz|economiz)/i.test(messageText || "");
       if (segueAgora) {
         const ctaMsg = `Perfeito! Pra eu calcular sua economia, me envia uma *foto ou PDF da sua conta de luz* 📸`;
-        await sendText(remoteJid, ctaMsg);
-        await supabase.from("conversations").insert({
-          customer_id: customer.id, message_direction: "outbound",
-          message_text: ctaMsg, message_type: "text",
-          conversation_step: "aguardando_conta",
-        });
+        const _okCtaClub = await sendText(remoteJid, ctaMsg);
+        if (isSendConfirmed(_okCtaClub)) {
+          await supabase.from("conversations").insert({
+            customer_id: customer.id, message_direction: "outbound",
+            message_text: ctaMsg, message_type: "text",
+            conversation_step: "aguardando_conta",
+          });
+        }
         updates.conversation_step = "aguardando_conta";
         (updates as any).__inline_sent = true;
         reply = "";

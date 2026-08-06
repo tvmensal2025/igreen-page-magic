@@ -32,7 +32,7 @@ import { notifyNewLead, notifyPartnerNewLead, notifySuperAdminUnmatchedLead, not
 import { mirrorCustomerToCaptation } from "../_shared/captation/mirror-customer.ts";
 import { syncCustomerStage } from "../_shared/conversion/crm-sync.ts";
 import { isCustomerPausedByHuman, isConsultantAIDisabled, wrapSenderWithLivePauseGuard } from "../_shared/bot/paused.ts";
-import { commitOutboundTurn } from "../_shared/bot/outbound-commit.ts";
+import { commitOutboundTurn, isSendConfirmed } from "../_shared/bot/outbound-commit.ts";
 import { handoffResumeAtIso } from "../_shared/bot/handoff-resume.ts";
 import { evaluateLowBillReentry } from "../_shared/bot/low-bill-reentry.ts";
 import { isBotGloballyEnabled } from "../_shared/bot/global-flag.ts";
@@ -995,24 +995,29 @@ Deno.serve(async (req) => {
                 );
                 const ask = copy.ask;
                 const btns = copy.buttons;
+                let _okAsk: unknown;
                 if (typeof realSender.sendButtons === "function") {
-                  await realSender.sendButtons(remoteJid, ask, btns);
+                  _okAsk = await realSender.sendButtons(remoteJid, ask, btns);
                 } else {
-                  await realSender.sendText(remoteJid, `${ask}\n\nResponda *SIM* ou *NÃO*.`);
+                  _okAsk = await realSender.sendText(remoteJid, `${ask}\n\nResponda *SIM* ou *NÃO*.`);
                 }
-                await supabase.from("conversations").insert({
-                  customer_id: otpCustomer.id, message_direction: "outbound",
-                  message_text: ask, message_type: "text",
-                  conversation_step: "otp_confirmar",
-                });
+                if (isSendConfirmed(_okAsk)) {
+                  await supabase.from("conversations").insert({
+                    customer_id: otpCustomer.id, message_direction: "outbound",
+                    message_text: ask, message_type: "text",
+                    conversation_step: "otp_confirmar",
+                  });
+                }
               } else {
                 const reply = "✅ Código recebido! Estou finalizando seu cadastro, em alguns segundos eu te confirmo aqui. 💚";
-                await realSender.sendText(remoteJid, reply);
-                await supabase.from("conversations").insert({
-                  customer_id: otpCustomer.id, message_direction: "outbound",
-                  message_text: reply, message_type: "text",
-                  conversation_step: "otp_received",
-                });
+                const _okOtp = await realSender.sendText(remoteJid, reply);
+                if (isSendConfirmed(_okOtp)) {
+                  await supabase.from("conversations").insert({
+                    customer_id: otpCustomer.id, message_direction: "outbound",
+                    message_text: reply, message_type: "text",
+                    conversation_step: "otp_received",
+                  });
+                }
               }
             } catch (_) {}
           }
@@ -2482,12 +2487,15 @@ Deno.serve(async (req) => {
               conversation_step: customer.conversation_step,
             });
             const reply = "✅ Dados confirmados.";
-            try { await sender.sendText(remoteJid, reply); } catch (_e) { /* ignore */ }
-            await supabase.from("conversations").insert({
-              customer_id: customer.id, message_direction: "outbound",
-              message_text: reply, message_type: "text",
-              conversation_step: customer.conversation_step,
-            });
+            let _okConfirm = false;
+            try { _okConfirm = isSendConfirmed(await sender.sendText(remoteJid, reply)); } catch (_e) { /* ignore */ }
+            if (_okConfirm) {
+              await supabase.from("conversations").insert({
+                customer_id: customer.id, message_direction: "outbound",
+                message_text: reply, message_type: "text",
+                conversation_step: customer.conversation_step,
+              });
+            }
             console.log(`[capture-confirm] customer=${customer.id} confirmou: bill=${awaitingBill || confirmingBill} doc=${awaitingDoc || confirmingDoc} manual_stop=true`);
             return new Response(JSON.stringify({ ok: true, msg: "capture_confirmed_manual_stop", bill: awaitingBill || confirmingBill, doc: awaitingDoc || confirmingDoc }), {
               headers: { ...corsHeaders, "Content-Type": "application/json" },
