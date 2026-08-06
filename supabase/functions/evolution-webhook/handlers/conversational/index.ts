@@ -530,8 +530,6 @@ async function sendStepMedia(
       } catch (_) { /* cosmético */ }
 
       let safe: Awaited<ReturnType<typeof pickSafePersonalizedWaAudio>>;
-      const _perfPick0 = Date.now();
-      let _perfSafe: { cached?: boolean; mode?: string; ok?: boolean } | null = null;
       try {
         safe = await pickSafePersonalizedWaAudio(ctx.supabase, {
           consultantId: consultantId || mediaOwnerId,
@@ -542,16 +540,8 @@ async function sendStepMedia(
           // Nome digitado agora: gera Olá+corpo em paralelo; 90s evita skip no 1º nome.
           timeoutMs: 90_000,
         });
-        _perfSafe = safe as any;
       } finally {
         clearInterval(presenceKeepAlive);
-        // Medição (2026-08-06): esta é a 3ª resolução do mesmo áudio no turno
-        // (probe → warm → aqui). Se vier cached=true e ainda custar segundos, o
-        // gargalo é a varredura de candidatos no cache, não a geração de voz.
-        console.log(
-          `[perf-audio] etapa=resolve_envio slot=${slotKey} resolve_ms=${Date.now() - _perfPick0}` +
-            ` cached=${_perfSafe?.cached} mode=${_perfSafe?.mode} ok=${_perfSafe?.ok}`,
-        );
       }
 
       // Só stitch Sofia (nome+corpo) ou corpo fixo sem nome — nunca prévia Maria/Rodrigo.
@@ -1645,29 +1635,22 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       try {
         await ctx.sender.sendPresence(ctx.remoteJid, "recording", 12);
       } catch (_) { /* cosmético */ }
-      const _perfT0 = Date.now();
-      let _perfImportMs = 0;
-      let _perfProbeMs = 0;
       try {
         const { probePersonalizedWaAudioCache, warmPersonalizedWaAudio } = await import(
           "../../../_shared/wa-audio-stitch.ts"
         );
-        _perfImportMs = Date.now() - _perfT0;
-        const _perfProbe0 = Date.now();
         const cached = await probePersonalizedWaAudioCache(ctx.supabase, {
           consultantId,
           slotKey: "a2_audio_activate_name",
           customerName: captureUpdates.name,
           nameSource: captureUpdates.name_source || "self_introduced",
         });
-        _perfProbeMs = Date.now() - _perfProbe0;
         const presenceKeepAlive = !cached
           ? setInterval(() => {
             ctx.sender.sendPresence(ctx.remoteJid, "recording", 10).catch(() => {});
           }, 8_000)
           : null;
         try {
-          const _perfWarm0 = Date.now();
           const warmed = await warmPersonalizedWaAudio(ctx.supabase, {
             consultantId,
             slotKey: "a2_audio_activate_name",
@@ -1676,14 +1659,6 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           });
           console.log(
             `[wa-stitch] warm on name="${captureUpdates.name}" a2_ok=${warmed.ok} a2_cached=${warmed.cached} intros+stitch`,
-          );
-          // Medição (2026-08-06): a2 responde em 17,5s de mediana contra 5,8s do
-          // a1, que não tem áudio com nome. Marca cada etapa para saber se o custo
-          // é geração de voz (probe_cache=false) ou consulta repetida ao cache.
-          console.log(
-            `[perf-audio] etapa=warm_a2 import_ms=${_perfImportMs} probe_ms=${_perfProbeMs}` +
-              ` warm_ms=${Date.now() - _perfWarm0} total_ms=${Date.now() - _perfT0}` +
-              ` probe_cache=${cached} warm_cached=${warmed.cached} ok=${warmed.ok}`,
           );
         } finally {
           if (presenceKeepAlive) clearInterval(presenceKeepAlive);
