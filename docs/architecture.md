@@ -248,6 +248,81 @@ Duas proteções, em camadas:
 
 Regressão: `src/test/valor-antes-da-simulacao.test.ts`.
 
+## FAQ e atalhos: o fluxo público A é a fonte única
+
+O catálogo canônico vive em dois lugares que precisam contar a mesma história: a
+UI do superadmin lê `src/lib/objectionShortcuts.ts` e o bot lê `bot_flow_qa` do
+fluxo público `Sofia — Ativação Multicanal` (variant `A`). Cada consultor tem o
+próprio fluxo, então antes o conteúdo divergia — havia fluxo com 0, 24, 33 e 40
+cards, e o intent "Como funciona" não existia em nenhum.
+
+`sync_qa_from_master_flow(_flow_id)` espelha o master num fluxo alvo: cria o que
+falta, atualiza texto e gatilhos do que existe e apaga os intents listados em
+`DEPRECATED_QA_INTENTS`. `sync_qa_all_flows_from_master()` aplica em todos os
+fluxos ativos, e o trigger `auto_seed_faq_on_flow_create` passou a usar o master
+ao criar fluxo novo, com os seed packs antigos só como fallback. Migration:
+`20260806182000_qa_master_sync_all_flows.sql`.
+
+Estado esperado depois do backfill: 36 cards em cada fluxo ativo, sem card nem
+gatilho repetido. Gatilhos de uma palavra só foram removidos — casavam com
+qualquer frase e roubavam a vez do fluxo determinístico.
+
+## Recondução depois de uma dúvida
+
+Responder a dúvida sem dizer o que o passo espera deixa o lead parado. O
+fechamento contextual mora em `_shared/qa-step-close.ts` e vale para os dois
+canais.
+
+`withQaStepClose` recebe o **`step_key`**, não o UUID do passo. O conversacional
+passava `conversation_step` cru (`flow:<uuid>`), o mapa de fechamento nunca
+casava e o lead recebia a explicação sem recondução. O `resolveFaqReturnStep`
+também passou a rodar **antes** de montar o texto: `a3b` não tem botões e o
+fechamento tem que falar do `a3`, o passo onde o lead realmente fica.
+
+`stripSoftFlowClose` (em `_shared/format-reply.ts`) tira o "Se tiver qualquer
+outra dúvida, é só me chamar" para o fechamento do passo ocupar o lugar — ele é
+mais útil. Pergunta de verdade no fim do texto é preservada, e textos de handoff
+("vou chamar alguém do time") não recebem fechamento.
+
+Três guardas evitam mandar a mesma coisa duas vezes:
+
+1. Quando o FAQ tem áudio, o texto não é enviado (regra de não repetir o áudio
+   por escrito). Só nesse caso o fechamento sai como mensagem própria — a
+   condição exige `audioEmitted`, que implica texto suprimido.
+2. `reemitStepButtons` manda apenas "Quando quiser, escolha uma opção:" com os
+   botões; nunca repete o `message_text` do passo. Devolve `false` em passo sem
+   botão (`a2` pede o valor por texto), e aí o fechamento cobre o CTA.
+3. O retorno marca `__inline_sent`, então `_finalize` não acrescenta o reentry
+   automático da pergunta do passo.
+
+A resposta do orquestrador de IA passa pelo mesmo fechamento, com `skip` quando
+há handoff. Regressão: `_shared/qa-step-close_test.ts`.
+
+## Lead que volta dias depois: cadência B/C → Grupo A
+
+Todo lead entra no Grupo A (`a1` nome → `a2` valor → `a3` economia → `a5b` →
+`a6` foto → cadastro). Se para de responder, a cadência assume: **A** (nudge,
+sem cota), **B** (reengajamento, `cap_b`) e **C** (recall, `cap_c`). Quando ele
+responde a B ou C, `isCadenceReturnContext` devolve ao Grupo A — não existe
+fluxo paralelo — e a cadência pausa 72h por `lead_responded`.
+
+O retorno não pode re-perguntar o que já se sabe. `resolveLandingStep` pula todo
+passo cujos campos já estão preenchidos (`name` de fonte confiável,
+`electricity_bill_value`, `cpf`, `phone_whatsapp`), limitado a 5 saltos com
+`visited` set. `name_source` de `cadence`/`whatsapp_profile` **não** conta como
+confiável: é push-name do Zap e viraria "Oi NomeErrado".
+
+Valor informado no próprio turno do retorno é gravado antes do motor rodar
+(`cadence_typed_bill`), então o `a2` é pulado e o lead cai direto na simulação.
+Faixa de botão (200/500/800) nunca sobrescreve valor preciso já salvo —
+`mergeBillValue`. Já quando o lead volta **sem** falar valor, o valor antigo é
+descartado de propósito e o `a2` reconfirma: semanas depois a conta mudou.
+
+Evidência em produção: lead de 12/07 esfriou, recebeu `COLD_2` e em 05/08
+respondeu só "150,00". O valor foi gravado, o `a2` pulado e o `a3` emitido com
+*"Com base no valor de R$ 150,00"*. No mesmo caminho em 04/08, antes do salto de
+passo, o bot pedia o valor de novo depois de o lead já ter respondido.
+
 ## Conversa E2E do Grupo A (sem envio real)
 
 Duas formas de rodar a mesma conversa simulada; ambas usam o roteiro único em

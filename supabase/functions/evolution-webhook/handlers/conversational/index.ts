@@ -41,7 +41,7 @@ import {
 } from "../../../_shared/bot/flow-activate-routing.ts";
 import { nextSeparatedCadastroStep, isSofiaPortalOtpStep, sofiaPortalContaunicaPrefill } from "../../../_shared/bot/cadastro-fixes.ts";
 import { formatFaqReply } from "../../../_shared/format-reply.ts";
-import { withQaStepClose } from "../../../_shared/qa-step-close.ts";
+import { buildQaStepClose, withQaStepClose } from "../../../_shared/qa-step-close.ts";
 import { evaluateLowBillCutoff, LOW_BILL_MIN_VALUE } from "../../../_shared/bot/low-bill-reentry.ts";
 import { isSendConfirmed } from "../../../_shared/bot/outbound-commit.ts";
 import { reemitStepButtons } from "../../../_shared/bot/reemit-buttons.ts";
@@ -1738,13 +1738,28 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     : await matchQA(ctx.supabase, flowId, consultantId, ctx.messageText || "");
   if (qaHit) {
     console.log(`[conversational] QA hit at step="${stepKey}"`);
+
+    // a3b sem botões → volta ao a3 antes de montar o texto, pra o fechamento
+    // falar do passo em que o lead realmente fica (fix vazio 11971254913).
+    const qaReturnStep = resolveFaqReturnStep(currentStep, dbSteps);
+    if (qaReturnStep.id !== currentStep.id) {
+      console.log(`[conversational/evo] FAQ return ${currentStep.step_key} → ${qaReturnStep.step_key}`);
+      currentStep = qaReturnStep;
+      stepKey = qaReturnStep.id;
+    }
+
+    // Fechamento por passo exige `step_key` — com o UUID o mapa nunca casava e
+    // o lead recebia o texto genérico em vez do que o passo pede.
     const qaText = formatFaqReply(withQaStepClose(renderTemplate(qaHit.text || "", {
       nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source,
       representante: ctx.nomeRepresentante,
       valor_conta: (ctx.customer as any).electricity_bill_value,
       telefone: ctx.customer.phone_whatsapp,
       cpf: (ctx.customer as any).cpf,
-    }), stepKey, { leadName: ctx.customer.name }));
+    }), String(currentStep.step_key || stepKey), {
+      leadName: ctx.customer.name,
+      stepQuestion: currentStep.message_text,
+    }));
     // 🔁 Honra `flow_step_media_order` para o slot virtual __qa__. Se o
     // consultor configurou ordem (ex.: text→audio), respeita; caso contrário,
     // mantém o legado (mídia primeiro, texto depois).
@@ -1870,18 +1885,11 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       }
     }
 
-    // a3b sem botões → volta ao a3 e reemite CTAs (fix vazio 11971254913).
-    const returnStep = resolveFaqReturnStep(currentStep, dbSteps);
-    if (returnStep.id !== currentStep.id) {
-      console.log(`[conversational/evo] FAQ return ${currentStep.step_key} → ${returnStep.step_key}`);
-      currentStep = returnStep;
-      stepKey = returnStep.id;
-    }
-
     // Reapresenta opções do passo (Evolution=lista numerada via sendButtons).
+    let qaReemitted = false;
     if (anyEmitted) {
       try {
-        await reemitStepButtons({
+        qaReemitted = await reemitStepButtons({
           supabase: ctx.supabase,
           customerId: ctx.customer.id,
           consultantId: consultantId || ctx.customer.consultant_id,
@@ -1896,6 +1904,30 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         });
       } catch (e) {
         console.warn("[conversational/evo] reemit pós-QA falhou:", (e as Error)?.message || e);
+      }
+    }
+
+    // Passo sem botão (a2 pede o valor por texto) + resposta só em áudio: o
+    // reemit não tem o que mandar, então o fechamento vai como texto curto.
+    if (anyEmitted && !qaReemitted && audioEmitted) {
+      const close = buildQaStepClose(String(currentStep.step_key || stepKey), {
+        leadName: ctx.customer.name,
+        stepQuestion: currentStep.message_text,
+      }).trim();
+      if (close) {
+        try {
+          if (isSendConfirmed(await ctx.sender.sendText(ctx.remoteJid, close))) {
+            await ctx.supabase.from("conversations").insert({
+              customer_id: ctx.customer.id,
+              message_direction: "outbound",
+              message_text: close,
+              message_type: "text",
+              conversation_step: stepKey,
+            });
+          }
+        } catch (e) {
+          console.warn("[conversational/evo] close pós-áudio falhou:", (e as Error)?.message || e);
+        }
       }
     }
 
@@ -2183,13 +2215,31 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
             await notifyHandoff(ctx.supabase, ctx.customer, `Dúvida exigiu humano (passo ${stepKey})`).catch(() => {});
           } catch (_) { /* best-effort */ }
         }
-        const renderedFaq = renderTemplate(answerText, {
-          nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source,
-          representante: ctx.nomeRepresentante,
-          valor_conta: (ctx.customer as any).electricity_bill_value,
-          telefone: ctx.customer.phone_whatsapp,
-          cpf: (ctx.customer as any).cpf,
-        });
+        // a3b sem botões → volta ao a3 (mesmo mapa do bot-flow / 11971254913).
+        const orchReturnStep = resolveFaqReturnStep(currentStep, dbSteps);
+        if (orchReturnStep.id !== currentStep.id) {
+          console.log(`[conversational-orch/evo] return ${currentStep.step_key} → ${orchReturnStep.step_key}`);
+          currentStep = orchReturnStep;
+          stepKey = orchReturnStep.id;
+        }
+
+        // Mesma recondução do FAQ e do bot-flow: a IA esclarece e o sistema
+        // reapresenta o que o passo pede. Em handoff, não reconduz.
+        const renderedFaq = withQaStepClose(
+          renderTemplate(answerText, {
+            nome: ctx.customer.name, nome_source: (ctx.customer as any).name_source,
+            representante: ctx.nomeRepresentante,
+            valor_conta: (ctx.customer as any).electricity_bill_value,
+            telefone: ctx.customer.phone_whatsapp,
+            cpf: (ctx.customer as any).cpf,
+          }),
+          String(currentStep.step_key || stepKey),
+          {
+            leadName: ctx.customer.name,
+            stepQuestion: currentStep.message_text,
+            skip: orch.shouldHandoff,
+          },
+        );
         try {
           if (!isSendConfirmed(await ctx.sender.sendText(ctx.remoteJid, renderedFaq))) {
             throw new Error("send_refused_by_channel");
@@ -2205,12 +2255,6 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           }
         } catch (e) {
           console.warn("[conversational-orch/evo] sendText falhou:", (e as Error)?.message || e);
-        }
-        const returnStep = resolveFaqReturnStep(currentStep, dbSteps);
-        if (returnStep.id !== currentStep.id) {
-          console.log(`[conversational-orch/evo] return ${currentStep.step_key} → ${returnStep.step_key}`);
-          currentStep = returnStep;
-          stepKey = returnStep.id;
         }
         if (!orch.shouldHandoff) {
           try {

@@ -180,6 +180,21 @@ export const SOFT_FLOW_CLOSE =
   "Se tiver qualquer outra dúvida, é só me chamar.";
 
 /**
+ * Remove o fechamento neutro do fim do texto. O fechamento do passo
+ * (`qa-step-close.ts`) é mais útil que "é só me chamar" e precisa poder
+ * substituí-lo — sem isso o lead recebia a explicação e perdia o que o
+ * passo pedia.
+ */
+export function stripSoftFlowClose(text: string): string {
+  return String(text || "")
+    .replace(
+      /(?:\n\s*)?(?:Se tiver |Se ficar |Se ficou |Ficando |)?(?:qualquer outra d[uú]vida|alguma d[uú]vida)[^\n]*$/iu,
+      "",
+    )
+    .trim();
+}
+
+/**
  * True se o texto já fecha com pergunta / ponte de retorno (não precisa anexar).
  */
 export function hasSoftClose(text: string): boolean {

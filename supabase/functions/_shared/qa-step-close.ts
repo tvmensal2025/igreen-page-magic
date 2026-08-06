@@ -3,12 +3,17 @@
  * do funil sem pedir link, endereço ou mídia na explicação.
  */
 
-import { hasSoftClose } from "./format-reply.ts";
+import { stripSoftFlowClose } from "./format-reply.ts";
 
 export interface QaStepCloseOpts {
   leadName?: string | null;
   /** Não anexa fechamento (ex.: handoff humano já tratado). */
   skip?: boolean;
+  /**
+   * Pergunta do próprio passo (`message_text` do passo do construtor). Usada
+   * quando o passo não está no mapa — passo custom do consultor.
+   */
+  stepQuestion?: string | null;
 }
 
 /** Remove fechamento genérico legado do texto cadastrado no banco. */
@@ -98,7 +103,23 @@ export function buildQaStepClose(stepKey: string, opts: QaStepCloseOpts = {}): s
     return `${v}continue por aqui que eu te guio no cadastro. 😊🌱`;
   }
 
+  // Passo custom do construtor: reconduz com a própria pergunta do passo.
+  const tail = extractStepQuestion(opts.stepQuestion);
+  if (tail) return `📋 Voltando: ${tail}`;
+
   return `${v}se ficou claro, é só me dizer *pode seguir* que continuamos seu cadastro. 😊⚡🌱`;
+}
+
+/** Última pergunta (ou frase) do texto do passo — mesma regra do bot-flow. */
+function extractStepQuestion(stepQuestion?: string | null): string {
+  const cleaned = String(stepQuestion || "")
+    .replace(/\{\{[^}]+\}\}/g, "")
+    .trim();
+  if (!cleaned) return "";
+  const questions = cleaned.match(/[^.!?\n]*\?+/g);
+  if (questions?.length) return questions[questions.length - 1].trim();
+  const sentences = cleaned.split(/(?<=[.!?])\s+|\n+/).filter(Boolean);
+  return (sentences[sentences.length - 1] || "").trim().slice(0, 180);
 }
 
 /** Anexa fechamento por etapa ao corpo da resposta de atalho. */
@@ -107,13 +128,17 @@ export function withQaStepClose(
   stepKey: string,
   opts: QaStepCloseOpts = {},
 ): string {
-  const base = stripShortcutBoilerplate(text);
+  // "Se tiver qualquer outra dúvida" cede lugar ao fechamento do passo.
+  const base = stripSoftFlowClose(stripShortcutBoilerplate(text));
   if (!base) return base;
   // Handoff / textos que já trazem retorno ao fluxo.
   if (/pode seguir|em instantes te respondem|vou chamar alguém do \*time\*/i.test(base)) {
     return base;
   }
-  if (hasSoftClose(base)) return base;
+  // Só respeita pergunta de verdade no fim — "quando quiser" no meio do texto
+  // não é recondução e antes bloqueava o fechamento do passo.
+  const lastLine = base.split(/\n+/).pop()?.trim() || "";
+  if (/\?\s*$/.test(lastLine)) return base;
 
   const close = buildQaStepClose(stepKey, opts).trim();
   if (!close) return base;

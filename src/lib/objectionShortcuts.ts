@@ -24,6 +24,7 @@ export type ObjectionShortcut = {
 };
 
 export type ObjectionCategory =
+  | "Geral"
   | "Confiança"
   | "Preço"
   | "Cobrança"
@@ -33,6 +34,7 @@ export type ObjectionCategory =
   | "Elegibilidade";
 
 export const OBJECTION_CATEGORIES: ObjectionCategory[] = [
+  "Geral",
   "Confiança",
   "Preço",
   "Cobrança",
@@ -43,6 +45,7 @@ export const OBJECTION_CATEGORIES: ObjectionCategory[] = [
 ];
 
 export const CATEGORY_EMOJI: Record<ObjectionCategory, string> = {
+  Geral: "💡",
   Confiança: "🛡️",
   Preço: "💰",
   Cobrança: "🧾",
@@ -113,6 +116,71 @@ export function getMediaSlots(s: ObjectionShortcut): QaMediaSlotKind[] {
 }
 
 export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
+  // ── Geral ──────────────────────────────────────────────────────────────
+  // Dúvidas de entendimento no meio do funil. Sem estes cards a pergunta
+  // caía no orquestrador e o lead perdia o passo em que estava.
+  {
+    category: "Geral",
+    name: "Como funciona",
+    triggers: [
+      "como funciona",
+      "como que funciona",
+      "como isso funciona",
+      "como funciona isso",
+      "como funciona essa energia",
+      "me explica como funciona",
+      "explica como funciona",
+      "me explica melhor",
+      "me explica direito",
+      "não entendi",
+      "nao entendi",
+      "não entendi nada",
+      "como assim",
+      "o que é isso",
+      "do que se trata",
+    ],
+    text: qa(
+      "Funciona simples, {{nome}} 😊\n\nVocê continua recebendo energia pela *mesma* distribuidora da sua cidade. A *iGreen* injeta *energia limpa* na rede e você passa a pagar uma fatura *com desconto* no lugar de parte da conta atual. ⚡\n\n*Sem obra*, *sem placa* no telhado, *sem taxa de adesão* e *sem fidelidade* — só muda quem fatura a energia. 🌱",
+    ),
+  },
+  {
+    category: "Geral",
+    name: "O que preciso enviar",
+    triggers: [
+      "o que preciso",
+      "o que preciso fazer",
+      "o que eu preciso enviar",
+      "o que tenho que mandar",
+      "quais documentos",
+      "quais documentos precisa",
+      "que documentos preciso",
+      "quais dados precisa",
+      "o que precisa de mim",
+      "o que você precisa",
+    ],
+    text: qa(
+      "Bem pouca coisa, {{nome}} 😊\n\nPra ativar eu preciso da *foto da conta de luz*, um *documento* (RG ou CNH) e seu *e-mail*. ⚡\n\nO cadastro é *100% digital*, feito aqui mesmo pelo WhatsApp, e leva poucos *minutos*. 🌱",
+    ),
+  },
+  {
+    category: "Geral",
+    name: "Vale a pena / compensa",
+    triggers: [
+      "vale a pena",
+      "vale mesmo a pena",
+      "compensa mesmo",
+      "será que compensa",
+      "sera que compensa",
+      "qual a vantagem",
+      "quais as vantagens",
+      "qual o benefício",
+      "é bom mesmo",
+    ],
+    text: qa(
+      "Vale, {{nome}} 😊\n\nVocê paga *menos* pela mesma energia, todo mês, *sem investir nada* e *sem obra* em casa. ⚡\n\nE como o *desconto* é percentual, se a tarifa subir sua economia acompanha. Se não gostar, cancela — *sem multa* e *sem fidelidade*. 🌱",
+    ),
+  },
+
   // ── Confiança ──────────────────────────────────────────────────────────
   // Um card só: mesma resposta FAQ_PADRAO.confianca + todos os gatilhos.
   {
@@ -602,6 +670,31 @@ export const OBJECTION_SHORTCUTS: ObjectionShortcut[] = [
       "Pode sim, {{nome}}! 😊\n\nComo *não tem obra* nem placa no telhado, funciona em casa alugada — desde que a *conta de luz* esteja no nome de quem vai assinar. 🌱⚡",
     ),
   },
+];
+
+/**
+ * Cards antigos cuja resposta foi fundida em um card canônico (mesmo texto,
+ * gatilhos reunidos). Ficam na lista para o catálogo removê-los de qualquer
+ * fluxo que ainda os tenha — senão o consultor vê dois cards concorrendo.
+ */
+export const DEPRECATED_QA_INTENTS: string[] = [
+  "Confiança · Não confio nessa empresa",
+  "Confiança · Nunca ouvi falar",
+  "Confiança · CNPJ / regulamentação",
+  "Confiança · Há quanto tempo existe",
+  "Preço · Pagar pra entrar",
+  "Preço · Desconto é falso",
+  "Preço · É caro / não tenho dinheiro",
+  "Preço · Vou pagar a mais no fim",
+  "Técnico · Funciona pra apartamento",
+  "Técnico · Mexer na fiação",
+  "Técnico · Placa solar / painel",
+  "Cancelamento · Como faço pra cancelar",
+  "Cancelamento · Posso cancelar quando quiser",
+  "Cancelamento · É difícil cancelar",
+  "Cadastro · Não vou mandar foto da conta",
+  "Cadastro · Por que precisam do CPF",
+  "Cadastro · E se vazarem meus dados",
 ];
 
 export function formatIntentName(s: ObjectionShortcut): string {

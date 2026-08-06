@@ -30,3 +30,33 @@ Deno.test("withQaStepClose anexa fechamento da etapa", () => {
   assertEquals(out.includes("escolhe uma opção acima"), true);
   assertEquals(out.includes("pode seguir que a gente continua seu cadastro"), false);
 });
+
+Deno.test("fechamento do passo substitui o soft close genérico", () => {
+  const out = withQaStepClose(
+    "Funciona sem obra em casa.\n\nSe tiver qualquer outra dúvida, é só me chamar.",
+    "a2_text_ask_bill_value",
+    { leadName: "Fernando" },
+  );
+  assertEquals(out.includes("qualquer outra dúvida"), false);
+  assertEquals(out.includes("me passa o *valor* da sua conta de luz"), true);
+});
+
+Deno.test("'quando quiser' no meio do texto não bloqueia o fechamento", () => {
+  const out = withQaStepClose(
+    "Você cancela quando quiser, sem multa.\nO desconto continua igual.",
+    "a8_ask_email",
+  );
+  assertEquals(out.includes("me passa seu *e-mail*"), true);
+});
+
+Deno.test("pergunta no fim é preservada sem fechamento extra", () => {
+  const out = withQaStepClose("Quer que eu te mande o contrato antes?", "a2_text_ask_bill_value");
+  assertEquals(out, "Quer que eu te mande o contrato antes?");
+});
+
+Deno.test("passo custom reconduz com a pergunta do próprio passo", () => {
+  const out = withQaStepClose("Somos regulamentados pela ANEEL.", "d_como_funciona", {
+    stepQuestion: "Me conta: qual o valor médio da sua conta de luz?",
+  });
+  assertEquals(out.includes("📋 Voltando: Me conta: qual o valor médio da sua conta de luz?"), true);
+});
