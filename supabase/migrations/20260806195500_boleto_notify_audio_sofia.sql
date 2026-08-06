@@ -1,0 +1,16 @@
+-- Roteiro de áudio Sofia (assistente virtual do consultor).
+UPDATE public.boleto_notify_config
+SET
+  audio_script = $audio$Oi! Tudo bem?
+
+Aqui é a Sofia, assistente virtual do seu consultor, e estou passando com uma notícia importante: o seu boleto de energia deste mês já está disponível!
+
+A iGreen realiza o envio oficial do boleto, mas o jeito mais seguro, rápido e completo de acompanhar tudo é pelo aplicativo iGreen Club.
+
+Acesse o app para conferir a sua fatura, a data de vencimento e aproveitar descontos especiais em farmácias, restaurantes, cinemas e milhares de estabelecimentos parceiros.
+
+E olha que notícia incrível: hoje, já somos mais de oitocentas mil pessoas economizando com a iGreen! É muita gente economizando junto!
+
+Se precisar de ajuda, é só chamar o seu consultor. Até mais!$audio$,
+  updated_at = now()
+WHERE id = 'global';

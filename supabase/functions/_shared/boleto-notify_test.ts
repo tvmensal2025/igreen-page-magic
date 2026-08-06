@@ -113,15 +113,21 @@ Deno.test("template injeta Play Store e App Store", () => {
   assertEquals(out.includes("apps.apple.com/br/app/igreen-club/id6444493340"), true);
 });
 
-Deno.test("buildBoletoAudioSpoken usa Olá Nome Tudo bem", () => {
+Deno.test("buildBoletoAudioSpoken personaliza Oi Nome no roteiro Sofia", () => {
   const out = buildBoletoAudioSpoken({
+    audioBody: "Oi! Tudo bem?\n\nAqui é a Sofia, assistente virtual do seu consultor.",
+    name: "Maria Silva",
+    nameSource: "manual",
+  });
+  assertEquals(out.startsWith("Oi, Maria! Tudo bem?"), true);
+  assertEquals(out.includes("Aqui é a Sofia"), true);
+  assertEquals(out.includes("PDF"), false);
+  const legado = buildBoletoAudioSpoken({
     audioBody: "seu boleto já está ativo.",
     name: "Maria Silva",
     nameSource: "manual",
   });
-  assertEquals(out.startsWith("Olá, Maria! Tudo bem?"), true);
-  assertEquals(out.includes("seu boleto já está ativo."), true);
-  assertEquals(out.includes("PDF"), false);
+  assertEquals(legado.startsWith("Oi, Maria! Tudo bem?"), true);
 });
 
 Deno.test("shouldRunBoletoNotifyNow hora", () => {

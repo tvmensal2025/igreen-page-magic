@@ -38,8 +38,6 @@ import {
 
 type Key = keyof Omit<AutomationSettings, "consultant_id">;
 
-const OLA_PREFIX_LABEL = "Olá, {Nome}! Tudo bem?";
-
 const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL || "https://zlzasfhcxcznaprrragl.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY =
@@ -77,11 +75,16 @@ function firstName(raw: string): string {
   return String(raw || "").trim().split(/\s+/)[0] || "";
 }
 
+/** Espelha buildBoletoAudioSpoken da edge. */
 function buildSpokenPreview(body: string, name: string): string {
+  let corpus = (body || DEFAULT_BOLETO_AUDIO_BODY).trim();
   const n = firstName(name);
-  const corpus = (body || DEFAULT_BOLETO_AUDIO_BODY).trim();
   if (!n) return corpus;
-  return `Olá, ${n}! Tudo bem? ${corpus}`;
+  if (/^(Oi|Olá)!\s*Tudo bem\?/i.test(corpus)) {
+    return corpus.replace(/^(Oi|Olá)!\s*Tudo bem\?/i, `Oi, ${n}! Tudo bem?`);
+  }
+  if (/^(Oi|Olá)\b/i.test(corpus)) return corpus;
+  return `Oi, ${n}! Tudo bem?\n\n${corpus}`;
 }
 
 function formatValor(total: unknown): string {
@@ -209,7 +212,7 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
       requestAnimationFrame(() => {
         void audioRef.current?.play().catch(() => undefined);
       });
-      toast({ title: "Áudio pronto", description: "Ouça abaixo. Abertura: Olá, Nome! Tudo bem?" });
+      toast({ title: "Áudio pronto", description: "Roteiro da Sofia — ouça abaixo." });
     } catch (e) {
       toast({
         title: "Erro ao gerar áudio",
@@ -488,7 +491,7 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
               <div>
                 <p className="text-xs font-semibold">Textos, áudio e teste do aviso de boleto</p>
                 <p className="text-[11px] text-muted-foreground">
-                  Abertura fixa: {OLA_PREFIX_LABEL} · corpo editável abaixo · sem falar “PDF”
+                  Sofia = assistente virtual da sua página (IA). Sem falar “PDF”.
                 </p>
               </div>
               <Button type="button" variant="outline" size="sm" onClick={() => setShowTexts((v) => !v)}>
@@ -530,17 +533,15 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                   </div>
 
                   <div className="rounded-md border bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground">
-                    <span className="font-medium text-foreground">Abertura do áudio (fixa):</span>{" "}
-                    {OLA_PREFIX_LABEL}
-                    <span className="block mt-0.5">
-                      O nome entra pela variável do cliente (igual cadência e ligação). Sem nome confiável, manda só o corpo.
-                    </span>
+                    <span className="font-medium text-foreground">Sofia</span> se apresenta como
+                    assistente virtual do consultor. Com nome confiável do cliente, a abertura vira
+                    “Oi, Nome! Tudo bem?”.
                   </div>
 
                   <div>
-                    <Label className="text-xs">Corpo do áudio (Sofia)</Label>
+                    <Label className="text-xs">Roteiro do áudio (Sofia)</Label>
                     <Textarea
-                      rows={4}
+                      rows={10}
                       value={cfg.audio_script || DEFAULT_BOLETO_AUDIO_BODY}
                       onChange={(e) => setDraft((d) => ({ ...d, audio_script: e.target.value }))}
                     />

@@ -43,9 +43,21 @@ export type BoletoNotifyConfig = {
   doc_caption: string;
 };
 
-/** Corpo do áudio (a abertura “Olá, Nome! Tudo bem?” é sempre prefixada no envio). */
-export const DEFAULT_BOLETO_AUDIO_BODY =
-  "seu boleto de energia do mês já está disponível. A iGreen cuida do envio oficial do boleto — e o lugar mais seguro e completo para você acompanhar tudo é o aplicativo iGreen Club. Lá você confere a fatura, o vencimento e ainda aproveita descontos em farmácias, restaurantes, cinemas e milhares de parceiros. Baixa o app, entra com o seu acesso e fica tranquilo. Qualquer dúvida, é só responder aqui.";
+/**
+ * Roteiro completo da Sofia (voz do consultor).
+ * Sofia = assistente virtual da página/IA do consultor — não é o nome do consultor.
+ */
+export const DEFAULT_BOLETO_AUDIO_BODY = `Oi! Tudo bem?
+
+Aqui é a Sofia, assistente virtual do seu consultor, e estou passando com uma notícia importante: o seu boleto de energia deste mês já está disponível!
+
+A iGreen realiza o envio oficial do boleto, mas o jeito mais seguro, rápido e completo de acompanhar tudo é pelo aplicativo iGreen Club.
+
+Acesse o app para conferir a sua fatura, a data de vencimento e aproveitar descontos especiais em farmácias, restaurantes, cinemas e milhares de estabelecimentos parceiros.
+
+E olha que notícia incrível: hoje, já somos mais de oitocentas mil pessoas economizando com a iGreen! É muita gente economizando junto!
+
+Se precisar de ajuda, é só chamar o seu consultor. Até mais!`;
 
 export const DEFAULT_BOLETO_NOTIFY_CONFIG: BoletoNotifyConfig = {
   id: "global",
@@ -73,18 +85,23 @@ Qualquer dúvida, responde aqui 💚`,
 };
 
 /**
- * Áudio falado = “Olá, Nome! Tudo bem?” (canônico cadência/ligação) + corpo.
- * Sem nome usável → só o corpo.
+ * Áudio falado = roteiro completo da Sofia.
+ * Com nome confiável, personaliza só a abertura: "Oi, Nome! Tudo bem?".
+ * Roteiro antigo (sem saudação) ainda recebe o prefixo.
  */
 export function buildBoletoAudioSpoken(opts: {
   audioBody: string;
   name?: string | null;
   nameSource?: string | null;
 }): string {
-  const body = String(opts.audioBody || DEFAULT_BOLETO_AUDIO_BODY).trim();
+  let body = String(opts.audioBody || DEFAULT_BOLETO_AUDIO_BODY).trim();
   const first = safeFirstNameForAddress(opts.name, opts.nameSource);
   if (!first) return body;
-  return `Olá, ${first}! Tudo bem? ${body}`;
+  if (/^(Oi|Olá)!\s*Tudo bem\?/i.test(body)) {
+    return body.replace(/^(Oi|Olá)!\s*Tudo bem\?/i, `Oi, ${first}! Tudo bem?`);
+  }
+  if (/^(Oi|Olá)\b/i.test(body)) return body;
+  return `Oi, ${first}! Tudo bem?\n\n${body}`;
 }
 
 /**

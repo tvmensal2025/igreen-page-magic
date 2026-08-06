@@ -29,9 +29,21 @@ export const IGREEN_CLUB_APP_STORE_URL =
 export const BOLETO_APP_ANDROID_BUTTON_ID = "boleto_app_android";
 export const BOLETO_APP_IOS_BUTTON_ID = "boleto_app_ios";
 
-/** Corpo do áudio (abertura “Olá, Nome! Tudo bem?” é prefixada no envio). */
-export const DEFAULT_BOLETO_AUDIO_BODY =
-  "seu boleto de energia do mês já está disponível. A iGreen cuida do envio oficial do boleto — e o lugar mais seguro e completo para você acompanhar tudo é o aplicativo iGreen Club. Lá você confere a fatura, o vencimento e ainda aproveita descontos em farmácias, restaurantes, cinemas e milhares de parceiros. Baixa o app, entra com o seu acesso e fica tranquilo. Qualquer dúvida, é só responder aqui.";
+/**
+ * Roteiro completo da Sofia (voz do consultor).
+ * Sofia = assistente virtual da página/IA — não é o nome do consultor.
+ */
+export const DEFAULT_BOLETO_AUDIO_BODY = `Oi! Tudo bem?
+
+Aqui é a Sofia, assistente virtual do seu consultor, e estou passando com uma notícia importante: o seu boleto de energia deste mês já está disponível!
+
+A iGreen realiza o envio oficial do boleto, mas o jeito mais seguro, rápido e completo de acompanhar tudo é pelo aplicativo iGreen Club.
+
+Acesse o app para conferir a sua fatura, a data de vencimento e aproveitar descontos especiais em farmácias, restaurantes, cinemas e milhares de estabelecimentos parceiros.
+
+E olha que notícia incrível: hoje, já somos mais de oitocentas mil pessoas economizando com a iGreen! É muita gente economizando junto!
+
+Se precisar de ajuda, é só chamar o seu consultor. Até mais!`;
 
 export const DEFAULT_BOLETO_NOTIFY_CONFIG: BoletoNotifyConfig = {
   id: "global",
