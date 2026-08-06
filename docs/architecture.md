@@ -104,6 +104,30 @@ preview de link, e deduplica leituras repetidas do mesmo alvo em 15 segundos.
 `get_partner_banner_portal` aplica a mesma janela ao histórico e devolve
 `outside_cycle`, explicando por que cada lead não está na pizza A/B/C.
 
+## Conversa E2E do Grupo A (sem envio real)
+
+Duas formas de rodar a mesma conversa simulada; ambas usam o roteiro único em
+`supabase/functions/bot-e2e-runner/scenario-script.ts`.
+
+- Edge `bot-e2e-runner` (precisa de deploy + JWT admin).
+- `scripts/e2e-grupo-a-local.ts` roda da máquina local contra o `whapi-webhook`
+  já publicado — `verify_jwt = false` permite a chamada com a apikey anon.
+
+Nada sai no WhatsApp: telefone na faixa `5500000…` faz `isTestPhone` trocar o
+sender real pelo `mockSender`. O lead sandbox e a linha de `bot_test_runs` são
+criados por SQL administrativo (RLS bloqueia o JWT do consultor) e passados em
+`E2E_RUN_ID` / `E2E_CUSTOMER_ID` / `E2E_PHONE`. Remova o lead ao fim da bateria.
+
+O roteiro traduz `flow:<uuid>` para `step_key` via `loadStepIndex` antes de
+decidir a resposta. Sem isso nenhum branch casa e o lead simulado responde o
+default para tudo — a suíte "roda" sem testar nada. O check *Roteiro cobriu os
+passos do fluxo* existe para essa defasagem falhar de forma explícita quando
+alguém renomear passos no construtor.
+
+Respostas de passo com botão usam o número do gatilho (`"1"`, `"2"`, `"3"`),
+que está em `trigger_phrases` junto do id — serve para Whapi (botão) e para
+Evolution (opção numérica).
+
 ## Validação e implantação
 
 - Front: `npm run typecheck` e `npx vitest run`.

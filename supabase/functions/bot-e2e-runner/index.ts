@@ -4,6 +4,17 @@
  */
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import {
+  buildWhapiBody,
+  cleanStep,
+  type CustomerSnapshot,
+  loadStepIndex,
+  nextReply,
+  PROGRESSED_STEPS,
+  type Reply,
+  type StepIndex,
+  TEST_IMAGE_BASE64,
+} from "./scenario-script.ts";
+import {
   runV3DirectScenario,
   V3_DIRECT_SCENARIOS,
   type V3DirectScenario,
@@ -16,13 +27,6 @@ const corsHeaders = {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-const TEST_IMAGE_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAIAAAAC64paAAAAHUlEQVR4nGP8//8/A7mAiWydo5pHNY9qHtVMFc0AnKADJXYG/XsAAAAASUVORK5CYII=";
-
-type Reply =
-  | { kind: "text"; text: string }
-  | { kind: "audio"; transcript: string }
-  | { kind: "image"; mime?: string }
-  | null;
 
 type Scenario =
   | "happy_path"
@@ -53,118 +57,6 @@ const RETRY_SCENARIOS = new Set<Scenario>([
   "ask_choice_retry_1x",
   "ask_choice_retry_exhausted",
 ]);
-
-type CustomerSnapshot = {
-  status?: string | null;
-  conversation_step?: string | null;
-  bot_paused?: boolean | null;
-  electricity_bill_value?: number | null;
-  document_type?: string | null;
-};
-
-function cleanStep(step: string | null | undefined): string {
-  return String(step || "welcome").replace(/^flow:/, "").toLowerCase();
-}
-
-function nextReply(
-  scenario: Scenario,
-  customer: CustomerSnapshot | null,
-  turn: number,
-  stepHits: Record<string, number>,
-): Reply {
-  const s = cleanStep(customer?.conversation_step);
-  const hits = stepHits[s] || 0;
-
-  if (scenario === "lead_some" && turn > 4) return null;
-
-  if (s === "welcome") return { kind: "text", text: "oi" };
-
-  if (s === "checkin_pos_video" || s === "menu_inicial" || s === "pos_video") {
-    if (scenario === "lead_indeciso" && hits === 0) return { kind: "text", text: "é seguro mesmo? tem alguma taxa escondida?" };
-    if (scenario === "valor_baixo") return { kind: "text", text: "minha conta vem uns 60 reais" };
-    if (scenario === "joia_validacao") return { kind: "text", text: "👍" };
-    return { kind: "text", text: "joia, quero economizar" };
-  }
-
-  if (s === "qualificacao") {
-    if (scenario === "valor_baixo") return { kind: "audio", transcript: "minha conta vem uns 60 reais" };
-    return { kind: "audio", transcript: "minha conta vem em torno de 350 reais" };
-  }
-
-  if (s === "valor_baixo") return null;
-
-  if (s === "aguardando_conta" || s === "cadastro") return { kind: "image", mime: "image/png" };
-
-  if (s === "confirmando_dados_conta") {
-    if (scenario === "recusa_conta" && hits === 0) return { kind: "text", text: "não" };
-    return { kind: "text", text: "sim" };
-  }
-
-  if (s === "pitch_conexao_club") return { kind: "text", text: "pode seguir" };
-
-  if (s === "duvidas_pos_club") {
-    if (scenario === "lead_indeciso" && hits === 0) return { kind: "text", text: "como cancelo se eu quiser?" };
-    return { kind: "text", text: scenario === "joia_validacao" ? "👍" : "pode seguir" };
-  }
-
-  if (s === "ask_tipo_documento" || s === "coleta_doc") {
-    return { kind: "text", text: scenario === "documento_cnh" ? "cnh" : "rg antigo" };
-  }
-
-  if (s === "aguardando_doc_frente" || s === "aguardando_doc_auto" || s === "ask_doc_frente_manual") {
-    return { kind: "image", mime: "image/png" };
-  }
-
-  if (s === "aguardando_doc_verso" || s === "ask_doc_verso_manual") return { kind: "image", mime: "image/png" };
-
-  if (s === "confirmando_dados_doc") {
-    if (scenario === "recusa_documento" && hits === 0) return { kind: "text", text: "não" };
-    return { kind: "text", text: "sim" };
-  }
-
-  if (s === "ask_phone_confirm") return { kind: "text", text: "2" };
-  if (s === "ask_phone") return { kind: "text", text: "11999998888" };
-  if (s === "ask_email") return { kind: "text", text: "joao.silva.teste@gmail.com" };
-  if (s === "ask_name" || s === "editing_conta_nome" || s === "editing_doc_nome") return { kind: "text", text: "Joao Silva Teste" };
-  if (s === "ask_cpf" || s === "editing_doc_cpf") return { kind: "text", text: "12345678909" };
-  if (s === "ask_rg" || s === "editing_doc_rg") return { kind: "text", text: "123456789" };
-  if (s === "ask_birth_date" || s === "editing_doc_nascimento") return { kind: "text", text: "15/05/1985" };
-  if (s === "ask_cep" || s === "editing_conta_cep") return { kind: "text", text: "01310100" };
-  if (s === "ask_number") return { kind: "text", text: "123" };
-  if (s === "ask_complement") return { kind: "text", text: "não" };
-  if (s === "ask_installation_number" || s === "editing_conta_instalacao") return { kind: "text", text: "9876543210" };
-  if (s === "ask_distribuidora" || s === "editing_conta_distribuidora") return { kind: "text", text: "CPFL" };
-  if (s === "ask_bill_value" || s === "editing_conta_valor") return { kind: "text", text: "350" };
-  if (s === "editing_conta_menu" || s === "editing_doc_menu") return { kind: "text", text: "0" };
-  if (s === "ask_finalizar") return { kind: "text", text: "finalizar" };
-  // Pós-finalização (stubs de sandbox): OTP exige 4-8 dígitos; facial exige confirmação.
-  if (s === "aguardando_otp" || s === "validando_otp") return { kind: "text", text: "123456" };
-  if (s === "aguardando_facial" || s === "aguardando_assinatura") return { kind: "text", text: "pronto" };
-  if (s === "portal_submitting" || s === "complete" || s === "cadastro_em_analise") return null;
-
-  return { kind: "text", text: "sim" };
-}
-
-function buildWhapiBody(phone: string, reply: Reply, idx: number): any {
-  if (!reply) return null;
-  const id = `test_${Date.now()}_${idx}_${Math.random().toString(36).slice(2)}`;
-  const chatId = `${phone}@s.whatsapp.net`;
-  const base = { id, chat_id: chatId, from: phone, from_me: false, timestamp: Math.floor(Date.now() / 1000) };
-  if (reply.kind === "text") {
-    return { event: { type: "messages" }, messages: [{ ...base, type: "text", text: { body: reply.text } }] };
-  }
-  if (reply.kind === "audio") {
-    return { event: { type: "messages" }, messages: [{ ...base, type: "voice", voice: { mime_type: "audio/ogg", transcript: reply.transcript, link: null, data: null } }] };
-  }
-  return {
-    event: { type: "messages" },
-    messages: [{
-      ...base,
-      type: "image",
-      image: { mime_type: reply.mime || "image/png", data: TEST_IMAGE_BASE64, link: `data:image/png;base64,${TEST_IMAGE_BASE64}` },
-    }],
-  };
-}
 
 function commercialStatus(status: string, checks: Array<{ passed: boolean }>): string {
   if (status === "completed") return checks.every((c) => c.passed) ? "Pronto para vender" : "Corrigir antes de vender";
@@ -830,6 +722,8 @@ Deno.serve(async (req) => {
       }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
+    const stepIndex = await loadStepIndex(supabase, consultantId);
+    const unknownSteps = new Set<string>();
     const turns: any[] = [];
     const stepHits: Record<string, number> = {};
     const visitedSteps = new Set<string>();
@@ -846,13 +740,13 @@ Deno.serve(async (req) => {
         .eq("id", customer.id)
         .maybeSingle();
       const stepBefore = cur?.conversation_step || null;
-      const stepKey = cleanStep(stepBefore);
+      const stepKey = cleanStep(stepBefore, stepIndex);
       visitedSteps.add(stepKey);
 
       if (stepKey === "complete" || stepKey === "portal_submitting" || stepKey === "aguardando_otp" || stepKey === "aguardando_facial" || stepKey === "cadastro_em_analise") { finalStatus = "completed"; stopReason = "conversion_step_reached"; break; }
       if (stepKey === "valor_baixo" || cur?.status === "rejected" || cur?.bot_paused === true) { finalStatus = scenario === "valor_baixo" ? "low_value" : "paused_or_rejected"; stopReason = "lead_disqualified_or_paused"; break; }
 
-      const reply = nextReply(scenario, cur, turn, stepHits);
+      const reply = nextReply(scenario, cur, turn, stepHits, { index: stepIndex, unknown: unknownSteps });
       if (!reply) { finalStatus = scenario === "lead_some" ? "lead_silent" : finalStatus; stopReason = scenario === "lead_some" ? "lead_stopped_replying" : "no_more_scripted_replies"; break; }
 
       stepHits[stepKey] = (stepHits[stepKey] || 0) + 1;
@@ -892,7 +786,7 @@ Deno.serve(async (req) => {
       const latency = Date.now() - startedAt;
       const { data: after } = await supabase.from("customers").select("conversation_step,status,bot_paused").eq("id", customer.id).maybeSingle();
       const stepAfter = after?.conversation_step || null;
-      const afterKey = cleanStep(stepAfter);
+      const afterKey = cleanStep(stepAfter, stepIndex);
       visitedSteps.add(afterKey);
 
       await supabase.from("bot_test_outbound").update({ conversation_step_after: stepAfter, latency_ms: latency })
@@ -909,7 +803,7 @@ Deno.serve(async (req) => {
       const mediaKinds = (recentBot || []).filter((o: any) => String(o.kind || "").startsWith("media:")).map((o: any) => `${o.kind}:${String(o.content || "").split("|")[0]}`);
       if (mediaKinds.length >= 2 && stepKey === "checkin_pos_video") repeatedMediaCount += mediaKinds.length;
 
-      if (afterKey === cleanStep(lastStep)) {
+      if (afterKey === cleanStep(lastStep, stepIndex)) {
         stuckCount++;
         if (stuckCount >= 4) { finalStatus = "stuck"; stopReason = `stuck_on_${afterKey}`; break; }
       } else {
@@ -946,7 +840,8 @@ Deno.serve(async (req) => {
     const checks: Array<{ name: string; passed: boolean; detail?: string }> = [
       { name: "Webhook respondeu sem erro", passed: fetchErrors.length === 0, detail: fetchErrors.length ? `${fetchErrors.length} erro(s)` : undefined },
       { name: "Sem placeholders não substituídos", passed: withPlaceholder.length === 0, detail: withPlaceholder.length ? `${withPlaceholder.length} mensagem(ns)` : undefined },
-      { name: "Saiu do check-in inicial", passed: visited.includes("qualificacao") || visited.includes("aguardando_conta") || finalStatus === "low_value", detail: `steps=${visited.join(" → ")}` },
+      { name: "Saiu do check-in inicial", passed: visited.some((s) => PROGRESSED_STEPS.has(s)) || finalStatus === "low_value", detail: `steps=${visited.join(" → ")}` },
+      { name: "Roteiro cobriu os passos do fluxo", passed: unknownSteps.size === 0, detail: unknownSteps.size ? `sem resposta roteirizada para: ${Array.from(unknownSteps).join(", ")}` : undefined },
       { name: "Não repetiu mídia em loop", passed: repeatedOpeningMedia <= 2 && repeatedMediaCount === 0, detail: `midias_repetidas=${repeatedOpeningMedia}` },
       { name: "Registrou conversa USER/BOT", passed: inboundMsgs.length > 0 && botMsgs.length > 0, detail: `${inboundMsgs.length} user / ${botMsgs.length} bot` },
     ];
@@ -954,12 +849,12 @@ Deno.serve(async (req) => {
     if (["happy_path", "joia_validacao", "documento_cnh", "recusa_conta", "recusa_documento", "lead_indeciso"].includes(scenario)) {
       checks.push({ name: "Chegou em estado de conversão", passed: finalStatus === "completed", detail: `status=${finalStatus}, step=${finalCustomer?.conversation_step}` });
       checks.push({ name: "Conta foi validada", passed: visited.includes("confirmando_dados_conta") || Number(finalCustomer?.electricity_bill_value || 0) >= 100, detail: `valor=${finalCustomer?.electricity_bill_value}` });
-      checks.push({ name: "Documento foi validado", passed: visited.includes("confirmando_dados_doc") || ["complete", "portal_submitting", "aguardando_otp", "aguardando_facial", "cadastro_em_analise"].includes(cleanStep(finalCustomer?.conversation_step)), detail: `doc=${finalCustomer?.document_type || "∅"}` });
+      checks.push({ name: "Documento foi validado", passed: visited.includes("confirmando_dados_doc") || ["complete", "portal_submitting", "aguardando_otp", "aguardando_facial", "cadastro_em_analise"].includes(cleanStep(finalCustomer?.conversation_step, stepIndex)), detail: `doc=${finalCustomer?.document_type || "∅"}` });
     }
     if (scenario === "valor_baixo") checks.push({ name: "Valor baixo não seguiu para venda", passed: finalStatus === "low_value", detail: `status=${finalCustomer?.status}, step=${finalCustomer?.conversation_step}` });
     if (scenario === "lead_some") checks.push({ name: "Lead silencioso detectado", passed: finalStatus === "lead_silent", detail: `status=${finalStatus}` });
-    if (scenario === "lead_indeciso") checks.push({ name: "Dúvida foi tratada sem travar", passed: visited.includes("qualificacao") && finalStatus === "completed", detail: `steps=${visited.join(" → ")}` });
-    if (scenario === "recusa_conta") checks.push({ name: "Recusa da conta recuperou o fluxo", passed: visited.filter((s) => s === "aguardando_conta").length >= 1 && finalStatus === "completed", detail: `steps=${visited.join(" → ")}` });
+    if (scenario === "lead_indeciso") checks.push({ name: "Dúvida foi tratada sem travar", passed: visited.some((s) => PROGRESSED_STEPS.has(s)) && finalStatus === "completed", detail: `steps=${visited.join(" → ")}` });
+    if (scenario === "recusa_conta") checks.push({ name: "Recusa da conta recuperou o fluxo", passed: visited.some((s) => s === "aguardando_conta" || s === "a6_ask_bill_photo" || s === "d_pedir_conta") && finalStatus === "completed", detail: `steps=${visited.join(" → ")}` });
     if (scenario === "documento_cnh") checks.push({ name: "CNH não exigiu verso", passed: finalCustomer?.document_type === "cnh" && !visited.includes("aguardando_doc_verso"), detail: `doc=${finalCustomer?.document_type}, steps=${visited.join(" → ")}` });
 
     const checksPassed = checks.filter((c) => c.passed).length;
