@@ -13,7 +13,13 @@ import { supabase } from "@/integrations/supabase/client";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Brain, RefreshCw, ShieldCheck, AlertTriangle } from "lucide-react";
+import {
+  AlertTriangle,
+  Brain,
+  PauseCircle,
+  RefreshCw,
+  ShieldCheck,
+} from "lucide-react";
 
 type DecisionRow = {
   campaign_id: string;
@@ -49,6 +55,9 @@ type Payload = {
     duplicatas_ignoradas: number;
     lacunas: number;
     libera_acao_financeira: boolean;
+    houve_entrega: boolean;
+    linhas_metrica: number;
+    linhas_esperadas: number;
   };
   politica: {
     targetCplCents: number;
@@ -154,10 +163,24 @@ export default function CampaignBrainDiagnostics(
                   : <AlertTriangle className="w-3 h-3 mr-1" />}
                 {data.qualidade_dados.descricao}
               </Badge>
+              {!data.qualidade_dados.houve_entrega && (
+                <Badge
+                  variant="outline"
+                  className="border-muted-foreground/40 text-muted-foreground"
+                >
+                  <PauseCircle className="w-3 h-3 mr-1" />
+                  sem entrega
+                </Badge>
+              )}
               <span className="text-[11px] text-muted-foreground">
                 Janela {data.janela.inicio} → {data.janela.fim}
               </span>
             </div>
+            <p className="text-[11px] text-muted-foreground">
+              {data.qualidade_dados.linhas_metrica} linha(s) de métrica para{" "}
+              {data.qualidade_dados.linhas_esperadas} esperada(s) ·{" "}
+              {data.qualidade_dados.lacunas} campanha(s) que a sincronização não leu
+            </p>
             <p className="text-[11px] text-muted-foreground">
               Alvo por conversa {brl(data.politica.targetCplCents)} · degrau padrão{" "}
               {data.politica.defaultStepPct}% (máx {data.politica.maxStepPct}%) · uma

@@ -270,6 +270,11 @@ Deno.serve(async (req) => {
         duplicatas_ignoradas: measured.dataQuality.duplicatesIgnored,
         lacunas: measured.dataQuality.gapsDetected,
         libera_acao_financeira: measured.dataQuality.allowsFinancialAction,
+        // Contadores crus: a completude ignora dia sem entrega, então estes
+        // são a única forma de investigar perda real de linhas.
+        houve_entrega: measured.dataQuality.hasDelivery,
+        linhas_metrica: measured.dataQuality.metricRowsFound,
+        linhas_esperadas: measured.dataQuality.expectedMetricRows,
       },
       politica: measured.policy,
       recomendacoes_registradas: registradas,

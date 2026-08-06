@@ -2,7 +2,11 @@
  * Backtest e modo sombra: o que precisa ser garantido é o que NÃO acontece.
  * Nenhuma chamada de rede (Meta) e, no backtest, nenhuma escrita no banco.
  */
-import { assert, assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
+import {
+  assert,
+  assertEquals,
+  assertNotEquals,
+} from "https://deno.land/std@0.224.0/assert/mod.ts";
 import { measureConsultantCampaigns } from "./brain-measure.ts";
 import { decideCampaign } from "./brain-decide.ts";
 import { recordRecommendation } from "./brain-decision-store.ts";
@@ -282,6 +286,197 @@ Deno.test("campanha ativa sem entrega: dado existe, decisão é manter", async (
   assertEquals(d.canExecute, false);
   // Sem gasto não existe desperdício: nada a pausar.
   assertEquals(d.blockers.length, 0);
+});
+
+/**
+ * Modo mais permissivo que a configuração consegue produzir: automático,
+ * kill switch desligado, autopilot ligado, toda ação autorizada a executar e
+ * waste guard automático. Se ainda assim nada escreve na Meta, o cenário está
+ * fechado por dado, não por configuração.
+ */
+const MODO_AUTOMATICO_TOTAL = {
+  brain_mode: "automatic",
+  automation_mode: "full",
+  kill_switch: false,
+  autopilot: true,
+  waste_guard_mode: "automatic",
+  action_authorizations: {
+    pause_waste: "execute",
+    reduce_budget: "execute",
+    increase_budget: "execute",
+    resume_campaign: "execute",
+    recommend_creative_review: "execute",
+  },
+};
+
+function semEntregaAdmin(writes: Write[]) {
+  return fakeAdmin(writes, {
+    consultant_ad_settings: { single: { brain_config: MODO_AUTOMATICO_TOTAL } },
+    facebook_metrics_daily: { rows: [] },
+    customers: { rows: [] },
+    facebook_campaigns: {
+      rows: [{
+        id: CAMPAIGN,
+        name: "Âncora parada",
+        consultant_id: CONSULTANT,
+        status: "active",
+        fb_campaign_id: "120200",
+        daily_budget_cents: 2300,
+        started_at: new Date(NOW - 11 * 86_400_000).toISOString(),
+        updated_at: new Date(NOW - 20 * 60_000).toISOString(),
+        brain_scale_enabled: false,
+        brain_scale_last_at: null,
+      }],
+    },
+  });
+}
+
+Deno.test("sem entrega em modo automático: nenhuma ação, só manter", async () => {
+  const writes: Write[] = [];
+  const measured = await measureConsultantCampaigns(semEntregaAdmin(writes), {
+    consultantId: CONSULTANT,
+    nowMs: NOW,
+    windowDays: 2,
+  });
+
+  const snapshot = measured.snapshots[0];
+  assertEquals(measured.dataQuality.state, "fresh");
+  assertEquals(measured.dataQuality.hasDelivery, false);
+  assertEquals(snapshot.meta.spendCents, 0);
+  assertEquals(snapshot.meta.conversations, 0);
+  assertEquals(snapshot.meta.cplCents, null);
+
+  const d = decideCampaign({
+    snapshot,
+    policy: measured.policy,
+    brainConfig: measured.brainConfig,
+    nowMs: NOW,
+    usedSnapshotVersions: [],
+  });
+
+  // O modo realmente está no máximo — o bloqueio não vem da configuração.
+  assertEquals(d.wasteGuardMode, "automatic");
+
+  for (
+    const proibida of [
+      "increase_budget",
+      "reduce_budget",
+      "pause_waste",
+      "resume_campaign",
+    ]
+  ) {
+    assertNotEquals(d.action as string, proibida);
+    assertNotEquals(d.actionKind as string | null, proibida);
+  }
+  assertEquals(d.action, "hold");
+  assertEquals(d.actionKind, null);
+  assertEquals(d.canExecute, false);
+  assertEquals(d.proposedBudgetCents, null);
+  assertEquals(d.stepPct, 0);
+  assertEquals(writes.length, 0);
+
+  // Motivo equivalente a `sem_entrega_na_janela`.
+  assertEquals(
+    measured.dataQuality.reasons.includes("sem_entrega_na_janela"),
+    true,
+  );
+  assert(/sem custo por conversa medido na janela/.test(d.reason));
+});
+
+Deno.test("sem entrega: nem com snapshot repetido a decisão vira executável", async () => {
+  const writes: Write[] = [];
+  const measured = await measureConsultantCampaigns(semEntregaAdmin(writes), {
+    consultantId: CONSULTANT,
+    nowMs: NOW,
+    windowDays: 2,
+  });
+  // Várias avaliações seguidas sobre a mesma campanha parada.
+  for (const offsetH of [0, 6, 24, 48]) {
+    const d = decideCampaign({
+      snapshot: measured.snapshots[0],
+      policy: measured.policy,
+      brainConfig: measured.brainConfig,
+      nowMs: NOW + offsetH * 3_600_000,
+      usedSnapshotVersions: [],
+    });
+    assertEquals(d.action, "hold");
+    assertEquals(d.canExecute, false);
+  }
+});
+
+Deno.test("retorno parcial não vira campanha vencedora em modo automático", async () => {
+  const writes: Write[] = [];
+  // Um único dia voltou da Meta, com custo por conversa ótimo (R$ 3 < alvo
+  // R$ 7,50). Amostra minúscula: exatamente o formato de falso positivo.
+  const admin = fakeAdmin(writes, {
+    consultant_ad_settings: { single: { brain_config: MODO_AUTOMATICO_TOTAL } },
+    customers: { rows: [] },
+    facebook_metrics_daily: {
+      rows: [{
+        campaign_id: CAMPAIGN,
+        date: "2026-08-05",
+        spend_cents: 300,
+        messaging_conversations_started: 1,
+        clicks: 4,
+        impressions: 400,
+        updated_at: new Date(NOW - 30 * 60_000).toISOString(),
+      }],
+    },
+    facebook_campaigns: {
+      rows: [{
+        id: CAMPAIGN,
+        name: "Âncora com um dia só",
+        consultant_id: CONSULTANT,
+        status: "active",
+        fb_campaign_id: "120200",
+        daily_budget_cents: 2300,
+        started_at: new Date(NOW - 11 * 86_400_000).toISOString(),
+        updated_at: new Date(NOW - 20 * 60_000).toISOString(),
+        brain_scale_enabled: false,
+      }],
+    },
+  });
+
+  const measured = await measureConsultantCampaigns(admin, {
+    consultantId: CONSULTANT,
+    nowMs: NOW,
+    windowDays: 2,
+  });
+  assertEquals(measured.dataQuality.hasDelivery, true);
+  assertEquals(measured.snapshots[0].meta.cplCents, 300);
+
+  const d = decideCampaign({
+    snapshot: measured.snapshots[0],
+    policy: measured.policy,
+    brainConfig: measured.brainConfig,
+    nowMs: NOW,
+    usedSnapshotVersions: [],
+  });
+  assertEquals(d.action, "hold");
+  assertEquals(d.canExecute, false);
+  // Custo baixo não é vitória sem amostra e sem resultado comercial.
+  assert(d.blockers.some((b) => b.code === "amostra_insuficiente"));
+  assert(d.blockers.some((b) => b.code === "sem_dado_comercial"));
+  assertEquals(measured.snapshots[0].commercial.approvedTrusted, 0);
+});
+
+Deno.test("contadores brutos continuam no diagnóstico mesmo com sync confirmado", async () => {
+  const writes: Write[] = [];
+  const measured = await measureConsultantCampaigns(semEntregaAdmin(writes), {
+    consultantId: CONSULTANT,
+    nowMs: NOW,
+    windowDays: 2,
+  });
+  const q = measured.dataQuality;
+  // Completude não penaliza dia sem entrega, mas os números crus continuam
+  // visíveis para quem precisa investigar perda de linhas.
+  assertEquals(q.completenessPct, 100);
+  assertEquals(q.metricRowsFound, 0);
+  assertEquals(q.expectedMetricRows, 2);
+  assertEquals(q.campaignsFound, 1);
+  assertEquals(q.hasDelivery, false);
+  assertEquals(q.gapsDetected, 0);
+  assertEquals(typeof q.lastMetaSyncAtIso, "object");
 });
 
 Deno.test("sync que não passou pela campanha continua bloqueando", async () => {

@@ -1,6 +1,7 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   type BrainDataQualityInput,
+  describeDataQuality,
   evaluateBrainDataQuality,
 } from "./brain-data-quality.ts";
 
@@ -149,6 +150,29 @@ Deno.test("sem carimbo de sync o comportamento antigo é preservado", () => {
       .state,
     "incomplete",
   );
+});
+
+Deno.test("painel diz 'sem entrega', não erro de sincronização", () => {
+  const q = evaluateBrainDataQuality(
+    input({
+      metricRowsFound: 0,
+      lastMetaSyncAtIso: null,
+      syncConfirmedAtIso: "2026-08-06T11:30:00Z",
+    }),
+  );
+  const texto = describeDataQuality(q);
+  assertEquals(texto.includes("nenhuma campanha entregou"), true);
+  assertEquals(texto.includes("sincronização em dia"), true);
+  // Nada que sugira falha técnica.
+  assertEquals(/erro|falha|indispon|antigo/i.test(texto), false);
+  assertEquals(q.state, "fresh");
+});
+
+Deno.test("sync realmente velho continua sendo descrito como problema", () => {
+  const q = evaluateBrainDataQuality(
+    input({ lastMetaSyncAtIso: "2026-08-04T01:00:00Z" }),
+  );
+  assertEquals(describeDataQuality(q).includes("dados antigos"), true);
 });
 
 Deno.test("ausência de dado comercial é registrada sem derrubar o estado", () => {
