@@ -20,6 +20,10 @@ import {
 } from "../_shared/cron-auth.ts";
 import { isAdsExpansiveMutationAllowed } from "../_shared/brain-config.ts";
 import {
+  resolveBrainDecisionPolicy,
+  resolveTargetCplCents,
+} from "../_shared/brain-policy.ts";
+import {
   LEGACY_ANCHOR_CAMPAIGN_ID,
   resolveAnchorCampaignId,
 } from "../_shared/ads-anchor.ts";
@@ -597,20 +601,28 @@ Deno.serve(async (req) => {
         );
         const cpl = conv > 0 ? Math.round(spend / conv) : null;
         const fromBudget = Number(c.daily_budget_cents) || 517;
-        const stepPct = Math.max(
-          15,
-          Math.min(30, Number(c.brain_scale_step_pct) || 15),
+        const policy = resolveBrainDecisionPolicy(
+          automationConfigByConsultant.get(c.consultant_id),
+        );
+        // Degrau da campanha é um teto de intenção; a política corta em 10%.
+        const stepPct = Math.min(
+          policy.maxStepPct,
+          Number(c.brain_scale_step_pct) || policy.defaultStepPct,
+        );
+        const targetCplCents = resolveTargetCplCents(
+          c.brain_scale_target_cpl_cents,
+          "campaign_column",
         );
         let decision = decideAnchorBudgetScale({
           currentBudgetCents: fromBudget,
           maxBudgetCents: Number(c.brain_scale_max_budget_cents) || 50000,
-          targetCplCents: Number(c.brain_scale_target_cpl_cents) || 200,
+          targetCplCents,
           recentCplCents: cpl,
           recentConversations: conv,
           recentSpendCents: spend,
           stepPct,
           lastScaleAtIso: c.brain_scale_last_at || null,
-          minHoursBetweenScaleUps: 4,
+          minHoursBetweenScaleUps: policy.minHoursBetweenExecutions,
         });
 
         const liquid = await liquidFor(c.consultant_id);
@@ -670,7 +682,7 @@ Deno.serve(async (req) => {
                 cplCents: cpl,
                 conversations: conv,
                 spendCents: spend,
-                targetCplCents: Number(c.brain_scale_target_cpl_cents) || 200,
+                targetCplCents,
                 reason: decision.reason,
                 cityLabel,
               })
@@ -682,7 +694,7 @@ Deno.serve(async (req) => {
                 cplCents: cpl,
                 conversations: conv,
                 spendCents: spend,
-                targetCplCents: Number(c.brain_scale_target_cpl_cents) || 200,
+                targetCplCents,
                 reason: decision.reason,
                 cityLabel,
               });

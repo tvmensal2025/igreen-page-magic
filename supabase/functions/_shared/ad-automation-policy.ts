@@ -39,11 +39,23 @@ export type AdsActionKind =
   | "pause_balance"
   /** Pausar por prazo contratado encerrado. */
   | "pause_schedule"
+  /**
+   * Reduzir budget dentro dos limites configurados.
+   * Separada de `budget_scale` porque descer é protetivo: desligar deixaria a
+   * campanha cara gastando no patamar antigo.
+   */
+  | "budget_decrease"
   // ── Expansivas: aumentam gasto/alcance. Exigem modo explícito. ──
   /** Reativar objeto pausado (volta a gastar). */
   | "activate"
-  /** Subir/descer budget dentro dos limites configurados. */
+  /**
+   * Subir/descer budget dentro dos limites configurados.
+   * Kind legado e ainda em uso (`facebook-realign-lifetime`): mantém a
+   * semântica antiga de "escala" tratada como expansiva.
+   */
   | "budget_scale"
+  /** Aumentar budget. Recorte expansivo explícito de `budget_scale`. */
+  | "budget_increase"
   /** Trocar/rotacionar criativo. */
   | "creative_rotate"
   /**
@@ -73,6 +85,7 @@ const PROTECTIVE_ACTIONS: ReadonlySet<AdsActionKind> = new Set([
   "pause_waste",
   "pause_balance",
   "pause_schedule",
+  "budget_decrease",
 ]);
 
 /** Nunca automáticas neste hardening, em qualquer modo. */
@@ -86,6 +99,7 @@ const HUMAN_ONLY_ACTIONS: ReadonlySet<AdsActionKind> = new Set([
 const LIMITED_ACTIONS: ReadonlySet<AdsActionKind> = new Set([
   "activate",
   "budget_scale",
+  "budget_increase",
 ]);
 
 /** `full` adiciona criativo + seed controlado às de `limited`. */

@@ -46,6 +46,7 @@ import {
   formatAnchorScaleDownWhatsApp,
   formatAnchorScaleUpWhatsApp,
 } from "../_shared/brain-budget-scale.ts";
+import { resolveBrainDecisionPolicy } from "../_shared/brain-policy.ts";
 import {
   notifyAnchorBudgetScale,
   notifyCerebroWhatsApp,
@@ -334,6 +335,8 @@ Deno.serve(async (req) => {
     }
 
     const cfg = await loadBrain(admin, consultantId);
+    // CPL-alvo e limites de degrau vêm da política única (sem fallback R$ 2).
+    const anchorPolicy = resolveBrainDecisionPolicy(cfg);
     // Âncora vem da configuração do consultor; o UUID legado só cobre o piloto.
     // Sem âncora resolvida, o motor não age — melhor nada do que mexer na
     // campanha de outra pessoa.
@@ -695,13 +698,16 @@ Deno.serve(async (req) => {
         const decision = decideAnchorBudgetScale({
           currentBudgetCents: fromBudget,
           maxBudgetCents: cfg.max_anchor_budget_cents || 50000,
-          targetCplCents: cfg.target_cpl_cents || 200,
+          targetCplCents: anchorPolicy.targetCplCents,
           recentCplCents: cpl,
           recentConversations: conv,
           recentSpendCents: spend,
-          stepPct: cfg.scale_step_pct || 15,
+          stepPct: Math.min(
+            anchorPolicy.maxStepPct,
+            cfg.scale_step_pct || anchorPolicy.defaultStepPct,
+          ),
           lastScaleAtIso: cfg.last_anchor_scale_at || null,
-          minHoursBetweenScaleUps: 4,
+          minHoursBetweenScaleUps: anchorPolicy.minHoursBetweenExecutions,
         });
         if (decision.action === "scale_up" && liquid < decision.budgetCents) {
           desiredAnchorBudget = fromBudget;
@@ -781,8 +787,11 @@ Deno.serve(async (req) => {
           !dryRun && scaleMeta &&
           (scaleMeta.action === "scale_up" || scaleMeta.action === "scale_down")
         ) {
-          const stepPct = cfg.scale_step_pct || 15;
-          const targetCpl = cfg.target_cpl_cents || 200;
+          const stepPct = Math.min(
+            anchorPolicy.maxStepPct,
+            cfg.scale_step_pct || anchorPolicy.defaultStepPct,
+          );
+          const targetCpl = anchorPolicy.targetCplCents;
           const text = scaleMeta.action === "scale_up"
             ? formatAnchorScaleUpWhatsApp({
               fromCents: scaleMeta.from,

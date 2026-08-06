@@ -6,6 +6,12 @@ import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { primaryDddForCity } from "@/lib/cityToDdd";
 import {
+  BRAIN_DEFAULT_STEP_PCT,
+  BRAIN_MAX_STEP_PCT,
+  BRAIN_TARGET_CPL_CENTS,
+  clampBrainStepPct,
+} from "@/lib/brainPolicy";
+import {
   Brain,
   RefreshCw,
   ShieldAlert,
@@ -98,8 +104,8 @@ const DEFAULT_CFG: BrainConfig = {
   mode: "conservative",
   anchor_budget_cents: 1500,
   max_anchor_budget_cents: 50000,
-  target_cpl_cents: 750,
-  scale_step_pct: 15,
+  target_cpl_cents: BRAIN_TARGET_CPL_CENTS,
+  scale_step_pct: BRAIN_DEFAULT_STEP_PCT,
   explorer_budget_cents: 517,
   max_explorers: 0,
   age_min: 30,
@@ -887,10 +893,13 @@ export function CampaignBrainPanel({
             <div>
               <Label className="text-[11px]">Degrau de escala (%)</Label>
               <Input
-                type="number" min={8} max={30}
+                type="number" min={1} max={BRAIN_MAX_STEP_PCT}
                 value={cfg.scale_step_pct}
-                onChange={(e) => setCfg({ ...cfg, scale_step_pct: Math.max(8, Math.min(30, Number(e.target.value) || 15)) })}
+                onChange={(e) => setCfg({ ...cfg, scale_step_pct: clampBrainStepPct(e.target.value) })}
               />
+              <p className="text-[10px] text-muted-foreground mt-1">
+                Teto de segurança: {BRAIN_MAX_STEP_PCT}% por ajuste.
+              </p>
             </div>
             <div>
               <Label className="text-[11px]">Budget outras cidades (R$/dia)</Label>

@@ -3,7 +3,11 @@
  * Sobe/desce em degraus (~15%) conforme CPL — sem trava de 48h entre mudanças.
  * O lookback de métricas (ex.: 48h) só mede o CPL; não impede novo degrau.
  * Intervalo mínimo curto entre escalas (default 4h) evita spam do cron ~30 min.
+ *
+ * CPL-alvo: sempre via `resolveTargetCplCents` (`brain-policy.ts`). O fallback
+ * `|| 200` (R$ 2) que existia aqui travava a escala no piso da Meta.
  */
+import { resolveTargetCplCents } from "./brain-policy.ts";
 
 export type AnchorScaleInput = {
   currentBudgetCents: number;
@@ -44,7 +48,7 @@ function hoursSince(iso: string | null | undefined): number | null {
 export function decideAnchorBudgetScale(input: AnchorScaleInput): AnchorScaleResult {
   const maxBud = Math.max(META_MIN, Math.min(50000, Math.round(input.maxBudgetCents || 50000)));
   const cur = Math.max(META_MIN, Math.min(maxBud, Math.round(input.currentBudgetCents)));
-  const targetCpl = Math.max(50, Math.round(input.targetCplCents || 200));
+  const targetCpl = resolveTargetCplCents(input.targetCplCents);
   const stepPct = Math.min(30, Math.max(8, input.stepPct ?? 15));
   const minConv = Math.max(3, input.minConversations ?? 5);
   const conv = Math.max(0, input.recentConversations | 0);
@@ -128,7 +132,7 @@ function cplHealthLine(cplCents: number | null, targetCplCents: number): string 
   if (cplCents == null || !Number.isFinite(cplCents)) {
     return `📡 Ainda sem CPL suficiente na janela — seguimos de olho.`;
   }
-  const target = Math.max(50, Math.round(targetCplCents || 200));
+  const target = resolveTargetCplCents(targetCplCents);
   if (cplCents <= target) {
     return `🟢 CPL *abaixo do alvo* — performance boa, dá pra acelerar.`;
   }
