@@ -4,6 +4,7 @@ import {
   boletoChegouStageKey,
   buildBoletoAudioSpoken,
   buildBoletoButtonPrompt,
+  buildBoletoFearFaqReply,
   buildClubLink,
   stripBoletoButtonCta,
   isBoletoFearOrDoubtText,
@@ -64,6 +65,13 @@ Deno.test("medo/dúvida boleto", () => {
   assertEquals(isBoletoFearOrDoubtText("isso é golpe?"), true);
   assertEquals(isBoletoFearOrDoubtText("meu boleto chegou?"), true);
   assertEquals(isBoletoFearOrDoubtText("bom dia"), false);
+});
+
+Deno.test("FAQ medo aponta Club e não oferece arquivo no Zap", () => {
+  const faq = buildBoletoFearFaqReply({ name: "Ana", nameSource: "manual", igreenCode: "99" });
+  assertEquals(faq.includes("iGreen Club"), true);
+  assertEquals(/receber\s+boleto/i.test(faq), false);
+  assertEquals(/\bPDF\b/i.test(faq), false);
 });
 
 Deno.test("template renderiza mes e saudacao", () => {

@@ -50,10 +50,9 @@ localhost:3102 · docker interno · typo `d9v83a` · usar `portal2_worker_url` p
 - Sync **só boletos** (`mode=sync_boletos`) pode furar `igreen_sync_manual_only`; `sync_all` continua manual (Evomi).
 - Toggle por consultor: `igreen_automation_settings.auto_wa_boleto_chegou` (default OFF).
 - Fila: `customer_auto_message_log` stage `boleto_chegou:{mes}`.
-- Pacote = **3 mensagens**, nesta ordem: áudio Sofia → texto Club-first (Play Store + App Store + link Club) → convite curto com botão “Receber boleto”. **Não usar a palavra PDF** nos textos ao cliente.
-- O botão vai **sempre em mensagem própria** (`buildBoletoButtonPrompt`). Junto do corpo o WhatsApp achata a formatação e o Evolution cola a lista numerada no fim do texto longo. `stripBoletoButtonCta` limpa a CTA de `wa_text` legado/editado para não duplicar o convite.
-- Whapi manda quick_reply real; Evolution faz downgrade para `*1.* Receber boleto` — o convite curto mantém o downgrade legível. Os dois reconhecem clique **e** `1` via `isBoletoReceberDocIntent`.
-- Clique/1 → `sendMedia` document com `url_boleto`. Helper: `_shared/boleto-notify.ts`.
-- Paridade Whapi/Evolution: os dois webhooks passam `buttonId` + `sendDocument` para `tryReplyClienteCanalNovidades` **no caminho normal e no `pending-drain`**. Sem isso o clique que chega em rajada não entrega o arquivo.
-- `customer_auto_message_log` precisa de policy de **UPDATE** própria: o upsert do reteste no mesmo mês passa por UPDATE e sem a policy o clique não é rearmado.
-- Textos/hora editáveis na UI Automações iGreen (`boleto_notify_config`).
+- Pacote = **2 mensagens**: áudio Sofia → texto Club-first (Play Store + App Store + link Club). **Não usar a palavra PDF** nos textos ao cliente.
+- **Sem arquivo / sem botão “Receber boleto”** (2026-08): a empresa já manda o boleto no Zap; este canal só avisa e anima o app Club (credibilidade). `button_enabled` fica `false` (opt-in explícito se um dia religar).
+- `stripBoletoButtonCta` remove CTA legado de `wa_text` editado. FAQ de medo/dúvida também aponta só pro Club.
+- Handler legado `tryHandleBoletoReceberDoc` permanece no código (não apagar), mas o envio **não arma** mais o clique.
+- Helper: `_shared/boleto-notify.ts`. Textos/hora editáveis na UI Automações iGreen (`boleto_notify_config`).
+- `customer_auto_message_log` tem policy de **UPDATE** própria (upsert do reteste).

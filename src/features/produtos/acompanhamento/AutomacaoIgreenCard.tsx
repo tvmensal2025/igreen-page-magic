@@ -16,7 +16,7 @@ import {
 } from "@/lib/ttsEnhanceV3";
 import { VOICE_SOFIA_PROFESSIONAL } from "@/lib/sofiaTtsCache";
 import { uploadMedia } from "@/services/minioUpload";
-import { whapiSendMedia, whapiSendText, whapiSendButtons } from "@/services/whapiApi";
+import { whapiSendMedia, whapiSendText } from "@/services/whapiApi";
 import {
   useAutomationSettings,
   useUpdateAutomationSetting,
@@ -28,7 +28,6 @@ import {
   DEFAULT_BOLETO_AUDIO_BODY,
   IGREEN_CLUB_PLAY_STORE_URL,
   IGREEN_CLUB_APP_STORE_URL,
-  buildBoletoButtonPrompt,
   stripBoletoButtonCta,
   type BoletoNotifyConfig,
 } from "./boletoNotifyConfig";
@@ -61,7 +60,7 @@ const GROUPS: { title: string; hint: string; items: { key: Key; label: string; d
       {
         key: "auto_wa_boleto_chegou",
         label: "Avisar quando o boleto do mês chegar (WhatsApp)",
-        desc: "Áudio + texto pedindo o app iGreen Club. Botão “Receber boleto” manda o arquivo no Zap. Desligado por padrão.",
+        desc: "Áudio + texto lembrando que o boleto chegou e animando o app iGreen Club. Sem enviar o arquivo (a empresa já manda). Desligado por padrão.",
       },
       { key: "auto_wa_boleto_vencendo", label: "Enfileirar aviso de boleto a vencer (WhatsApp)", desc: "Cria alerta no painel; envio real só com liberação na Central." },
       { key: "auto_wa_aniversariante", label: "Enfileirar parabéns de aniversário (WhatsApp)", desc: "Cria alerta no painel; envio real só com liberação na Central." },
@@ -146,10 +145,7 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
 
   const saveCfg = () => {
     if (!draft) return;
-    const patch = { ...draft };
-    if (patch.button_boleto_label) {
-      patch.button_boleto_label = String(patch.button_boleto_label).slice(0, 25);
-    }
+    const patch = { ...draft, button_enabled: false as const };
     updateCfg.mutate(patch, {
       onSuccess: () => {
         setDraft(null);
@@ -250,7 +246,6 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         ]),
       ).filter(Boolean);
 
-      // Preferir cliente desse WhatsApp — senão o clique “Receber boleto” não acha o boleto.
       const { data: cust } = await supabase
         .from("customers")
         .select("id, name, igreen_code, phone_whatsapp")
@@ -259,12 +254,11 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         .limit(1)
         .maybeSingle();
 
+      // Precisa de um boleto recente só para preencher mês/valor/vencimento no texto.
       let boletoQuery = supabase
         .from("igreen_customer_boletos")
         .select("url_boleto, total, vencimento, mes_referencia, nome, idcliente, customer_id")
         .eq("consultant_id", consultantId)
-        .not("url_boleto", "is", null)
-        .neq("url_boleto", "")
         .order("synced_at", { ascending: false })
         .limit(30);
       if (cust?.id) {
@@ -312,13 +306,10 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         link_appstore: IGREEN_CLUB_APP_STORE_URL,
         url_boleto: boleto.url_boleto || "",
       });
-      const buttonLabel = (cfg.button_boleto_label || "Receber boleto").slice(0, 25);
-      const BOLETO_BTN_ID = "boleto_receber_doc";
-
       const spoken = buildSpokenPreview(cfg.audio_script, nome);
       toast({
         title: "Gerando áudio Sofia…",
-        description: "Em seguida: texto formatado + botão (arquivo só no clique).",
+        description: "Em seguida: texto com iGreen Club (sem arquivo).",
       });
       const blob = await generateMp3Blob(spoken);
       const file = new File([blob], `boleto-teste-${Date.now()}.mp3`, { type: "audio/mpeg" });
@@ -334,82 +325,23 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         customerId: cust?.id,
       });
 
-      // 1) Texto formatado sozinho (*negrito* + links das lojas) — sem misturar botão.
-      const bodyText = cfg.button_enabled ? stripBoletoButtonCta(waText) : waText;
-      await whapiSendText(phone, bodyText, { intent: "reply", customerId: cust?.id });
-
-      // 2) Botão em mensagem curta à parte (Whapi quick_reply). Se proxy antigo, cai em *1.*
-      let buttonMode: "quick_reply" | "numbered_fallback" | "text_only" = "text_only";
-      if (cfg.button_enabled) {
-        const btnBody = buildBoletoButtonPrompt(buttonLabel);
-        try {
-          const btnRes = await whapiSendButtons(
-            phone,
-            btnBody,
-            [{ id: BOLETO_BTN_ID, title: buttonLabel }],
-            { intent: "reply", customerId: cust?.id },
-          );
-          buttonMode = btnRes.mode || "quick_reply";
-        } catch (btnErr) {
-          console.warn("[boleto-teste] botão Whapi:", btnErr);
-          // Proxy sem send_buttons / canal sem interactive → lista numerada curta
-          await whapiSendText(
-            phone,
-            `${btnBody}\n\n*1.* ${buttonLabel}`,
-            { intent: "reply", customerId: cust?.id },
-          );
-          buttonMode = "numbered_fallback";
-        }
-      }
-
-      // Armar clique: log do aviso → webhook manda o arquivo só quando apertar.
-      let clickArmed = false;
-      if (cust?.id && boleto.mes_referencia) {
-        const stageKey = `boleto_chegou:${boleto.mes_referencia}`;
-        const { error: logErr } = await supabase.from("customer_auto_message_log").upsert(
-          {
-            customer_id: cust.id,
-            consultant_id: consultantId,
-            stage_key: stageKey,
-            status: "sent",
-            customer_name: cust.name || nome,
-            message_preview: "teste boleto chegou",
-            remote_jid: `${phone}@s.whatsapp.net`,
-          },
-          { onConflict: "customer_id,stage_key" },
-        );
-        // RLS/permissão no log não deve abortar o teste (áudio+texto já foram).
-        clickArmed = !logErr;
-        if (logErr) {
-          console.warn("[boleto-teste] log clique:", logErr.message || logErr);
-        }
-      }
+      await whapiSendText(phone, stripBoletoButtonCta(waText), {
+        intent: "reply",
+        customerId: cust?.id,
+      });
 
       toast({
         title: "Teste enviado",
-        description: clickArmed
-          ? `${formatBrazilPhone(phone)} · ${boleto.mes_referencia || "?"} · toque em “${buttonLabel}” (ou digite 1) para o boleto`
-          : `${formatBrazilPhone(phone)} · texto+lojas ok · para o clique mandar o arquivo, use WhatsApp de um cliente da carteira`,
+        description: `${formatBrazilPhone(phone)} · ${boleto.mes_referencia || "?"} · áudio + Club (sem arquivo no Zap)`,
       });
-      if (buttonMode === "numbered_fallback") {
-        toast({
-          title: "Botão em modo número",
-          description: "Digite 1 ou “Receber boleto” no Zap. (Botão visual depende do deploy do WhatsApp.)",
-        });
-      }
     } catch (e) {
       const raw = e instanceof Error ? e.message : String(e || "");
       let description = toUserFacingError(e);
-      // Não assustar com “sessão” quando o proxy/WhatsApp recusou a ação.
       if (
-        /Ação desconhecida|send_buttons|whapi|WhatsApp|interactive|boleto/i.test(raw) &&
+        /whapi|WhatsApp|boleto/i.test(raw) &&
         /Sessão expirou/i.test(description)
       ) {
         description = "Falha no envio pelo WhatsApp. Tente de novo em alguns segundos.";
-      }
-      if (/customer_auto_message_log|permission denied|row-level security/i.test(raw)) {
-        description =
-          "Texto pode ter sido enviado, mas não deu para armar o clique do boleto. Use um WhatsApp de cliente da carteira.";
       }
       toast({
         title: "Erro no teste",
@@ -570,45 +502,17 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                       <audio ref={audioRef} controls src={audioUrl} className="w-full mt-1" />
                     )}
                     <p className="text-[11px] text-muted-foreground">
-                      Envia áudio + texto formatado (Play Store Android + App Store iPhone) com botão
-                      “Receber boleto”. O arquivo só sai no clique/número. Use WhatsApp de cliente da carteira.
+                      Envia áudio + texto (Play Store / App Store + link Club). Sem arquivo no Zap —
+                      a empresa já manda o boleto; aqui é o recado de credibilidade do Club.
                     </p>
                   </div>
 
                   <div>
                     <Label className="text-xs">Texto do WhatsApp</Label>
                     <Textarea
-                      rows={6}
+                      rows={8}
                       value={cfg.wa_text}
                       onChange={(e) => setDraft((d) => ({ ...d, wa_text: e.target.value }))}
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <Label className="text-xs">Botão (máx. 25)</Label>
-                      <Input
-                        maxLength={25}
-                        value={cfg.button_boleto_label}
-                        onChange={(e) =>
-                          setDraft((d) => ({ ...d, button_boleto_label: e.target.value.slice(0, 25) }))
-                        }
-                      />
-                    </div>
-                    <div className="flex items-end gap-2 pb-1">
-                      <Switch
-                        id="button_enabled"
-                        checked={!!cfg.button_enabled}
-                        onCheckedChange={(v) => setDraft((d) => ({ ...d, button_enabled: v }))}
-                      />
-                      <Label htmlFor="button_enabled" className="text-xs">Mostrar botão “Receber boleto”</Label>
-                    </div>
-                  </div>
-                  <div>
-                    <Label className="text-xs">Legenda ao enviar o boleto no Zap</Label>
-                    <Textarea
-                      rows={2}
-                      value={cfg.doc_caption}
-                      onChange={(e) => setDraft((d) => ({ ...d, doc_caption: e.target.value }))}
                     />
                   </div>
                   <Button

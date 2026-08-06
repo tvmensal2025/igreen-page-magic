@@ -274,15 +274,15 @@ Evolution (opção numérica).
 
 ## Aviso boleto chegou → iGreen Club
 
-- Config editável: `boleto_notify_config` (hora BRT, textos, botão) + toggle
+- Config editável: `boleto_notify_config` (hora BRT, textos) + toggle
   `igreen_automation_settings.auto_wa_boleto_chegou` (default OFF).
 - Cron horário `igreen-boleto-notify-hourly` → edge `igreen-boleto-notify`.
   Na hora configurada dispara `sync-igreen-customers` com `mode=sync_boletos`
   (exceção ao bloqueio Evomi do sync full).
 - Boleto novo → fila `customer_auto_message_log` (`boleto_chegou:{mes}`).
-- Pacote Zap: áudio Sofia + texto pedindo o **app Club** + botão
-  “Receber boleto” (Whapi quick_reply / Evolution lista numerada). Sem a palavra
-  “PDF” nos textos ao cliente. Clique/`1` → `sendMedia` document.
+- Pacote Zap: áudio Sofia + texto Club-first (Play Store / App Store + link).
+  **Sem arquivo e sem botão** — a empresa já manda o boleto no Zap; este canal
+  só avisa e anima o app Club (credibilidade). Sem a palavra “PDF” nos textos.
 - Helper: `_shared/boleto-notify.ts`. UI: Automações iGreen.
 
 ## Validação e implantação

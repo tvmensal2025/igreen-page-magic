@@ -1,8 +1,9 @@
 /**
  * Aviso "boleto chegou" → iGreen Club.
  * Copy leigo: NÃO usar a palavra "PDF" em textos ao cliente.
- * Whapi = botão quick_reply; Evolution = lista numerada.
- * Clique "Receber boleto" → sendMedia document (url_boleto).
+ * Produto (2026-08): a empresa já manda o boleto no Zap — aqui só avisamos
+ * que chegou e animamos o app Club (credibilidade). Sem botão / sem arquivo.
+ * O handler de "Receber boleto" fica no código (legado), mas o envio não arma mais.
  */
 import { safeFirstNameForAddress } from "./customer-display-name.ts";
 import { hourBRT } from "./quiet-hours.ts";
@@ -35,7 +36,7 @@ export type BoletoNotifyConfig = {
 
 /** Corpo do áudio (a abertura “Olá, Nome! Tudo bem?” é sempre prefixada no envio). */
 export const DEFAULT_BOLETO_AUDIO_BODY =
-  "seu boleto de energia do mês já está ativo e disponível. Estou colocando um atalho aqui e é o boleto normal da iGreen. Mas o melhor lugar para conferir é o aplicativo iGreen Club — lá você vê a fatura e ainda vê os locais com descontos em farmácias, restaurantes, cinemas e milhares de parceiros. Abre o app, confere com calma, e se tiver dúvida, responde aqui.";
+  "seu boleto de energia do mês já está disponível. A iGreen cuida do envio oficial do boleto — e o lugar mais seguro e completo para você acompanhar tudo é o aplicativo iGreen Club. Lá você confere a fatura, o vencimento e ainda aproveita descontos em farmácias, restaurantes, cinemas e milhares de parceiros. Baixa o app, entra com o seu acesso e fica tranquilo. Qualquer dúvida, é só responder aqui.";
 
 export const DEFAULT_BOLETO_NOTIFY_CONFIG: BoletoNotifyConfig = {
   id: "global",
@@ -48,9 +49,9 @@ export const DEFAULT_BOLETO_NOTIFY_CONFIG: BoletoNotifyConfig = {
 Valor: *R$ {{valor}}*
 Vencimento: *{{vencimento}}*
 
-O lugar oficial é o app *iGreen Club* — lá você vê a fatura e os descontos (farmácia e parceiros).
+A iGreen cuida do envio oficial do boleto. Aqui o nosso recado é te lembrar e te levar ao lugar mais completo: o app *iGreen Club* — fatura, vencimento e descontos em farmácia, restaurantes e milhares de parceiros.
 
-📱 *Baixe o app no seu celular:*
+📱 *Baixe o app:*
 
 🤖 *Android — Play Store:*
 {{link_play}}
@@ -59,9 +60,12 @@ O lugar oficial é o app *iGreen Club* — lá você vê a fatura e os descontos
 {{link_appstore}}
 
 Seu acesso no Club:
-{{link_club}}`,
+{{link_club}}
+
+Qualquer dúvida, responde aqui 💚`,
   button_boleto_label: "Receber boleto",
-  button_enabled: true,
+  /** Sempre off no produto atual — empresa já envia o boleto. */
+  button_enabled: false,
   doc_caption: "Segue seu boleto. O lugar oficial continua no app iGreen Club 👆",
 };
 
@@ -185,7 +189,8 @@ export async function loadBoletoNotifyConfig(supabase: SB): Promise<BoletoNotify
         : 8,
       cron_daily: data.cron_daily !== false,
       sync_enabled: data.sync_enabled !== false,
-      button_enabled: data.button_enabled !== false,
+      // Opt-in explícito: default off (empresa já manda o boleto no Zap).
+      button_enabled: data.button_enabled === true,
     };
   } catch {
     return { ...DEFAULT_BOLETO_NOTIFY_CONFIG };
@@ -413,10 +418,10 @@ export function buildBoletoFearFaqReply(opts: {
   const link = buildClubLink(opts.igreenCode);
   return `${oi}pode ficar tranquilo(a) 💚
 
-É o *boleto normal* da sua energia iGreen do mês.
+É o *boleto normal* da sua energia iGreen do mês — a empresa cuida do envio oficial.
 
-O lugar oficial para conferir é o aplicativo *iGreen Club*:
+O lugar mais seguro e completo para conferir é o aplicativo *iGreen Club*:
 ${link}
 
-Se quiser o boleto aqui no Zap, digite *Receber boleto* (ou *1*).`;
+Qualquer dúvida, responde aqui.`;
 }

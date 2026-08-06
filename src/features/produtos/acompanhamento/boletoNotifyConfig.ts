@@ -1,6 +1,7 @@
 /**
  * Textos/horário do aviso "boleto chegou" (editável sem redeploy).
  * Copy leigo: sem a palavra "PDF".
+ * Produto: só aviso + iGreen Club (empresa já manda o boleto no Zap).
  */
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
@@ -25,7 +26,7 @@ export const IGREEN_CLUB_APP_STORE_URL =
 
 /** Corpo do áudio (abertura “Olá, Nome! Tudo bem?” é prefixada no envio). */
 export const DEFAULT_BOLETO_AUDIO_BODY =
-  "seu boleto de energia do mês já está ativo e disponível. Estou colocando um atalho aqui e é o boleto normal da iGreen. Mas o melhor lugar para conferir é o aplicativo iGreen Club — lá você vê a fatura e ainda vê os locais com descontos em farmácias, restaurantes, cinemas e milhares de parceiros. Abre o app, confere com calma, e se tiver dúvida, responde aqui.";
+  "seu boleto de energia do mês já está disponível. A iGreen cuida do envio oficial do boleto — e o lugar mais seguro e completo para você acompanhar tudo é o aplicativo iGreen Club. Lá você confere a fatura, o vencimento e ainda aproveita descontos em farmácias, restaurantes, cinemas e milhares de parceiros. Baixa o app, entra com o seu acesso e fica tranquilo. Qualquer dúvida, é só responder aqui.";
 
 export const DEFAULT_BOLETO_NOTIFY_CONFIG: BoletoNotifyConfig = {
   id: "global",
@@ -38,9 +39,9 @@ export const DEFAULT_BOLETO_NOTIFY_CONFIG: BoletoNotifyConfig = {
 Valor: *R$ {{valor}}*
 Vencimento: *{{vencimento}}*
 
-O lugar oficial é o app *iGreen Club* — lá você vê a fatura e os descontos (farmácia e parceiros).
+A iGreen cuida do envio oficial do boleto. Aqui o nosso recado é te lembrar e te levar ao lugar mais completo: o app *iGreen Club* — fatura, vencimento e descontos em farmácia, restaurantes e milhares de parceiros.
 
-📱 *Baixe o app no seu celular:*
+📱 *Baixe o app:*
 
 🤖 *Android — Play Store:*
 {{link_play}}
@@ -49,18 +50,15 @@ O lugar oficial é o app *iGreen Club* — lá você vê a fatura e os descontos
 {{link_appstore}}
 
 Seu acesso no Club:
-{{link_club}}`,
+{{link_club}}
+
+Qualquer dúvida, responde aqui 💚`,
   button_boleto_label: "Receber boleto",
-  button_enabled: true,
+  button_enabled: false,
   doc_caption: "Segue seu boleto. O lugar oficial continua no app iGreen Club 👆",
 };
 
-/** Espelha `supabase/functions/_shared/boleto-notify.ts` — manter os dois iguais. */
-export function buildBoletoButtonPrompt(buttonLabel?: string | null): string {
-  const label = String(buttonLabel || "Receber boleto").trim() || "Receber boleto";
-  return `Quer o boleto aqui no Zap? É só tocar em *${label}* 👇`;
-}
-
+/** Remove CTA legado de botão/arquivo do corpo (configs antigas). */
 export function stripBoletoButtonCta(waText: string): string {
   return String(waText || "")
     .split("\n")
@@ -96,6 +94,8 @@ export function useUpdateBoletoNotifyConfig() {
           {
             id: "global",
             ...patch,
+            // Produto: nunca religar o botão de arquivo pelo card.
+            button_enabled: false,
             updated_at: new Date().toISOString(),
           } as never,
           { onConflict: "id" },

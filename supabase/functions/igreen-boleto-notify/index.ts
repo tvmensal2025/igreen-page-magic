@@ -24,14 +24,12 @@ import {
 import { renderPersonalizedTtsAudio } from "../_shared/pos-venda-tts.ts";
 import {
   BOLETO_CHEGOU_STAGE_PREFIX,
-  BOLETO_RECEBER_DOC_BUTTON_ID,
   buildClubLink,
   formatBoletoValor,
   formatBoletoVencimento,
   loadBoletoNotifyConfig,
   parseMesFromStageKey,
   buildBoletoAudioSpoken,
-  buildBoletoButtonPrompt,
   renderBoletoNotifyTemplate,
   stripBoletoButtonCta,
   shouldRunBoletoNotifyNow,
@@ -358,39 +356,16 @@ async function sendOne(
     console.warn("[boleto-notify] tts/audio:", e instanceof Error ? e.message : e);
   }
 
-  // Texto formatado sozinho (links das lojas clicáveis) e, só depois, o convite
-  // com o botão. Junto numa mensagem só o WhatsApp achata a formatação.
-  const bodyText = cfg.button_enabled ? stripBoletoButtonCta(waText) : waText;
+  // Só texto Club-first (sem botão/arquivo — a empresa já manda o boleto no Zap).
   try {
     const r = await resolved.adapter.sendText(
       jid,
-      bodyText,
+      stripBoletoButtonCta(waText),
       { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:text`, supabase },
     );
     textOk = !!r.ok;
   } catch (e) {
     console.warn("[boleto-notify] text:", e instanceof Error ? e.message : e);
-  }
-
-  if (cfg.button_enabled) {
-    try {
-      await resolved.adapter.sendChoice(
-        jid,
-        buildBoletoButtonPrompt(cfg.button_boleto_label),
-        {
-          preferred: "button",
-          options: [
-            {
-              id: BOLETO_RECEBER_DOC_BUTTON_ID,
-              title: cfg.button_boleto_label.slice(0, 25),
-            },
-          ],
-        },
-        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:button`, supabase },
-      );
-    } catch (e) {
-      console.warn("[boleto-notify] button:", e instanceof Error ? e.message : e);
-    }
   }
 
   const status = textOk
@@ -531,11 +506,10 @@ async function runTestSend(
     console.warn("[boleto-notify] test audio:", e instanceof Error ? e.message : e);
   }
 
-  const bodyText = cfg.button_enabled ? stripBoletoButtonCta(waText) : waText;
   try {
     const r = await resolved.adapter.sendText(
       jid,
-      bodyText,
+      stripBoletoButtonCta(waText),
       { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:text:${Date.now()}`, supabase },
     );
     textOk = !!r.ok;
@@ -543,69 +517,13 @@ async function runTestSend(
     console.warn("[boleto-notify] test text:", e instanceof Error ? e.message : e);
   }
 
-  let buttonOk = false;
-  if (cfg.button_enabled) {
-    try {
-      const r = await resolved.adapter.sendChoice(
-        jid,
-        buildBoletoButtonPrompt(cfg.button_boleto_label),
-        {
-          preferred: "button",
-          options: [
-            {
-              id: BOLETO_RECEBER_DOC_BUTTON_ID,
-              title: cfg.button_boleto_label.slice(0, 25),
-            },
-          ],
-        },
-        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:button:${Date.now()}`, supabase },
-      );
-      buttonOk = !!r.ok || r.reason === "downgraded";
-    } catch (e) {
-      console.warn("[boleto-notify] test button:", e instanceof Error ? e.message : e);
-    }
-  }
-
-  // Teste = produção: áudio + texto/botão. Arquivo só no clique “Receber boleto”.
-  let clickArmed = false;
-  try {
-    const phoneVariants = Array.from(
-      new Set([phone, phone.slice(2), phone.length === 13 ? `${phone.slice(0, 4)}${phone.slice(5)}` : ""]),
-    ).filter(Boolean);
-    const { data: cust } = await supabase
-      .from("customers")
-      .select("id, name")
-      .eq("consultant_id", opts.consultantId)
-      .or(phoneVariants.map((p) => `phone_whatsapp.eq.${p}`).join(","))
-      .limit(1)
-      .maybeSingle();
-    if (cust?.id && boleto.mes_referencia) {
-      const { boletoChegouStageKey } = await import("../_shared/boleto-notify.ts");
-      await supabase.from("customer_auto_message_log").upsert(
-        {
-          customer_id: cust.id,
-          consultant_id: opts.consultantId,
-          stage_key: boletoChegouStageKey(String(boleto.mes_referencia)),
-          status: "sent",
-          customer_name: cust.name || opts.name,
-          message_preview: "teste boleto chegou",
-          remote_jid: jid,
-        },
-        { onConflict: "customer_id,stage_key" },
-      );
-      clickArmed = true;
-    }
-  } catch {
-    /* ignore */
-  }
-
   return {
     success: textOk || audioOk,
     audio_ok: audioOk,
     text_ok: textOk,
-    button_ok: buttonOk,
+    button_ok: false,
     doc_ok: false,
-    click_armed: clickArmed,
+    click_armed: false,
     spoken,
     phone,
     boleto: {
@@ -615,8 +533,6 @@ async function runTestSend(
       nome: boleto.nome,
       has_url: !!boleto.url_boleto,
     },
-    hint: clickArmed
-      ? "Áudio + botão enviados. Toque em Receber boleto no Zap para receber o arquivo."
-      : "Áudio + botão enviados. Para o clique mandar o arquivo, use o WhatsApp de um cliente da carteira.",
+    hint: "Áudio + texto Club enviados. Sem arquivo no Zap (a empresa já manda o boleto).",
   };
 }
