@@ -258,10 +258,15 @@ cards, e o intent "Como funciona" não existia em nenhum.
 
 `sync_qa_from_master_flow(_flow_id)` espelha o master num fluxo alvo: cria o que
 falta, atualiza texto e gatilhos do que existe e apaga os intents listados em
-`DEPRECATED_QA_INTENTS`. `sync_qa_all_flows_from_master()` aplica em todos os
-fluxos ativos, e o trigger `auto_seed_faq_on_flow_create` passou a usar o master
+`DEPRECATED_QA_INTENTS`. `sync_qa_all_flows_from_master()` percorre **todos** os
+fluxos (não filtra `is_active`, então fluxo arquivado também fica pronto para
+quando voltar), e o trigger `auto_seed_faq_on_flow_create` passou a usar o master
 ao criar fluxo novo, com os seed packs antigos só como fallback. Migration:
 `20260806182000_qa_master_sync_all_flows.sql`.
+
+O preço da fonte única: resposta de intent canônico que o consultor tenha
+editado à mão volta ao texto do master no próximo sync. Card com intent que não
+existe no master é preservado — é ali que mora a customização legítima.
 
 Estado esperado depois do backfill: 36 cards em cada fluxo ativo, sem card nem
 gatilho repetido. Gatilhos de uma palavra só foram removidos — casavam com
