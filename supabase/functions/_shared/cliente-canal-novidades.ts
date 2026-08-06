@@ -4,9 +4,16 @@
  *
  * NÃO entra no Grupo A, NÃO dispara OCR/Portal, NÃO muda conversation_step.
  * Fluxo opcional (`cliente_canal_flow_id`) fica só reservado — ainda não executa.
+ *
+ * Também trata: clique "Receber boleto" → documento; dúvida/medo de boleto → FAQ.
  */
 
 import { safeFirstNameForAddress } from "./customer-display-name.ts";
+import {
+  buildBoletoFearFaqReply,
+  isBoletoFearOrDoubtText,
+  tryHandleBoletoReceberDoc,
+} from "./boleto-notify.ts";
 
 // deno-lint-ignore no-explicit-any
 type SB = any;
@@ -80,12 +87,55 @@ export async function tryReplyClienteCanalNovidades(opts: {
     name?: string | null;
     name_source?: string | null;
     consultant_id?: string | null;
+    igreen_code?: string | number | null;
     cliente_canal_last_reply_at?: string | null;
   };
   consultantId: string;
   sendText: (text: string) => Promise<boolean>;
+  /** Envia boleto como documento (Whapi/Evolution). Opcional. */
+  sendDocument?: (url: string, caption: string) => Promise<boolean>;
+  buttonId?: string | null;
+  text?: string | null;
   now?: Date;
 }): Promise<{ handled: boolean; sent: boolean; reason: string }> {
+  // 1) Clique / "1" / "Receber boleto" → manda o documento (sem falar "PDF")
+  if (opts.sendDocument) {
+    try {
+      const doc = await tryHandleBoletoReceberDoc({
+        supabase: opts.supabase,
+        customer: opts.customer,
+        buttonId: opts.buttonId,
+        text: opts.text,
+        sendDocument: opts.sendDocument,
+        sendText: opts.sendText,
+      });
+      if (doc.handled) {
+        console.log(
+          `[cliente-canal] boleto-doc customer=${opts.customer.id} reason=${doc.reason} sent=${doc.sent}`,
+        );
+        return doc;
+      }
+    } catch (e) {
+      console.warn("[cliente-canal] boleto-doc:", (e as Error)?.message);
+    }
+  }
+
+  // 2) Medo / dúvida de boleto → FAQ curto (app Club)
+  if (isBoletoFearOrDoubtText(opts.text)) {
+    const faq = buildBoletoFearFaqReply({
+      name: opts.customer.name,
+      nameSource: opts.customer.name_source,
+      igreenCode: opts.customer.igreen_code,
+    });
+    let ok = false;
+    try {
+      ok = await opts.sendText(faq);
+    } catch (e) {
+      console.warn("[cliente-canal] boleto-faq:", (e as Error)?.message);
+    }
+    return { handled: true, sent: ok, reason: ok ? "boleto_faq" : "boleto_faq_failed" };
+  }
+
   const prefs = await loadClienteCanalPrefs(opts.supabase, opts.consultantId);
   if (!prefs.enabled) {
     return { handled: false, sent: false, reason: "disabled" };

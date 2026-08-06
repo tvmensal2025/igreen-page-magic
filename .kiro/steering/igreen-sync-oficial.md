@@ -43,3 +43,13 @@ Subcontas em `igreen_portal_accounts`. A API da Conta principal mascara `celular
 
 ## Proibido
 localhost:3102 · docker interno · typo `d9v83a` · usar `portal2_worker_url` para sync · re-mapear sem helper+/health · filtrar enrich por `igreen_account_id` de forma que bloqueie upgrade de placeholder na principal.
+
+## Aviso “boleto chegou” (WhatsApp)
+
+- Cron horário `igreen-boleto-notify-hourly` → edge `igreen-boleto-notify` (hora BRT editável em `boleto_notify_config`).
+- Sync **só boletos** (`mode=sync_boletos`) pode furar `igreen_sync_manual_only`; `sync_all` continua manual (Evomi).
+- Toggle por consultor: `igreen_automation_settings.auto_wa_boleto_chegou` (default OFF).
+- Fila: `customer_auto_message_log` stage `boleto_chegou:{mes}`.
+- Pacote: áudio Sofia + texto Club-first + botão “Receber boleto” (Whapi quick_reply / Evolution numerado). **Não usar a palavra PDF** nos textos ao cliente.
+- Clique/1 → `sendMedia` document com `url_boleto`. Helper: `_shared/boleto-notify.ts`.
+- Textos/hora editáveis na UI Automações iGreen (`boleto_notify_config`).

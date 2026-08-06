@@ -18,6 +18,7 @@ export interface AutomationSettings {
   rotinas_tarefas: boolean;
   // whatsapp proativo
   auto_wa_boleto_vencendo: boolean;
+  auto_wa_boleto_chegou: boolean;
   auto_wa_aniversariante: boolean;
   cross_sell_bot: boolean;
 }
@@ -34,6 +35,7 @@ const DEFAULTS: Omit<AutomationSettings, "consultant_id"> = {
   alert_licencas_expirando: true,
   rotinas_tarefas: true,
   auto_wa_boleto_vencendo: false,
+  auto_wa_boleto_chegou: false,
   auto_wa_aniversariante: false,
   cross_sell_bot: false,
 };

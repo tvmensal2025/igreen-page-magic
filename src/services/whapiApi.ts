@@ -143,6 +143,26 @@ export async function whapiSendMedia(
   });
 }
 
+/** Botão quick_reply Whapi (até 3). Se a API falhar, o proxy cai em texto numerado. */
+export async function whapiSendButtons(
+  to: string,
+  text: string,
+  buttons: Array<{ id: string; title: string }>,
+  opts?: { intent?: "bulk" | "reply"; customerId?: string; footer?: string },
+): Promise<{ key: { id: string }; mode?: "quick_reply" | "numbered_fallback" }> {
+  return call<{ key: { id: string }; mode?: "quick_reply" | "numbered_fallback" }>("send_buttons", {
+    to: normalizeJid(to),
+    text,
+    buttons: buttons.slice(0, 3).map((b) => ({
+      id: String(b.id || "").slice(0, 64),
+      title: String(b.title || "").slice(0, 25),
+    })),
+    ...(opts?.footer ? { footer: opts.footer } : {}),
+    ...(opts?.intent ? { intent: opts.intent } : {}),
+    ...(opts?.customerId ? { customerId: opts.customerId } : {}),
+  });
+}
+
 /** Baixa mídia via proxy (URL pública ou mediaId Whapi → base64). */
 export async function whapiDownloadMedia(opts: {
   url?: string;

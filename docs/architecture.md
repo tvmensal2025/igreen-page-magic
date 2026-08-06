@@ -272,6 +272,19 @@ Respostas de passo com botão usam o número do gatilho (`"1"`, `"2"`, `"3"`),
 que está em `trigger_phrases` junto do id — serve para Whapi (botão) e para
 Evolution (opção numérica).
 
+## Aviso boleto chegou → iGreen Club
+
+- Config editável: `boleto_notify_config` (hora BRT, textos, botão) + toggle
+  `igreen_automation_settings.auto_wa_boleto_chegou` (default OFF).
+- Cron horário `igreen-boleto-notify-hourly` → edge `igreen-boleto-notify`.
+  Na hora configurada dispara `sync-igreen-customers` com `mode=sync_boletos`
+  (exceção ao bloqueio Evomi do sync full).
+- Boleto novo → fila `customer_auto_message_log` (`boleto_chegou:{mes}`).
+- Pacote Zap: áudio Sofia + texto pedindo o **app Club** + botão
+  “Receber boleto” (Whapi quick_reply / Evolution lista numerada). Sem a palavra
+  “PDF” nos textos ao cliente. Clique/`1` → `sendMedia` document.
+- Helper: `_shared/boleto-notify.ts`. UI: Automações iGreen.
+
 ## Validação e implantação
 
 - Front: `npm run typecheck` e `npx vitest run`.

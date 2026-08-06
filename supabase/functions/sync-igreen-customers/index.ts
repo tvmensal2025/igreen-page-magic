@@ -416,6 +416,7 @@ const DEFAULT_IGREEN_TOGGLES: Record<string, boolean> = {
   // Envio proativo WA e cross-sell: OFF por padrão (alinha com a UI e com a
   // regra de produção — sem mensagem automática até validação explícita).
   auto_wa_boleto_vencendo: false,
+  auto_wa_boleto_chegou: false,
   auto_wa_aniversariante: false,
   cross_sell_bot: false,
 };
@@ -924,6 +925,19 @@ async function runSyncAllBackgroundPhase(
     out.metrics = await persistMetrics(supabase, consultantId, r.data?.metrics, igreenAccountId);
     // Persiste SEMPRE tudo (não depende de toggle). A página nunca fica vazia.
     out.boletos = await persistBoletos(supabase, consultantId, r.data?.boletos || [], igreenAccountId);
+    // Aviso boleto chegou (só fila; envio = igreen-boleto-notify)
+    if (consultantId && toggles?.auto_wa_boleto_chegou && Array.isArray((out.boletos as any)?.new_boletos)) {
+      try {
+        const { enqueueBoletoChegouCandidates } = await import("../_shared/boleto-notify.ts");
+        out.boleto_chegou_queue = await enqueueBoletoChegouCandidates(
+          supabase,
+          consultantId,
+          (out.boletos as any).new_boletos,
+        );
+      } catch (e) {
+        console.warn("[boleto-chegou] enqueue:", e instanceof Error ? e.message : e);
+      }
+    }
     out.telecom = await persistTelecom(supabase, consultantId, r.data?.telecom || [], igreenAccountId);
     out.seguros = await persistSeguros(supabase, consultantId, r.data?.seguros || [], igreenAccountId);
     out.devolutivas = await persistDevolutivas(supabase, consultantId, r.data?.devolutivas || [], igreenAccountId);
@@ -1602,7 +1616,7 @@ async function persistMetrics(supabase: any, consultantId: string | null, metric
 
 // deno-lint-ignore no-explicit-any
 async function persistBoletos(supabase: any, consultantId: string | null, boletos: any[], igreenAccountId: string | null = null): Promise<Record<string, unknown>> {
-  if (!consultantId || !Array.isArray(boletos) || boletos.length === 0) return { boletos_saved: 0, boletos_received: Array.isArray(boletos) ? boletos.length : 0 };
+  if (!consultantId || !Array.isArray(boletos) || boletos.length === 0) return { boletos_saved: 0, boletos_received: Array.isArray(boletos) ? boletos.length : 0, new_boletos: [] };
   const accountId = await ensureAccountId(supabase, consultantId, igreenAccountId);
   const parseDate = (v: unknown): string | null => {
     const s = safeStr(v); if (!s) return null;
@@ -1637,6 +1651,30 @@ async function persistBoletos(supabase: any, consultantId: string | null, boleto
     synced_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   })).filter((r) => Number.isFinite(r.idcliente) && r.idcliente > 0 && r.mes_referencia);
+
+  // Detecta boletos NOVOS (chave ainda inexistente) antes do upsert.
+  const existingKeys = new Set<string>();
+  try {
+    const idcs = [...new Set(rows.map((r) => r.idcliente))];
+    for (let i = 0; i < idcs.length; i += 200) {
+      const chunk = idcs.slice(i, i + 200);
+      let eq = supabase
+        .from("igreen_customer_boletos")
+        .select("idcliente, mes_referencia")
+        .eq("consultant_id", consultantId)
+        .in("idcliente", chunk);
+      if (accountId) eq = eq.eq("igreen_account_id", accountId);
+      const { data: exist } = await eq;
+      for (const e of (exist || []) as Array<{ idcliente: number; mes_referencia: string }>) {
+        existingKeys.add(`${e.idcliente}|${e.mes_referencia}`);
+      }
+    }
+  } catch (e) {
+    console.warn("[boletos] pre-select keys:", e instanceof Error ? e.message : e);
+  }
+
+  const newRows = rows.filter((r) => !existingKeys.has(`${r.idcliente}|${r.mes_referencia}`));
+
   let saved = 0;
   const onConflict = "consultant_id,igreen_account_id,idcliente,mes_referencia";
   for (let i = 0; i < rows.length; i += 100) {
@@ -1652,6 +1690,7 @@ async function persistBoletos(supabase: any, consultantId: string | null, boleto
   // Preenche customer_id via igreen_code = idcliente. Sem isso o botão
   // "Conversar" não aparece na tela de boletos (view faz LEFT JOIN por customer_id).
   // Roda em lotes de 200 idclientes para não gerar query gigante.
+  const customerByCode = new Map<string, string>();
   try {
     const idclienteList = rows.map((r) => r.idcliente).filter(Boolean);
     for (let i = 0; i < idclienteList.length; i += 200) {
@@ -1665,6 +1704,7 @@ async function persistBoletos(supabase: any, consultantId: string | null, boleto
       const { data: cust } = await custQ;
       if (!cust || cust.length === 0) continue;
       for (const c of cust as Array<{ id: string; igreen_code: string }>) {
+        customerByCode.set(String(c.igreen_code), c.id);
         let upd = supabase
           .from("igreen_customer_boletos")
           .update({ customer_id: c.id })
@@ -1679,7 +1719,23 @@ async function persistBoletos(supabase: any, consultantId: string | null, boleto
     console.warn("[boletos] customer_id match falhou (nao critico):", e instanceof Error ? e.message : e);
   }
 
-  return { boletos_saved: saved, boletos_received: boletos.length, igreen_account_id: accountId };
+  const new_boletos = newRows.map((r) => ({
+    idcliente: r.idcliente,
+    mes_referencia: r.mes_referencia,
+    url_boleto: r.url_boleto || null,
+    total: r.total,
+    vencimento: r.vencimento,
+    nome: r.nome,
+    customer_id: customerByCode.get(String(r.idcliente)) || null,
+  }));
+
+  return {
+    boletos_saved: saved,
+    boletos_received: boletos.length,
+    igreen_account_id: accountId,
+    new_boletos,
+    new_boletos_count: new_boletos.length,
+  };
 }
 
 // Persiste carteira TELECOM (Opção A — tabela dedicada).
@@ -2425,7 +2481,28 @@ async function syncOneConsultant(
     if (!r.ok) { const retry = classifyError(r.error) === "waf_blocked" ? await scheduleWafRetry(supabase, consultantId, mode) : null; return workerErrorResponse(emailNorm, r, { retry_at: retry }); }
     const consultorId = r.data?.consultor_id ? String(r.data.consultor_id) : null;
     const saved = await persistBoletos(supabase, consultorId ? (consultantId || null) : consultantId, r.data?.boletos || []);
-    return { success: true, mode: "sync_boletos", ...saved };
+    // Aviso "boleto chegou": só enfileira (não envia WA aqui).
+    let wa_queue: { queued: number } = { queued: 0 };
+    if (consultantId && Array.isArray((saved as any).new_boletos) && (saved as any).new_boletos.length > 0) {
+      try {
+        const { data: toggles } = await supabase
+          .from("igreen_automation_settings")
+          .select("auto_wa_boleto_chegou")
+          .eq("consultant_id", consultantId)
+          .maybeSingle();
+        if (toggles?.auto_wa_boleto_chegou) {
+          const { enqueueBoletoChegouCandidates } = await import("../_shared/boleto-notify.ts");
+          wa_queue = await enqueueBoletoChegouCandidates(
+            supabase,
+            consultantId,
+            (saved as any).new_boletos,
+          );
+        }
+      } catch (e) {
+        console.warn("[sync_boletos] enqueue aviso:", e instanceof Error ? e.message : e);
+      }
+    }
+    return { success: true, mode: "sync_boletos", ...saved, wa_queue };
   }
 
   // === SYNC TELECOM MODE ===
@@ -3194,7 +3271,9 @@ Deno.serve(async (req) => {
         .eq("key", "igreen_sync_manual_only")
         .maybeSingle();
       const manualOnly = String(manualRows?.value ?? "true").toLowerCase() !== "false";
-      if (manualOnly && source === "cron") {
+      // Exceção: sync SÓ boletos pode rodar no cron (aviso Club). sync_all continua manual.
+      const allowBoletoCron = mode === "sync_boletos";
+      if (manualOnly && source === "cron" && !allowBoletoCron) {
         console.log("[sync-igreen] cron bloqueado (igreen_sync_manual_only=true — Evomi só no clique)");
         return new Response(
           JSON.stringify({

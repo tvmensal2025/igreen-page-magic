@@ -2,7 +2,7 @@
  * Whapi Proxy — encaminha chamadas REST do front para gate.whapi.cloud
  * Restrito ao super admin (consultant_id = settings.superadmin_consultant_id).
  *
- * Body: { action: "list_chats" | "list_messages" | "send_text" | "send_media" | "send_audio" | "get_profile_pic", payload: any }
+ * Body: { action: "list_chats" | "list_messages" | "send_text" | "send_media" | "send_buttons" | "send_audio" | "get_profile_pic", payload: any }
  */
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { awaitWhapiSendSlot } from "../_shared/whapi-throttle.ts";
@@ -844,6 +844,104 @@ Deno.serve(async (req) => {
           return json(r.status, { error: r.data });
         }
         return json(200, { key: { id: r.data?.message?.id || r.data?.id || "" } });
+      }
+
+      case "send_buttons": {
+        let to = normalizeChatId(String(payload.to || ""));
+        const text = String(payload.text || "");
+        const rawButtons = Array.isArray(payload.buttons) ? payload.buttons : [];
+        if (!to || !text) return json(400, { error: "to e text obrigatórios" });
+        if (rawButtons.length === 0) return json(400, { error: "buttons obrigatório" });
+
+        const resolvedBtn = await resolveWhatsAppChatId({
+          phoneOrJid: to,
+          apiToken: whapiToken,
+          baseUrl: WHAPI_BASE,
+          supabase: admin,
+          customerId: payload.customerId ? String(payload.customerId) : null,
+        });
+        if (!resolvedBtn.ok) {
+          return json(422, {
+            error: "Destino sem WhatsApp válido (wa_id)",
+            reasonCode: "invalid_whatsapp",
+            detail: resolvedBtn.reason,
+          });
+        }
+        to = resolvedBtn.chatId;
+        {
+          const suppression = await assertCanContact(admin, {
+            phone: to,
+            customerId: payload.customerId ? String(payload.customerId) : undefined,
+            consultantId: settings.superadmin_consultant_id || userId,
+            channel: "whatsapp",
+          });
+          if (!suppression.allowed) {
+            return json(403, {
+              error: "Lead em lista de não contato — envio bloqueado.",
+              reasonCode: "do_not_contact",
+              reason: suppression.reason,
+            });
+          }
+        }
+
+        const safeButtons = rawButtons.slice(0, 3).map((b: any) => ({
+          type: "quick_reply" as const,
+          title: String(b?.title || b?.label || "").slice(0, 25),
+          id: String(b?.id || "").slice(0, 64) || `btn_${Math.random().toString(36).slice(2, 8)}`,
+        })).filter((b: { title: string }) => !!b.title);
+        if (safeButtons.length === 0) return json(400, { error: "buttons sem título" });
+
+        const btnIntent = payload.intent === "reply" ? "reply" as const : "bulk" as const;
+        await awaitWhapiSendSlot(to, {
+          kind: "proxy_send_buttons",
+          intent: btnIntent,
+          supabase: admin,
+        });
+
+        const r = await whapiFetch(whapiToken, `/messages/interactive`, {
+          method: "POST",
+          body: JSON.stringify({
+            to,
+            type: "button",
+            body: { text },
+            footer: { text: String(payload.footer || "iGreen Energy ☀️").slice(0, 60) },
+            action: { buttons: safeButtons },
+          }),
+        });
+
+        if (r.ok) {
+          return json(200, {
+            key: { id: r.data?.message?.id || r.data?.id || "" },
+            mode: "quick_reply",
+            resolvedChatId: to,
+          });
+        }
+
+        // Fallback: texto numerado (mesmo padrão do whapi-api)
+        console.warn(`[whapi-proxy] send_buttons falhou (${r.status}) → texto numerado`);
+        const textWithOptions =
+          `${text}\n\n${safeButtons.map((b: { title: string }, i: number) => `*${i + 1}.* ${b.title}`).join("\n")}\n\n_Digite o número da opção desejada._`;
+        await awaitWhapiSendSlot(to, {
+          kind: "proxy_send_buttons_fallback",
+          intent: btnIntent,
+          supabase: admin,
+        });
+        const fb = await whapiFetch(whapiToken, `/messages/text`, {
+          method: "POST",
+          body: JSON.stringify({ to, body: textWithOptions }),
+        });
+        if (!fb.ok) {
+          if (isWhapiErrorBlob(fb.status, fb.data)) {
+            const cls = await classifyWhapiSendError(whapiToken, fb.status, fb.data);
+            return json(cls.httpStatus, { error: cls.error, reasonCode: cls.reasonCode, helpUrl: cls.helpUrl });
+          }
+          return json(fb.status, { error: fb.data });
+        }
+        return json(200, {
+          key: { id: fb.data?.message?.id || fb.data?.id || "" },
+          mode: "numbered_fallback",
+          resolvedChatId: to,
+        });
       }
 
       case "health_check": {

@@ -3311,9 +3311,18 @@ Deno.serve(async (req) => {
                 instanceData.consultant_id ||
                 "",
             ),
+            buttonId: buttonId ?? null,
+            text: messageText ?? null,
             sendText: async (text) => {
               try {
                 return !!(await sender.sendText(remoteJid, text));
+              } catch {
+                return false;
+              }
+            },
+            sendDocument: async (url, caption) => {
+              try {
+                return !!(await sender.sendMedia(remoteJid, url, caption, "document"));
               } catch {
                 return false;
               }

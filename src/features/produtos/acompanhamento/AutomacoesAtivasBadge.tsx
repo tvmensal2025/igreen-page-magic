@@ -12,12 +12,18 @@ import {
   type AutomationSettings,
 } from "./automationSettings";
 
-type ProKey = "auto_wa_boleto_vencendo" | "auto_wa_aniversariante" | "cross_sell_bot";
+type ProKey = "auto_wa_boleto_chegou" | "auto_wa_boleto_vencendo" | "auto_wa_aniversariante" | "cross_sell_bot";
 
 const PROACTIVE: { key: ProKey; short: string; label: string; desc: string }[] = [
   {
+    key: "auto_wa_boleto_chegou",
+    short: "Boleto chegou",
+    label: "Avisar quando o boleto do mês chegar, pelo WhatsApp",
+    desc: "Áudio + app iGreen Club. Botão manda o boleto no Zap se a pessoa pedir.",
+  },
+  {
     key: "auto_wa_boleto_vencendo",
-    short: "Boleto no WhatsApp",
+    short: "Boleto a vencer",
     label: "Enviar o boleto pro cliente antes de vencer, pelo WhatsApp",
     desc: "O sistema manda a mensagem sozinho, sem você precisar fazer nada.",
   },

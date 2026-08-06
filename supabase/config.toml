@@ -335,6 +335,9 @@ verify_jwt = false
 [functions.pos-venda-auto-progress]
 verify_jwt = false
 
+[functions.igreen-boleto-notify]
+verify_jwt = false
+
 [functions.bot-stuck-recovery]
 verify_jwt = false
 
