@@ -113,21 +113,22 @@ Deno.test("template injeta Play Store e App Store", () => {
   assertEquals(out.includes("apps.apple.com/br/app/igreen-club/id6444493340"), true);
 });
 
-Deno.test("buildBoletoAudioSpoken personaliza Oi Nome no roteiro Sofia", () => {
+Deno.test("buildBoletoAudioSpoken: Olá Nome + IA/consultor da conta", () => {
   const out = buildBoletoAudioSpoken({
-    audioBody: "Oi! Tudo bem?\n\nAqui é a Sofia, assistente virtual do seu consultor.",
+    audioBody:
+      "Aqui é {{assistente}}, assistente virtual {{posse_consultor}}. Chame {{chamar_consultor}}.",
     name: "Maria Silva",
     nameSource: "manual",
+    assistantName: "Sofia",
+    consultantName: "Rafael Ferreira",
+    consultantDisplayName: "Abel Olympio", // display de outra pessoa → ignora
+    consultantGender: "consultor",
   });
-  assertEquals(out.startsWith("Oi, Maria! Tudo bem?"), true);
-  assertEquals(out.includes("Aqui é a Sofia"), true);
+  assertEquals(out.startsWith("Olá, Maria! Tudo bem?"), true);
+  assertEquals(out.includes("Aqui é Sofia, assistente virtual do Rafael"), true);
+  assertEquals(out.includes("Chame o Rafael"), true);
+  assertEquals(out.includes("Abel"), false);
   assertEquals(out.includes("PDF"), false);
-  const legado = buildBoletoAudioSpoken({
-    audioBody: "seu boleto já está ativo.",
-    name: "Maria Silva",
-    nameSource: "manual",
-  });
-  assertEquals(legado.startsWith("Oi, Maria! Tudo bem?"), true);
 });
 
 Deno.test("shouldRunBoletoNotifyNow hora", () => {

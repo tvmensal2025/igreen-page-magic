@@ -8,6 +8,14 @@
  * - Apps Android/iOS — SEMPRE (mensagem própria com links das lojas)
  */
 import { safeFirstNameForAddress } from "./customer-display-name.ts";
+import {
+  doDaConsultor,
+  oAConsultor,
+  possessiveConsultantFallback,
+  resolveAssistantDisplayName,
+  resolveConsultantRoleGender,
+  resolvePublicConsultantFirstName,
+} from "./consultant-public-label.ts";
 import { hourBRT } from "./quiet-hours.ts";
 
 // deno-lint-ignore no-explicit-any
@@ -44,12 +52,12 @@ export type BoletoNotifyConfig = {
 };
 
 /**
- * Roteiro completo da Sofia (voz do consultor).
- * Sofia = assistente virtual da página/IA do consultor — não é o nome do consultor.
+ * Corpo do áudio (a abertura “Olá, Nome! Tudo bem?” é prefixada no envio).
+ * Variáveis: {{assistente}} (IA do consultor), {{posse_consultor}} (do Rafael / da Ana),
+ * {{chamar_consultor}} (o Rafael / a Ana / o seu consultor).
  */
-export const DEFAULT_BOLETO_AUDIO_BODY = `Oi! Tudo bem?
-
-Aqui é a Sofia, assistente virtual do seu consultor, e estou passando com uma notícia importante: o seu boleto de energia deste mês já está disponível!
+export const DEFAULT_BOLETO_AUDIO_BODY =
+  `Aqui é {{assistente}}, assistente virtual {{posse_consultor}}, e estou passando com uma notícia importante: o seu boleto de energia deste mês já está disponível!
 
 A iGreen realiza o envio oficial do boleto, mas o jeito mais seguro, rápido e completo de acompanhar tudo é pelo aplicativo iGreen Club.
 
@@ -57,7 +65,7 @@ Acesse o app para conferir a sua fatura, a data de vencimento e aproveitar desco
 
 E olha que notícia incrível: hoje, já somos mais de oitocentas mil pessoas economizando com a iGreen! É muita gente economizando junto!
 
-Se precisar de ajuda, é só chamar o seu consultor. Até mais!`;
+Se precisar de ajuda, é só chamar {{chamar_consultor}}. Até mais!`;
 
 export const DEFAULT_BOLETO_NOTIFY_CONFIG: BoletoNotifyConfig = {
   id: "global",
@@ -84,24 +92,102 @@ Qualquer dúvida, responde aqui 💚`,
   doc_caption: "Segue seu boleto. O lugar oficial continua no app iGreen Club 👆",
 };
 
+/** Vars do roteiro de áudio — IA e consultor por conta (nunca Sofia/Rafael fixos). */
+export function resolveBoletoAudioConsultantVars(opts: {
+  assistantName?: string | null;
+  consultantName?: string | null;
+  consultantDisplayName?: string | null;
+  consultantGender?: string | null;
+}): { assistente: string; posse_consultor: string; chamar_consultor: string } {
+  const assistente = resolveAssistantDisplayName(opts.assistantName);
+  const gender = resolveConsultantRoleGender(
+    opts.consultantGender,
+    opts.consultantName || opts.consultantDisplayName,
+  );
+  const first = resolvePublicConsultantFirstName(
+    opts.consultantName,
+    opts.consultantDisplayName,
+  );
+  const doDa = doDaConsultor(gender);
+  const oA = oAConsultor(gender);
+  if (first) {
+    return {
+      assistente,
+      posse_consultor: `${doDa} ${first}`,
+      chamar_consultor: `${oA} ${first}`,
+    };
+  }
+  const posse = possessiveConsultantFallback(gender);
+  return {
+    assistente,
+    posse_consultor: `${doDa} ${posse}`,
+    chamar_consultor: posse,
+  };
+}
+
+export function renderBoletoAudioBody(
+  audioBody: string,
+  vars: { assistente: string; posse_consultor: string; chamar_consultor: string },
+): string {
+  return String(audioBody || DEFAULT_BOLETO_AUDIO_BODY)
+    .replace(/\{\{assistente\}\}/gi, vars.assistente)
+    .replace(/\{\{posse_consultor\}\}/gi, vars.posse_consultor)
+    .replace(/\{\{chamar_consultor\}\}/gi, vars.chamar_consultor)
+    .replace(/\{\{consultor\}\}/gi, vars.chamar_consultor)
+    .trim();
+}
+
 /**
- * Áudio falado = roteiro completo da Sofia.
- * Com nome confiável, personaliza só a abertura: "Oi, Nome! Tudo bem?".
- * Roteiro antigo (sem saudação) ainda recebe o prefixo.
+ * Áudio falado = “Olá, Nome! Tudo bem?” (canônico) + corpo com IA/consultor do dono.
+ * Sem nome usável do cliente → só o corpo (sem inventar saudação).
  */
 export function buildBoletoAudioSpoken(opts: {
   audioBody: string;
   name?: string | null;
   nameSource?: string | null;
+  assistantName?: string | null;
+  consultantName?: string | null;
+  consultantDisplayName?: string | null;
+  consultantGender?: string | null;
 }): string {
-  let body = String(opts.audioBody || DEFAULT_BOLETO_AUDIO_BODY).trim();
+  const vars = resolveBoletoAudioConsultantVars(opts);
+  let body = renderBoletoAudioBody(opts.audioBody, vars);
+  // Remove saudação colada no corpo (roteiros antigos "Oi! Tudo bem?") — a abertura canônica manda.
+  body = body.replace(/^(Oi|Olá)([!,]\s*[^!]*)?!?\s*Tudo bem\?\s*/i, "").trim();
   const first = safeFirstNameForAddress(opts.name, opts.nameSource);
   if (!first) return body;
-  if (/^(Oi|Olá)!\s*Tudo bem\?/i.test(body)) {
-    return body.replace(/^(Oi|Olá)!\s*Tudo bem\?/i, `Oi, ${first}! Tudo bem?`);
+  return `Olá, ${first}! Tudo bem? ${body}`;
+}
+
+export async function loadConsultantForBoletoAudio(
+  supabase: SB,
+  consultantId: string,
+): Promise<{
+  assistantName: string | null;
+  consultantName: string | null;
+  consultantDisplayName: string | null;
+  consultantGender: string | null;
+}> {
+  try {
+    const { data } = await supabase
+      .from("consultants")
+      .select("name, display_name, assistant_name, gender")
+      .eq("id", consultantId)
+      .maybeSingle();
+    return {
+      assistantName: data?.assistant_name ?? null,
+      consultantName: data?.name ?? null,
+      consultantDisplayName: data?.display_name ?? null,
+      consultantGender: data?.gender ?? null,
+    };
+  } catch {
+    return {
+      assistantName: null,
+      consultantName: null,
+      consultantDisplayName: null,
+      consultantGender: null,
+    };
   }
-  if (/^(Oi|Olá)\b/i.test(body)) return body;
-  return `Oi, ${first}! Tudo bem?\n\n${body}`;
 }
 
 /**

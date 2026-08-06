@@ -32,11 +32,15 @@ import {
   buildAppStoreButtonsPrompt,
   buildAppStoreNumberedMessage,
   buildBoletoButtonPrompt,
+  renderBoletoAudioBody,
+  resolveBoletoAudioConsultantVars,
   stripBoletoButtonCta,
   type BoletoNotifyConfig,
 } from "./boletoNotifyConfig";
 
 type Key = keyof Omit<AutomationSettings, "consultant_id">;
+
+const OLA_PREFIX_LABEL = "Olá, {Nome}! Tudo bem?";
 
 const SUPABASE_URL =
   import.meta.env.VITE_SUPABASE_URL || "https://zlzasfhcxcznaprrragl.supabase.co";
@@ -76,15 +80,22 @@ function firstName(raw: string): string {
 }
 
 /** Espelha buildBoletoAudioSpoken da edge. */
-function buildSpokenPreview(body: string, name: string): string {
-  let corpus = (body || DEFAULT_BOLETO_AUDIO_BODY).trim();
-  const n = firstName(name);
+function buildSpokenPreview(
+  body: string,
+  customerName: string,
+  cons: {
+    assistantName?: string | null;
+    consultantName?: string | null;
+    consultantDisplayName?: string | null;
+    consultantGender?: string | null;
+  },
+): string {
+  const vars = resolveBoletoAudioConsultantVars(cons);
+  let corpus = renderBoletoAudioBody(body || DEFAULT_BOLETO_AUDIO_BODY, vars);
+  corpus = corpus.replace(/^(Oi|Olá)([!,]\s*[^!]*)?!?\s*Tudo bem\?\s*/i, "").trim();
+  const n = firstName(customerName);
   if (!n) return corpus;
-  if (/^(Oi|Olá)!\s*Tudo bem\?/i.test(corpus)) {
-    return corpus.replace(/^(Oi|Olá)!\s*Tudo bem\?/i, `Oi, ${n}! Tudo bem?`);
-  }
-  if (/^(Oi|Olá)\b/i.test(corpus)) return corpus;
-  return `Oi, ${n}! Tudo bem?\n\n${corpus}`;
+  return `Olá, ${n}! Tudo bem? ${corpus}`;
 }
 
 function formatValor(total: unknown): string {
@@ -201,10 +212,25 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
     return await res.blob();
   };
 
+  const loadConsAudioVars = async () => {
+    const { data } = await supabase
+      .from("consultants")
+      .select("name, display_name, assistant_name, gender")
+      .eq("id", consultantId)
+      .maybeSingle();
+    return {
+      assistantName: data?.assistant_name ?? null,
+      consultantName: data?.name ?? null,
+      consultantDisplayName: data?.display_name ?? null,
+      consultantGender: data?.gender ?? null,
+    };
+  };
+
   const generateAndListen = async () => {
     setAudioBusy(true);
     try {
-      const spoken = buildSpokenPreview(cfg.audio_script, previewName);
+      const cons = await loadConsAudioVars();
+      const spoken = buildSpokenPreview(cfg.audio_script, previewName, cons);
       const blob = await generateMp3Blob(spoken);
       if (audioUrl?.startsWith("blob:")) URL.revokeObjectURL(audioUrl);
       const url = URL.createObjectURL(blob);
@@ -212,7 +238,7 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
       requestAnimationFrame(() => {
         void audioRef.current?.play().catch(() => undefined);
       });
-      toast({ title: "Áudio pronto", description: "Roteiro da Sofia — ouça abaixo." });
+      toast({ title: "Áudio pronto", description: `${OLA_PREFIX_LABEL} + IA/consultor da sua conta.` });
     } catch (e) {
       toast({
         title: "Erro ao gerar áudio",
@@ -342,9 +368,10 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
       const BOLETO_BTN_ID = "boleto_receber_doc";
 
       if (wantAudio) {
-        const spoken = buildSpokenPreview(cfg.audio_script, nome);
+        const cons = await loadConsAudioVars();
+        const spoken = buildSpokenPreview(cfg.audio_script, nome, cons);
         toast({
-          title: "Gerando áudio Sofia…",
+          title: "Gerando áudio…",
           description: "Em seguida: texto (se ligado) + apps + botão opcional.",
         });
         const blob = await generateMp3Blob(spoken);
@@ -491,7 +518,7 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
               <div>
                 <p className="text-xs font-semibold">Textos, áudio e teste do aviso de boleto</p>
                 <p className="text-[11px] text-muted-foreground">
-                  Sofia = assistente virtual da sua página (IA). Sem falar “PDF”.
+                  Abertura: {OLA_PREFIX_LABEL} · IA = nome da sua assistente · consultor = você. Sem “PDF”.
                 </p>
               </div>
               <Button type="button" variant="outline" size="sm" onClick={() => setShowTexts((v) => !v)}>
@@ -533,13 +560,16 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                   </div>
 
                   <div className="rounded-md border bg-muted/30 px-2.5 py-2 text-[11px] text-muted-foreground">
-                    <span className="font-medium text-foreground">Sofia</span> se apresenta como
-                    assistente virtual do consultor. Com nome confiável do cliente, a abertura vira
-                    “Oi, Nome! Tudo bem?”.
+                    <span className="font-medium text-foreground">Abertura (fixa):</span>{" "}
+                    {OLA_PREFIX_LABEL}
+                    <span className="block mt-0.5">
+                      Variáveis do corpo: {"{{assistente}}"} (IA da conta), {"{{posse_consultor}}"}{" "}
+                      (do Rafael / da Ana), {"{{chamar_consultor}}"}.
+                    </span>
                   </div>
 
                   <div>
-                    <Label className="text-xs">Roteiro do áudio (Sofia)</Label>
+                    <Label className="text-xs">Corpo do áudio</Label>
                     <Textarea
                       rows={10}
                       value={cfg.audio_script || DEFAULT_BOLETO_AUDIO_BODY}
@@ -605,7 +635,7 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                         checked={cfg.send_audio !== false}
                         onCheckedChange={(v) => setDraft((d) => ({ ...d, send_audio: v }))}
                       />
-                      <Label htmlFor="send_audio" className="text-xs">Áudio Sofia</Label>
+                      <Label htmlFor="send_audio" className="text-xs">Áudio (IA do consultor)</Label>
                     </div>
                     <div className="flex items-center gap-2">
                       <Switch

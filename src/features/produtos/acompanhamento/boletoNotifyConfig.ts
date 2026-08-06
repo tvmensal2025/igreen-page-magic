@@ -5,6 +5,14 @@
  */
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  doDaConsultor,
+  oAConsultor,
+  possessiveConsultantFallback,
+  resolveAssistantDisplayName,
+  resolveConsultantRoleGender,
+  firstNameFromPublicConsultant,
+} from "@/lib/consultantPublicLabel";
 
 export type BoletoNotifyConfig = {
   id: string;
@@ -30,12 +38,11 @@ export const BOLETO_APP_ANDROID_BUTTON_ID = "boleto_app_android";
 export const BOLETO_APP_IOS_BUTTON_ID = "boleto_app_ios";
 
 /**
- * Roteiro completo da Sofia (voz do consultor).
- * Sofia = assistente virtual da página/IA — não é o nome do consultor.
+ * Corpo do áudio. Abertura canônica “Olá, Nome! Tudo bem?” é prefixada no envio.
+ * {{assistente}} = IA do consultor · {{posse_consultor}} / {{chamar_consultor}} = nome dele.
  */
-export const DEFAULT_BOLETO_AUDIO_BODY = `Oi! Tudo bem?
-
-Aqui é a Sofia, assistente virtual do seu consultor, e estou passando com uma notícia importante: o seu boleto de energia deste mês já está disponível!
+export const DEFAULT_BOLETO_AUDIO_BODY =
+  `Aqui é {{assistente}}, assistente virtual {{posse_consultor}}, e estou passando com uma notícia importante: o seu boleto de energia deste mês já está disponível!
 
 A iGreen realiza o envio oficial do boleto, mas o jeito mais seguro, rápido e completo de acompanhar tudo é pelo aplicativo iGreen Club.
 
@@ -43,7 +50,7 @@ Acesse o app para conferir a sua fatura, a data de vencimento e aproveitar desco
 
 E olha que notícia incrível: hoje, já somos mais de oitocentas mil pessoas economizando com a iGreen! É muita gente economizando junto!
 
-Se precisar de ajuda, é só chamar o seu consultor. Até mais!`;
+Se precisar de ajuda, é só chamar {{chamar_consultor}}. Até mais!`;
 
 export const DEFAULT_BOLETO_NOTIFY_CONFIG: BoletoNotifyConfig = {
   id: "global",
@@ -116,6 +123,51 @@ export function stripBoletoButtonCta(waText: string): string {
     .trim();
 }
 
+/** Espelha a edge: IA + nome do consultor dono. */
+export function resolveBoletoAudioConsultantVars(opts: {
+  assistantName?: string | null;
+  consultantName?: string | null;
+  consultantDisplayName?: string | null;
+  consultantGender?: string | null;
+}): { assistente: string; posse_consultor: string; chamar_consultor: string } {
+  const assistente = resolveAssistantDisplayName(opts.assistantName);
+  const gender = resolveConsultantRoleGender(
+    opts.consultantGender,
+    opts.consultantName || opts.consultantDisplayName,
+  );
+  const first = firstNameFromPublicConsultant(
+    opts.consultantName,
+    opts.consultantDisplayName,
+  );
+  const doDa = doDaConsultor(gender);
+  const oA = oAConsultor(gender);
+  if (first) {
+    return {
+      assistente,
+      posse_consultor: `${doDa} ${first}`,
+      chamar_consultor: `${oA} ${first}`,
+    };
+  }
+  const posse = possessiveConsultantFallback(gender);
+  return {
+    assistente,
+    posse_consultor: `${doDa} ${posse}`,
+    chamar_consultor: posse,
+  };
+}
+
+export function renderBoletoAudioBody(
+  audioBody: string,
+  vars: { assistente: string; posse_consultor: string; chamar_consultor: string },
+): string {
+  return String(audioBody || DEFAULT_BOLETO_AUDIO_BODY)
+    .replace(/\{\{assistente\}\}/gi, vars.assistente)
+    .replace(/\{\{posse_consultor\}\}/gi, vars.posse_consultor)
+    .replace(/\{\{chamar_consultor\}\}/gi, vars.chamar_consultor)
+    .replace(/\{\{consultor\}\}/gi, vars.chamar_consultor)
+    .trim();
+}
+
 export function useBoletoNotifyConfig() {
   return useQuery({
     queryKey: ["boleto-notify-config"],
@@ -149,7 +201,6 @@ export function useUpdateBoletoNotifyConfig() {
         ...patch,
         updated_at: new Date().toISOString(),
       };
-      // UPDATE primeiro (linha global já existe); upsert só se faltar a linha.
       const { data: updated, error: updErr } = await supabase
         .from("boleto_notify_config" as never)
         .update(payload as never)

@@ -36,6 +36,7 @@ import {
   loadBoletoNotifyConfig,
   parseMesFromStageKey,
   buildBoletoAudioSpoken,
+  loadConsultantForBoletoAudio,
   renderBoletoNotifyTemplate,
   stripBoletoButtonCta,
   shouldRunBoletoNotifyNow,
@@ -75,10 +76,12 @@ Deno.serve(async (req) => {
     }
     const cfg = await loadBoletoNotifyConfig(supabase);
     if (action === "test_tts") {
+      const cons = await loadConsultantForBoletoAudio(supabase, user.consultantId);
       const spoken = buildBoletoAudioSpoken({
         audioBody: cfg.audio_script,
         name: String(body.name || "Maria"),
         nameSource: "manual",
+        ...cons,
       });
       const audioUrl = await renderPersonalizedTtsAudio(supabase, user.consultantId, spoken);
       return json({
@@ -312,10 +315,12 @@ async function sendOne(
   };
 
   const waText = renderBoletoNotifyTemplate(cfg.wa_text, vars);
+  const consAudio = await loadConsultantForBoletoAudio(supabase, row.consultant_id);
   const audioSpoken = buildBoletoAudioSpoken({
     audioBody: cfg.audio_script,
     name: customer.name,
     nameSource: customer.name_source,
+    ...consAudio,
   });
 
   if (dryRun) {
@@ -553,10 +558,12 @@ async function runTestSend(
     urlBoleto: String(boleto.url_boleto || ""),
   };
   const waText = renderBoletoNotifyTemplate(cfg.wa_text, vars);
+  const consAudio = await loadConsultantForBoletoAudio(supabase, opts.consultantId);
   const spoken = buildBoletoAudioSpoken({
     audioBody: cfg.audio_script,
     name: opts.name,
     nameSource: "manual",
+    ...consAudio,
   });
 
   const sendCtxBase = ctx(opts.consultantId, `test:${phone}`, "boleto_chegou:test");
