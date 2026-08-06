@@ -33,6 +33,12 @@ import {
 } from "./brain-sample.ts";
 import { describeDataQuality } from "./brain-data-quality.ts";
 import { evaluateAdaptiveCampaignWaste } from "./campaign-waste-guard.ts";
+import {
+  capConfidenceForSupport,
+  type CampaignSupportVerdict,
+  supportForSnapshot,
+  supportLabel,
+} from "./brain-campaign-support.ts";
 
 export type BrainDecisionAction =
   | "hold"
@@ -62,6 +68,8 @@ export type BrainDecision = {
   confidence: DecisionConfidence;
   sample: SampleAssessment;
   health: BrainHealth;
+  /** Capacidade de atribuição da campanha — teto do que pode ser decidido. */
+  support: CampaignSupportVerdict;
   wasteGuardMode: WasteGuardMode;
   /** Motivo em pt-BR, pronto para o painel. */
   reason: string;
@@ -171,7 +179,14 @@ function brl(cents: number): string {
 export function decideCampaign(input: DecideCampaignInput): BrainDecision {
   const { snapshot, policy, brainConfig, nowMs } = input;
   const health = evaluateBrainHealth(snapshot, policy);
-  const sample = evaluateSampleQuality(snapshot, policy, input.secondWindow);
+  const rawSample = evaluateSampleQuality(snapshot, policy, input.secondWindow);
+  const support = supportForSnapshot(snapshot);
+  // A capacidade de atribuição é um teto, nunca uma promoção: campanha que não
+  // liga gasto a cliente não vira confiável só porque teve muitas conversas.
+  const sample: SampleAssessment = {
+    ...rawSample,
+    confidence: capConfidenceForSupport(rawSample.confidence, support.support),
+  };
   const wasteGuardMode = resolveWasteGuardMode(brainConfig);
   const blockers: DecisionBlocker[] = [];
 
@@ -191,6 +206,7 @@ export function decideCampaign(input: DecideCampaignInput): BrainDecision {
     confidence: sample.confidence,
     sample,
     health,
+    support,
     wasteGuardMode,
     measured: {
       spendCents: snapshot.meta.spendCents,
@@ -246,6 +262,24 @@ export function decideCampaign(input: DecideCampaignInput): BrainDecision {
       0,
       `manter — ${describeDataQuality(snapshot.dataQuality)}`,
       "após nova sincronização completa das métricas",
+    );
+  }
+
+  // ── 1b. Campanha que o Cérebro não sabe ler ───────────────────────────
+  // Sem espelho na Meta (ou recusada por ela) não há métrica para julgar nem
+  // objeto para ajustar. Nem proteger faz sentido: não há o que pausar.
+  if (support.support === "unsupported") {
+    blockers.push({
+      code: "campanha_nao_suportada",
+      message: support.reason,
+    });
+    return finish(
+      "hold",
+      null,
+      null,
+      0,
+      `manter — ${support.reason}`,
+      "após a campanha existir e ser aceita na Meta",
     );
   }
 
@@ -389,6 +423,14 @@ export function decideCampaign(input: DecideCampaignInput): BrainDecision {
     blockers.push({
       code: "sem_dado_comercial",
       message: `${health.commercial.leadsTrusted} lead(s) identificado(s) — mínimo ${policy.minLeadsSample}`,
+    });
+  }
+  // Custo por conversa barato não é vitória comercial quando ninguém consegue
+  // dizer se aquela conversa virou cliente.
+  if (!support.allowsExpansive) {
+    blockers.push({
+      code: "sem_atribuicao_comercial",
+      message: `${supportLabel(support.support)} — ${support.reason}`,
     });
   }
 
