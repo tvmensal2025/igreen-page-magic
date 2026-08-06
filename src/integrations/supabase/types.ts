@@ -647,6 +647,7 @@ export type Database = {
           applied_at: string | null
           consultant_id: string
           created_at: string
+          dedup_key: string | null
           dismissed_at: string | null
           id: string
           message: string
@@ -660,6 +661,7 @@ export type Database = {
           applied_at?: string | null
           consultant_id: string
           created_at?: string
+          dedup_key?: string | null
           dismissed_at?: string | null
           id?: string
           message: string
@@ -673,6 +675,7 @@ export type Database = {
           applied_at?: string | null
           consultant_id?: string
           created_at?: string
+          dedup_key?: string | null
           dismissed_at?: string | null
           id?: string
           message?: string
@@ -994,6 +997,105 @@ export type Database = {
           item_key?: string
           note?: string | null
           user_id?: string
+        }
+        Relationships: []
+      }
+      ads_brain_decisions: {
+        Row: {
+          action: string
+          action_kind: string | null
+          blockers: Json
+          campaign_id: string
+          confidence: string | null
+          consultant_id: string
+          created_at: string
+          data_quality_state: string | null
+          decided_at: string
+          executed_at: string | null
+          from_budget_cents: number | null
+          health: Json
+          id: string
+          idempotency_key: string
+          measured: Json
+          meta_error: string | null
+          meta_response: Json | null
+          mode: string
+          next_evaluation: string | null
+          outcome: string | null
+          outcome_evaluated_at: string | null
+          outcome_metrics: Json | null
+          reason: string
+          sample_quality: string | null
+          snapshot_schema_version: number
+          snapshot_version: string
+          status: string
+          step_pct: number | null
+          to_budget_cents: number | null
+          waste_guard_mode: string | null
+        }
+        Insert: {
+          action: string
+          action_kind?: string | null
+          blockers?: Json
+          campaign_id: string
+          confidence?: string | null
+          consultant_id: string
+          created_at?: string
+          data_quality_state?: string | null
+          decided_at?: string
+          executed_at?: string | null
+          from_budget_cents?: number | null
+          health?: Json
+          id?: string
+          idempotency_key: string
+          measured?: Json
+          meta_error?: string | null
+          meta_response?: Json | null
+          mode?: string
+          next_evaluation?: string | null
+          outcome?: string | null
+          outcome_evaluated_at?: string | null
+          outcome_metrics?: Json | null
+          reason: string
+          sample_quality?: string | null
+          snapshot_schema_version?: number
+          snapshot_version: string
+          status?: string
+          step_pct?: number | null
+          to_budget_cents?: number | null
+          waste_guard_mode?: string | null
+        }
+        Update: {
+          action?: string
+          action_kind?: string | null
+          blockers?: Json
+          campaign_id?: string
+          confidence?: string | null
+          consultant_id?: string
+          created_at?: string
+          data_quality_state?: string | null
+          decided_at?: string
+          executed_at?: string | null
+          from_budget_cents?: number | null
+          health?: Json
+          id?: string
+          idempotency_key?: string
+          measured?: Json
+          meta_error?: string | null
+          meta_response?: Json | null
+          mode?: string
+          next_evaluation?: string | null
+          outcome?: string | null
+          outcome_evaluated_at?: string | null
+          outcome_metrics?: Json | null
+          reason?: string
+          sample_quality?: string | null
+          snapshot_schema_version?: number
+          snapshot_version?: string
+          status?: string
+          step_pct?: number | null
+          to_budget_cents?: number | null
+          waste_guard_mode?: string | null
         }
         Relationships: []
       }
@@ -2002,6 +2104,51 @@ export type Database = {
           label?: string
           updated_at?: string
           updated_by?: string | null
+        }
+        Relationships: []
+      }
+      boleto_notify_config: {
+        Row: {
+          audio_script: string
+          button_boleto_label: string
+          button_enabled: boolean
+          cron_daily: boolean
+          cron_hour_brt: number
+          doc_caption: string
+          id: string
+          send_audio: boolean
+          send_text: boolean
+          sync_enabled: boolean
+          updated_at: string
+          wa_text: string
+        }
+        Insert: {
+          audio_script?: string
+          button_boleto_label?: string
+          button_enabled?: boolean
+          cron_daily?: boolean
+          cron_hour_brt?: number
+          doc_caption?: string
+          id?: string
+          send_audio?: boolean
+          send_text?: boolean
+          sync_enabled?: boolean
+          updated_at?: string
+          wa_text?: string
+        }
+        Update: {
+          audio_script?: string
+          button_boleto_label?: string
+          button_enabled?: boolean
+          cron_daily?: boolean
+          cron_hour_brt?: number
+          doc_caption?: string
+          id?: string
+          send_audio?: boolean
+          send_text?: boolean
+          sync_enabled?: boolean
+          updated_at?: string
+          wa_text?: string
         }
         Relationships: []
       }
@@ -6775,6 +6922,7 @@ export type Database = {
           alert_devolutivas: boolean
           alert_licencas_expirando: boolean
           auto_wa_aniversariante: boolean
+          auto_wa_boleto_chegou: boolean
           auto_wa_boleto_vencendo: boolean
           capture_boletos: boolean
           capture_cashback: boolean
@@ -6801,6 +6949,7 @@ export type Database = {
           alert_devolutivas?: boolean
           alert_licencas_expirando?: boolean
           auto_wa_aniversariante?: boolean
+          auto_wa_boleto_chegou?: boolean
           auto_wa_boleto_vencendo?: boolean
           capture_boletos?: boolean
           capture_cashback?: boolean
@@ -6827,6 +6976,7 @@ export type Database = {
           alert_devolutivas?: boolean
           alert_licencas_expirando?: boolean
           auto_wa_aniversariante?: boolean
+          auto_wa_boleto_chegou?: boolean
           auto_wa_boleto_vencendo?: boolean
           capture_boletos?: boolean
           capture_cashback?: boolean
@@ -14458,6 +14608,26 @@ export type Database = {
             }
             Returns: number
           }
+      customer_closed_via_wallet_sibling: {
+        Args: {
+          _consultant_id: string
+          _cpf: string
+          _customer_id: string
+          _igreen_code: string
+          _portal_submitted_at: string
+        }
+        Returns: boolean
+      }
+      customer_is_closed_deal: {
+        Args: {
+          _andamento_igreen: string
+          _customer_origin: string
+          _is_converted: boolean
+          _pos_venda_stage: string
+          _status: string
+        }
+        Returns: boolean
+      }
       debit_campaign_spend_observation: {
         Args: {
           _activity_label?: string
@@ -14612,6 +14782,7 @@ export type Database = {
         Returns: boolean
       }
       flow_engine_housekeeping: { Args: never; Returns: Json }
+      fn_chave_fone_bulk: { Args: { p_phone: string }; Returns: string }
       fork_ad_template: { Args: { _origin_id: string }; Returns: string }
       fork_flow_from_public: {
         Args: { _consultant_id: string; _variant: string }
@@ -14885,12 +15056,48 @@ export type Database = {
         Args: { _year?: number }
         Returns: number
       }
+      normalize_br_wa_phone: { Args: { _raw: string }; Returns: string }
       on_journey_inbound: {
         Args: { p_customer_id: string }
         Returns: undefined
       }
+      outreach_touches_today: {
+        Args: { p_stages: string[] }
+        Returns: {
+          consultant_id: string
+          leads: number
+          stage_group: string
+        }[]
+      }
+      partner_lead_is_closed: {
+        Args: {
+          _andamento_igreen: string
+          _consultant_id: string
+          _cpf: string
+          _customer_id: string
+          _customer_origin: string
+          _igreen_code: string
+          _is_converted: boolean
+          _portal_submitted_at: string
+          _pos_venda_stage: string
+          _status: string
+        }
+        Returns: boolean
+      }
       pause_sending_now: {
         Args: { p_hours?: number; p_instance: string }
+        Returns: string
+      }
+      pos_venda_auto_reference_at: {
+        Args: {
+          _andamento: string
+          _approved_at: string
+          _data_ativo: string
+          _data_ativo_igreen: string
+          _data_validado: string
+          _data_validado_igreen: string
+          _max_age_days?: number
+        }
         Returns: string
       }
       pos_venda_mark_prior_stages_skipped: {
@@ -15177,6 +15384,8 @@ export type Database = {
         }
         Returns: number
       }
+      sync_qa_all_flows_from_master: { Args: never; Returns: number }
+      sync_qa_from_master_flow: { Args: { _flow_id: string }; Returns: number }
       try_acquire_customer_lock: {
         Args: { p_customer: string; p_ttl_ms: number }
         Returns: string
