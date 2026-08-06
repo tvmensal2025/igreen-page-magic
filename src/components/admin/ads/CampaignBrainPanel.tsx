@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { primaryDddForCity } from "@/lib/cityToDdd";
+import CampaignBrainDiagnostics from "./CampaignBrainDiagnostics";
 import {
   BRAIN_DEFAULT_STEP_PCT,
   BRAIN_MAX_STEP_PCT,
@@ -1206,6 +1207,8 @@ export function CampaignBrainPanel({
           </p>
         )}
       </div>
+
+      <CampaignBrainDiagnostics consultantId={consultantId} />
 
       {/* Decisions */}
       <Card className="p-4">
