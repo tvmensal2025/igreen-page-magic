@@ -10,6 +10,7 @@
  *
  * Prefixo AUTO_PERF_PAUSE: healthcheck/cron NÃO reativam (só Play do consultor).
  */
+import type { BrainDecisionPolicy } from "./brain-policy.ts";
 
 export const AUTO_PERF_PAUSE_PREFIX = "AUTO_PERF_PAUSE:";
 
@@ -83,6 +84,114 @@ export function evaluateCampaignWaste(input: {
     };
   }
   return { action: "none" };
+}
+
+// ───────────────────── Waste Guard adaptativo ─────────────────────
+//
+// As regras acima usam limiares fixos (R$ 10 / R$ 40 / R$ 8 / R$ 12) e seguem
+// rodando em produção como ação protetiva — não são substituídas aqui.
+//
+// O problema dos limiares fixos: R$ 10 é muito para uma exploradora com CPL
+// alvo de R$ 2 e pouco para uma âncora com alvo de R$ 12. E uma campanha com
+// 3h de vida pode estourar R$ 10 antes da Meta terminar o aprendizado.
+//
+// O adaptativo abaixo escala o limiar pelo CPL-alvo, respeita maturidade e
+// NUNCA devolve "pause": o máximo que ele produz é `recommend_pause`. Quem
+// decide executar é a camada de decisão, conforme `waste_guard_mode`
+// (default `recommend`).
+
+export type AdaptiveWasteVerdict = {
+  action: "none" | "observe" | "recommend_pause";
+  rule: "zero_conv" | "zero_click" | "too_new" | "has_result" | "below_threshold";
+  reason: string;
+  /** Limiar de gasto calculado para esta campanha (centavos). */
+  thresholdCents: number;
+};
+
+export function evaluateAdaptiveCampaignWaste(input: {
+  spendCents: number;
+  conversations: number;
+  clicks: number;
+  campaignAgeHours: number;
+  targetCplCents: number;
+  /** Já existe lead identificado ou cliente aprovado atribuído? */
+  hasCommercialResult: boolean;
+  policy: BrainDecisionPolicy;
+}): AdaptiveWasteVerdict {
+  const {
+    spendCents,
+    conversations,
+    clicks,
+    campaignAgeHours,
+    targetCplCents,
+    hasCommercialResult,
+    policy,
+  } = input;
+
+  // Gastar N vezes o custo de uma conversa sem conseguir nenhuma é o sinal.
+  const thresholdCents = Math.max(
+    WASTE_ZERO_CLICK_SPEND_CENTS,
+    Math.round(targetCplCents * policy.wasteSpendMultiplier),
+  );
+
+  // Campanha que já trouxe negócio não é desperdício, mesmo com CPL ruim.
+  if (hasCommercialResult) {
+    return {
+      action: "none",
+      rule: "has_result",
+      reason: "campanha já trouxe resultado comercial atribuído",
+      thresholdCents,
+    };
+  }
+
+  // Campanha nova não é pausada por ter gastado pouco em poucas horas.
+  if (campaignAgeHours < policy.minCampaignAgeHours) {
+    return {
+      action: spendCents >= thresholdCents ? "observe" : "none",
+      rule: "too_new",
+      reason: `campanha com ${Math.round(campaignAgeHours)}h — ainda no tempo de aprendizado (mínimo ${policy.minCampaignAgeHours}h)`,
+      thresholdCents,
+    };
+  }
+
+  if (spendCents < thresholdCents) {
+    return {
+      action: "none",
+      rule: "below_threshold",
+      reason: `gasto ${
+        (spendCents / 100).toFixed(2)
+      } abaixo do limiar de R$ ${(thresholdCents / 100).toFixed(2)}`,
+      thresholdCents,
+    };
+  }
+
+  if (conversations <= 0 && clicks <= 0) {
+    return {
+      action: "recommend_pause",
+      rule: "zero_click",
+      reason: `R$ ${
+        (spendCents / 100).toFixed(2)
+      } sem nenhum clique (limiar R$ ${(thresholdCents / 100).toFixed(2)})`,
+      thresholdCents,
+    };
+  }
+  if (conversations <= 0) {
+    return {
+      action: "recommend_pause",
+      rule: "zero_conv",
+      reason: `R$ ${
+        (spendCents / 100).toFixed(2)
+      } sem nenhuma conversa (limiar R$ ${(thresholdCents / 100).toFixed(2)})`,
+      thresholdCents,
+    };
+  }
+
+  return {
+    action: "none",
+    rule: "below_threshold",
+    reason: `${conversations} conversa(s) na janela`,
+    thresholdCents,
+  };
 }
 
 export function evaluateAdWaste(input: {
