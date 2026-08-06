@@ -182,6 +182,37 @@ explícito remapeando os legados. Na prática a regra não rodava: o E2E de
 2026-08 levou um lead de R$ 60 até o pedido de documento ouvindo "economia de
 R$ 4 a R$ 12".
 
+## Uma mensagem do lead avança um passo, não dois
+
+`a1_ask_name` tem transição `default` para `a2_text_ask_bill_value`, que tem
+`default` para `a3_explain_with_buttons`. Quando o lead mandava só o nome, o
+motor pousava no `a2`, emitia a pergunta do valor por `emitCurrentBeforeGoto` e
+em seguida aplicava a `default` do próprio `a2` — usando a mesma mensagem ("Joao
+Silva") como se fosse a resposta do valor. O lead recebia, no mesmo turno, a
+pergunta e a simulação: *"Com base no valor de **R$ **, hoje você consegue
+economizar cerca de todos os meses"*.
+
+Duas proteções, em camadas:
+
+1. **Causa** — `emitCurrentBeforeGoto` devolve `true` quando o passo que acabou
+   de emitir ainda tem campo hard sem captura (`name`, `electricity_bill_value`,
+   `cpf`, `phone_whatsapp`). Os três caminhos de avanço (fallback configurado,
+   transition `default`, próximo por posição) param aí via `stayOnCurrentStep()`,
+   que mantém `conversation_step` no passo atual e **preserva `captureUpdates`** —
+   sem isso o nome recém-capturado se perderia e o bot perguntaria de novo.
+   Emitir a pergunta é o próprio reconhecimento de que ela não foi respondida;
+   avançar no mesmo turno se contradiz.
+
+2. **Rede de segurança** — `goToStep` não emite passo cujo `message_text`
+   referencie `{{valor_conta}}`, `{{economia_range|faixa|mensal|anual}}` ou
+   `{{valor}}` enquanto o lead não tiver `electricity_bill_value >= 30`; pede o
+   valor no lugar. É a mesma guarda R6 que já existia em
+   `handlers/bot-flow.ts` (`dispatchStepFromFlow`) e faltava no conversacional.
+   O limite olha `captureUpdates` antes do `customer`, senão bloquearia justo o
+   turno que traz o valor.
+
+Regressão: `src/test/valor-antes-da-simulacao.test.ts`.
+
 ## Conversa E2E do Grupo A (sem envio real)
 
 Duas formas de rodar a mesma conversa simulada; ambas usam o roteiro único em

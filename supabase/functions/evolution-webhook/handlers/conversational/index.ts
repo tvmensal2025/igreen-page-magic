@@ -2647,6 +2647,31 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     const willCascade = !cadastroStep && effectiveWaitFor === "none"
       && (!!gotoTargetId || hasNextActive);
 
+    // R6 (paridade com bot-flow.ts): passo cujo texto depende do valor da conta
+    // não sai sem a captura — senão o lead recebe "Com base no valor de *R$ *"
+    // e a simulação perde o número que sustenta a venda. Pede o valor em vez
+    // de entregar a mensagem quebrada.
+    const _needsBill = /\{\{?\s*(valor_conta|economia_range|economia_faixa|economia_mensal|economia_anual|valor)\s*\}?\}/i
+      .test(String(s.message_text || ""));
+    const _billNow = Number(
+      captureUpdates.electricity_bill_value ?? (ctx.customer as any).electricity_bill_value ?? 0,
+    );
+    if (_needsBill && !(_billNow >= 30)) {
+      console.warn(
+        `[goto-guard] "${s.step_key}" exige valor_conta e o lead não tem (${_billNow}) — pedindo o valor`,
+      );
+      return {
+        reply: "Antes de calcular sua economia, me conta: *quanto vem em média a sua conta de luz por mês?* 💡",
+        updates: {
+          conversation_step: currentStep.id,
+          __intent: cls.intent,
+          __confidence: cls.confidence,
+          ...captureUpdates,
+          ...extra,
+        } as Record<string, any>,
+      };
+    }
+
     const first = await emitStep(s, !willCascade);
     let replyText = first.replyText;
     let inlineSent = first.inlineSent;
@@ -3126,8 +3151,13 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // próximo. Evita pular passos com áudio/vídeo configurados quando o motor
   // auto-avança por captura/posição/default transition. O anti-rep interno do
   // emitStep (10 min) protege contra duplicidade se já foi emitido nesta sessão.
-  const emitCurrentBeforeGoto = async (cur: DbStep, next: DbStep) => {
-    if (!cur || !next || cur.id === next.id) return;
+  // Devolve `true` quando o passo emitido AINDA espera um dado do lead — nesse
+  // caso o turno tem de parar aqui. Emitir "quanto vem sua conta?" e no mesmo
+  // turno seguir para o passo seguinte entregava a simulação sem o valor
+  // ("Com base no valor de *R$ *") usando a mensagem do passo anterior (o nome)
+  // como se fosse a resposta. Uma mensagem do lead avança um passo, não dois.
+  const emitCurrentBeforeGoto = async (cur: DbStep, next: DbStep): Promise<boolean> => {
+    if (!cur || !next || cur.id === next.id) return false;
     // Não reemitir pergunta já respondida (nome/valor/cpf/tel).
     const hardFields = ["name", "electricity_bill_value", "cpf", "phone_whatsapp"] as const;
     const asked = hardFields.filter((f) =>
@@ -3143,18 +3173,40 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
     );
     if (asked.length > 0 && justCaptured.length === asked.length) {
       console.log(`[emit-before-goto] skip "${cur.step_key}" — captura satisfeita (${asked.join(",")}), indo para "${next.step_key}"`);
-      return;
+      return false;
     }
     const hasSlot = !!(cur.slot_key && String(cur.slot_key).trim());
     const hasText = !!(cur.message_text && String(cur.message_text).trim());
-    if (!hasSlot && !hasText) return;
+    if (!hasSlot && !hasText) return false;
     try {
       console.log(`[emit-before-goto] emitindo "${cur.step_key}" antes de avançar para "${next.step_key}"`);
       await emitStep(cur, false);
     } catch (e) {
       console.warn(`[emit-before-goto] falhou em ${cur.step_key}:`, (e as Error)?.message || e);
+      // Falhou o envio: mantém o avanço de antes para não deixar o lead mudo.
+      // A guarda de conteúdo em goToStep barra o passo que depende do valor.
+      return false;
     }
+    const pendentes = asked.filter((f) => !justCaptured.includes(f));
+    if (pendentes.length > 0) {
+      console.log(`[emit-before-goto] parando em "${cur.step_key}" — aguarda resposta (${pendentes.join(",")})`);
+      return true;
+    }
+    return false;
   };
+
+  /** Turno termina no passo atual: a pergunta já saiu inline, falta o lead responder. */
+  const stayOnCurrentStep = () => ({
+    reply: "",
+    updates: {
+      conversation_step: currentStep.id,
+      __intent: cls.intent,
+      __confidence: cls.confidence,
+      ...captureUpdates,
+      ...restoreDetourUpdates,
+      __inline_sent: true,
+    } as Record<string, any>,
+  });
 
   // 1) A regular rule matched
   if (transition) return _finalize(stepKey, await resolveTransition(transition));
@@ -3206,7 +3258,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         });
       }
       try {
-        await emitCurrentBeforeGoto(currentStep, nextByConfig);
+        if (await emitCurrentBeforeGoto(currentStep, nextByConfig)) return _finalize(stepKey, stayOnCurrentStep());
         return _finalize(stepKey, await goToStep(nextByConfig, restoreDetourUpdates));
       } catch (e) {
         console.error(`[conversational] 💥 goToStep falhou para ${nextByConfig.step_key}:`, (e as Error)?.message || e);
@@ -3258,7 +3310,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           updates: { conversation_step: "aguardando_conta", sales_phase: "fechamento", __intent: cls.intent, __confidence: cls.confidence, ...captureUpdates, ...restoreDetourUpdates },
         });
       }
-      await emitCurrentBeforeGoto(currentStep, nextStep);
+      if (await emitCurrentBeforeGoto(currentStep, nextStep)) return _finalize(stepKey, stayOnCurrentStep());
       return _finalize(stepKey, await goToStep(nextStep, restoreDetourUpdates));
     }
   }
@@ -3516,7 +3568,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           updates: { conversation_step: "aguardando_conta", sales_phase: "fechamento", __intent: cls.intent, __confidence: cls.confidence, ...captureUpdates, ...restoreDetourUpdates },
         });
       }
-      await emitCurrentBeforeGoto(currentStep, nextByPosition);
+      if (await emitCurrentBeforeGoto(currentStep, nextByPosition)) return _finalize(stepKey, stayOnCurrentStep());
       return _finalize(stepKey, await goToStep(nextByPosition, restoreDetourUpdates));
     }
   }
