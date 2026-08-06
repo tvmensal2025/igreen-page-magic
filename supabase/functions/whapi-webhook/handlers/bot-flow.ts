@@ -63,7 +63,7 @@ import { parseMoneyBR, extractMoneyFromText } from "../../_shared/parse-money.ts
 import { isQuietHourBRT, logQuietSkip } from "../../_shared/quiet-hours.ts";
 import { getStepMediaOrder, makeKindComparator } from "../../_shared/step-media-order.ts";
 import { renderTemplateVars } from "../../_shared/render-vars.ts";
-import { canSendMediaOnce } from "../../_shared/media-dedupe.ts";
+import { dispatchMediaOnce } from "../../_shared/media-dedupe.ts";
 import { buildCadastroLink } from "../../_shared/keyword-matcher.ts";
 import { detectPostponeIntent, buildPostponeReplyResolved } from "../../_shared/postpone-intent.ts";
 import {
@@ -1657,18 +1657,6 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         if (!m?.url) continue;
         const kind = ["audio", "video", "image"].includes(it.kind) ? it.kind : "document";
 
-        const canSend = await canSendMediaOnce(supabase, {
-          consultantId: customer.consultant_id,
-          customerId: customer.id,
-          mediaId: m.id,
-          slotKey: m.slot_key || slotKey,
-          kind,
-        });
-        if (!canSend) {
-          console.log(`[dispatch:${stepKey}] ⏭️ ${kind} já enviado anteriormente — pulando`);
-          continue;
-        }
-
         const delayMs = Number(m.delay_before_ms || 0);
         // Áudio/vídeo: delay zerado. Outros kinds: teto baixo.
         const kindLower = String(kind).toLowerCase();
@@ -1680,8 +1668,22 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
         }
 
         try {
-          const ok = await sendMedia(remoteJid, m.url, "", kind, Number(m.duration_sec || 0) || undefined);
-          if (ok !== false) {
+          const disp = await dispatchMediaOnce(
+            supabase,
+            {
+              consultantId: customer.consultant_id,
+              customerId: customer.id,
+              mediaId: m.id,
+              slotKey: m.slot_key || slotKey,
+              kind,
+            },
+            () => sendMedia(remoteJid, m.url, "", kind, Number(m.duration_sec || 0) || undefined),
+          );
+          if (disp.skipped) {
+            console.log(`[dispatch:${stepKey}] ⏭️ ${kind} já enviado anteriormente — pulando`);
+            continue;
+          }
+          if (disp.sent) {
             sent = true;
             await supabase.from("conversations").insert({
               customer_id: customer.id,
@@ -1965,13 +1967,18 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       const kind = it.kind;
       const durationSec = it.durationSec ?? null;
       if (!m || !url) continue;
-      // 🚫 Regra: nunca repetir áudio/vídeo para o mesmo cliente
-      const canSend = await canSendMediaOnce(supabase, {
-        consultantId: customer.consultant_id, customerId: customer.id,
-        mediaId: resolvedMediaId, slotKey: m.slot_key, kind,
-      });
-      if (!canSend) continue;
-      await sendMedia(remoteJid, url, "", kind, durationSec || undefined);
+      // 🚫 Regra: nunca repetir áudio/vídeo para o mesmo cliente. O slot só
+      // vira "enviado" se o canal confirmar — envio recusado libera a reserva
+      // e não entra no histórico.
+      const disp = await dispatchMediaOnce(
+        supabase,
+        {
+          consultantId: customer.consultant_id, customerId: customer.id,
+          mediaId: resolvedMediaId, slotKey: m.slot_key, kind,
+        },
+        () => sendMedia(remoteJid, url, "", kind, durationSec || undefined),
+      );
+      if (disp.skipped || !disp.sent) continue;
       sentSomething = true;
       await supabase.from("conversations").insert({
         customer_id: customer.id, message_direction: "outbound",
@@ -2185,16 +2192,19 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
 
               if (!url) continue;
 
-              // 🚫 Regra: nunca repetir áudio/vídeo para o mesmo cliente
-              const canSend = await canSendMediaOnce(supabase, {
-                consultantId: customer.consultant_id, customerId: customer.id,
-                mediaId: resolvedMediaId, slotKey: m.slot_key, kind,
-              });
-              if (!canSend) continue;
-
+              // 🚫 Regra: nunca repetir áudio/vídeo para o mesmo cliente. Slot
+              // só é queimado com envio confirmado.
               try {
-                const ok = await sendMedia(remoteJid, url, "", kind, durationSec || undefined);
-                if (ok !== false) {
+                const disp = await dispatchMediaOnce(
+                  supabase,
+                  {
+                    consultantId: customer.consultant_id, customerId: customer.id,
+                    mediaId: resolvedMediaId, slotKey: m.slot_key, kind,
+                  },
+                  () => sendMedia(remoteJid, url, "", kind, durationSec || undefined),
+                );
+                if (disp.skipped) continue;
+                if (disp.sent) {
                   sentSomething = true;
                   await supabase.from("conversations").insert({
                     customer_id: customer.id,
@@ -2804,13 +2814,16 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
               const k = ["audio", "video", "image"].includes(m.kind) ? m.kind : "document";
               const cap = i === 0 ? (args.caption || "") : "";
               // 🚫 Regra: nunca repetir áudio/vídeo para o mesmo cliente
-              const canSend = await canSendMediaOnce(supabase, {
-                consultantId: customer.consultant_id, customerId: customer.id,
-                mediaId: (m as any).id || null, slotKey: (m as any).slot_key || null, kind: k,
-              });
-              if (!canSend) continue;
               try {
-                await sendMedia(remoteJid, m.url, cap, k, Number((m as any).duration_sec || 0) || undefined);
+                const disp = await dispatchMediaOnce(
+                  supabase,
+                  {
+                    consultantId: customer.consultant_id, customerId: customer.id,
+                    mediaId: (m as any).id || null, slotKey: (m as any).slot_key || null, kind: k,
+                  },
+                  () => sendMedia(remoteJid, m.url, cap, k, Number((m as any).duration_sec || 0) || undefined),
+                );
+                if (disp.skipped) continue;
                 if (i < ordered.length - 1 && !isMockMode() && !isFlowInstantMode()) await new Promise((r) => setTimeout(r, 1500));
               } catch (e) {
                 console.warn("[bot-flow] sendMedia (AI) falhou:", (e as any)?.message);

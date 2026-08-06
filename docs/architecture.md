@@ -63,6 +63,14 @@ Isolamento e concorrência:
 - Resposta de FAQ recusada pelo canal não entra em `conversations` e não marca
   a dúvida como respondida — o turno segue para o tratamento normal em vez de
   encerrar como se o lead tivesse sido atendido.
+- Áudio e vídeo nunca se repetem para o mesmo lead, e o slot dessa regra é
+  queimado em duas fases: `dispatchMediaOnce` (`_shared/media-dedupe.ts`)
+  reserva, envia e só confirma se o canal aceitar. Envio recusado — erro do
+  canal, humano assumiu no meio da cascata, mídia fora do ar — libera a reserva
+  e a mídia pode sair no próximo turno. Antes o slot era confirmado antes do
+  envio e um áudio que falhava ficava queimado para sempre naquele lead.
+  `canSendMediaOnce` (confirmação imediata) segue existindo para o envio manual
+  do consultor, onde a falha é visível e ele pode reenviar.
 
 ## Retomada após atendimento humano
 
