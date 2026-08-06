@@ -82,6 +82,9 @@ export const PROGRESSED_STEPS = new Set([
   "d_pedir_documento",
 ]);
 
+/** Nome do lead simulado. Precisa passar pela guarda anti-lixo de `extractNome`. */
+export const LEAD_NAME = "Joao Silva";
+
 export function nextReply(
   scenario: string,
   customer: CustomerSnapshot | null,
@@ -100,7 +103,10 @@ export function nextReply(
   // ── Variante A, fluxo vivo do Grupo A ──
   // As respostas de botão usam o número do gatilho porque ele está em
   // `trigger_phrases` junto do id — serve para Whapi (botão) e Evolution (número).
-  if (s === "a1_ask_name") return { kind: "text", text: "Joao Silva Teste" };
+  // Nome sem a palavra "teste": `extractNome` trata isso como lixo (guarda de
+  // produção contra "oi teste", e é o comportamento certo). Com o nome antigo o
+  // roteiro travava em a1_ask_name reclamando do bot, que estava correto.
+  if (s === "a1_ask_name") return { kind: "text", text: LEAD_NAME };
 
   if (s === "a2_text_ask_bill_value") {
     if (scenario === "valor_baixo") return { kind: "text", text: "60" };
@@ -180,7 +186,7 @@ export function nextReply(
   if (s === "ask_phone_confirm") return { kind: "text", text: "2" };
   if (s === "ask_phone") return { kind: "text", text: "11999998888" };
   if (s === "ask_email") return { kind: "text", text: "joao.silva.teste@gmail.com" };
-  if (s === "ask_name" || s === "editing_conta_nome" || s === "editing_doc_nome") return { kind: "text", text: "Joao Silva Teste" };
+  if (s === "ask_name" || s === "editing_conta_nome" || s === "editing_doc_nome") return { kind: "text", text: LEAD_NAME };
   if (s === "ask_cpf" || s === "editing_doc_cpf") return { kind: "text", text: "12345678909" };
   if (s === "ask_rg" || s === "editing_doc_rg") return { kind: "text", text: "123456789" };
   if (s === "ask_birth_date" || s === "editing_doc_nascimento") return { kind: "text", text: "15/05/1985" };
@@ -199,7 +205,7 @@ export function nextReply(
 
   // Passo renomeado no construtor (ex.: `passo_mqzoj1uf`): o tipo ainda diz o que
   // o bot espera, então o roteiro continua respondendo algo plausível.
-  if (type === "capture_name") return { kind: "text", text: "Joao Silva Teste" };
+  if (type === "capture_name") return { kind: "text", text: LEAD_NAME };
   if (type === "capture_conta" || type === "capture_documento") return { kind: "image", mime: "image/png" };
   if (type === "capture_email") return { kind: "text", text: "joao.silva.teste@gmail.com" };
   if (type === "confirm_phone") return { kind: "text", text: "1" };

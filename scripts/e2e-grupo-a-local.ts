@@ -58,13 +58,31 @@ console.log(`Passos indexados: ${stepIndex.size}`);
 // RLS não deixa o JWT do consultor criar `bot_test_runs`/`customers`, então o lead
 // sandbox e a run são preparados fora daqui (SQL administrativo) e chegam por env.
 const runId = Deno.env.get("E2E_RUN_ID");
-const customerId = Deno.env.get("E2E_CUSTOMER_ID");
 const phone = Deno.env.get("E2E_PHONE");
-if (!runId || !customerId || !phone) {
-  console.error("Defina E2E_RUN_ID, E2E_CUSTOMER_ID e E2E_PHONE (lead sandbox 5500000…).");
+if (!runId || !phone) {
+  console.error("Defina E2E_RUN_ID e E2E_PHONE (lead sandbox 5500000…).");
   Deno.exit(1);
 }
-const customer = { id: customerId };
+
+// O lead sandbox é recriado pelo próprio webhook quando a limpeza da bateria
+// apaga o anterior, então o id muda. Confiar no `E2E_CUSTOMER_ID` do ambiente
+// fazia o roteiro observar um lead que não existe mais: toda leitura voltava
+// vazia, o passo lido era sempre `welcome` e a conversa aparecia como
+// "(silêncio)" mesmo com o bot respondendo certo. O telefone é a chave estável.
+async function resolveCustomerId(): Promise<string | null> {
+  const { data } = await supabase
+    .from("customers")
+    .select("id")
+    .eq("phone_whatsapp", phone)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return data?.id || null;
+}
+
+// Sem fallback para `E2E_CUSTOMER_ID`: um id de env obsoleto preenchia o campo
+// e bloqueava a re-resolução depois do primeiro turno.
+const customer = { id: (await resolveCustomerId()) || "" };
 void userId;
 
 console.log(`\nCenário: ${scenario} | telefone sandbox: ${phone}\n${"─".repeat(70)}`);
@@ -123,6 +141,9 @@ for (let turn = 1; turn <= MAX_TURNS; turn++) {
   });
   await res.text();
   const latency = Date.now() - started;
+
+  // Primeiro turno de um telefone novo: o lead nasce dentro do webhook.
+  if (!customer.id) customer.id = (await resolveCustomerId()) || "";
 
   const { data: botSaid } = await supabase
     .from("conversations")
