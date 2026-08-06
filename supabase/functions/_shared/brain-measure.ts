@@ -121,16 +121,21 @@ export async function measureConsultantCampaigns(
   const fallbackId = "00000000-0000-0000-0000-000000000000";
 
   const [metricsRes, longMetricsRes, leadsRes] = await Promise.all([
+    // Janela fechada nos dois lados: sem o `lte` uma medição com o relógio no
+    // passado (backtest, desfecho de 24h) enxergaria dias que ainda não tinham
+    // acontecido na hora da decisão.
     admin.from("facebook_metrics_daily")
       .select(
         "campaign_id, date, spend_cents, messaging_conversations_started, clicks, impressions, ctr_bps, cpm_cents, frequency_x100, updated_at",
       )
       .in("campaign_id", campaignIds.length ? campaignIds : [fallbackId])
-      .gte("date", windowStart),
+      .gte("date", windowStart)
+      .lte("date", windowEnd),
     admin.from("facebook_metrics_daily")
       .select("campaign_id, spend_cents, messaging_conversations_started")
       .in("campaign_id", campaignIds.length ? campaignIds : [fallbackId])
-      .gte("date", longWindowStart),
+      .gte("date", longWindowStart)
+      .lte("date", windowEnd),
     // Só leads com prova Meta entram; o filtro é o mesmo de meta-ads-metrics.
     admin.from("customers")
       .select(

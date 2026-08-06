@@ -36,11 +36,25 @@ import {
   sampleQualityLabel,
 } from "../_shared/brain-sample.ts";
 import {
+  loadBrainActivity,
   loadUsedSnapshotVersions,
   recordRecommendation,
 } from "../_shared/brain-decision-store.ts";
+import {
+  runOutcomeEvaluation,
+  runScheduledShadow,
+} from "../_shared/brain-batch.ts";
+import { supportLabel } from "../_shared/brain-campaign-support.ts";
 
-type Mode = "analyze" | "shadow" | "backtest";
+type Mode = "analyze" | "shadow" | "backtest" | "scheduled" | "outcomes";
+
+const MODES: readonly string[] = [
+  "analyze",
+  "shadow",
+  "backtest",
+  "scheduled",
+  "outcomes",
+];
 
 function j(req: Request, body: unknown, status = 200) {
   const cors = buildCors(req, "x-service-secret");
@@ -64,6 +78,9 @@ function presentDecision(d: BrainDecision, campaignName: string) {
     clientes_aprovados: d.measured.approvedTrusted,
     amostra: sampleQualityLabel(d.sample.quality),
     confianca: confidenceLabel(d.confidence),
+    atribuicao: d.support.support,
+    atribuicao_descricao: supportLabel(d.support.support),
+    atribuicao_motivo: d.support.reason,
     decisao: d.action,
     motivo: d.reason,
     orcamento_atual_cents: d.currentBudgetCents,
@@ -86,15 +103,22 @@ Deno.serve(async (req) => {
     let consultantId = typeof body?.consultant_id === "string"
       ? body.consultant_id
       : "";
-    const mode = (["analyze", "shadow", "backtest"].includes(String(body?.mode))
+    const mode = (MODES.includes(String(body?.mode))
       ? String(body.mode)
       : "analyze") as Mode;
+    // Lote e desfechos varrem todos os consultores: é trabalho de cron, não de
+    // tela. Um consultor logado só alcança as próprias campanhas.
+    const isBatchMode = mode === "scheduled" || mode === "outcomes";
+    const serviceRole = isServiceRoleAuth(req);
 
-    if (isServiceRoleAuth(req)) {
-      if (!consultantId) {
+    if (serviceRole) {
+      if (!consultantId && !isBatchMode) {
         return j(req, { error: "consultant_id obrigatório" }, 400);
       }
     } else {
+      if (isBatchMode) {
+        return j(req, { error: "modo restrito ao agendador" }, 403);
+      }
       const auth = await authConsultant(req);
       if (!auth) return j(req, { error: "Unauthorized" }, 401);
       consultantId = auth.id;
@@ -105,6 +129,34 @@ Deno.serve(async (req) => {
     const campaignIds = Array.isArray(body?.campaign_ids)
       ? body.campaign_ids.map(String)
       : undefined;
+
+    // ──────────────────── LOTE AGENDADO (cron) ────────────────────
+    // Roda sem painel aberto. Mede, decide e registra. Nenhuma chamada à Meta:
+    // este caminho não importa cliente Graph nenhum.
+    if (mode === "scheduled") {
+      const started = Date.now();
+      const result = await runScheduledShadow(admin, {
+        windowDays,
+        consultantIds: consultantId ? [consultantId] : undefined,
+      });
+      console.log(
+        `[brain-shadow] scheduled ${result.correlationId} consultores=${result.consultantsProcessed} campanhas=${result.campaignsEvaluated} persistidas=${result.decisionsPersisted} duplicadas=${result.duplicatesSkipped} holds=${result.holds} caixa=${result.inboxCreated} falhas=${result.failures} historico_ausente=${result.storageMissing} ms=${Date.now() - started}`,
+      );
+      return j(req, { ok: true, mode, ...result });
+    }
+
+    // ─────────────────── DESFECHOS 24h / 72h / 7d ───────────────────
+    if (mode === "outcomes") {
+      const started = Date.now();
+      const result = await runOutcomeEvaluation(admin, {
+        limit: Number(body?.limit) || undefined,
+        consultantId: consultantId || undefined,
+      });
+      console.log(
+        `[brain-shadow] outcomes ${result.correlationId} candidatas=${result.candidates} avaliadas=${result.evaluated} gravadas=${result.recorded} puladas=${result.skipped} falhas=${result.failures} historico_ausente=${result.storageMissing} ms=${Date.now() - started}`,
+      );
+      return j(req, { ok: true, mode, ...result });
+    }
 
     // ───────────────────────── BACKTEST ─────────────────────────
     // Reprocessa a mesma medição com o relógio deslocado para trás. Nenhuma
@@ -237,6 +289,8 @@ Deno.serve(async (req) => {
       );
     }
 
+    const atividade = await loadBrainActivity(admin, consultantId, nowMs);
+
     let registradas = 0;
     const falhasRegistro: string[] = [];
     if (mode === "shadow") {
@@ -277,6 +331,17 @@ Deno.serve(async (req) => {
         linhas_esperadas: measured.dataQuality.expectedMetricRows,
       },
       politica: measured.policy,
+      atividade: {
+        ultima_decisao: atividade.lastDecisionAtIso,
+        ultimo_lote_automatico: atividade.lastBatchAtIso,
+        ultimo_lote_correlation_id: atividade.lastBatchCorrelationId,
+        decisoes_7d: atividade.decisionsLast7d,
+        desfecho_24h: atividade.lastOutcomeByWindow["24h"],
+        desfecho_72h: atividade.lastOutcomeByWindow["72h"],
+        desfecho_7d: atividade.lastOutcomeByWindow["7d"],
+        desfechos_pendentes: atividade.pendingOutcomes,
+        historico_indisponivel: atividade.storageMissing,
+      },
       recomendacoes_registradas: registradas,
       falhas_registro: falhasRegistro,
       decisoes: decisions.map((d) =>

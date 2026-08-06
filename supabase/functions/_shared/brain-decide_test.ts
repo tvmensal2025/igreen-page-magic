@@ -118,6 +118,109 @@ function decide(
   });
 }
 
+// ────────────── Capacidade de atribuição da campanha ──────────────
+
+Deno.test("campanha não suportada sempre fica em hold", async () => {
+  // Sem espelho na Meta não há o que medir nem o que ajustar — nem com a
+  // configuração no máximo e todos os números bons.
+  const snap = await snapshot({
+    campaign: { fbCampaignId: null } as never,
+    meta: meta({ spendCents: 6000, conversations: 20 }),
+    attribution: aggregateAttribution(leads(30, 12)),
+  });
+  const d = decide(snap);
+
+  assertEquals(d.support.support, "unsupported");
+  assertEquals(d.action, "hold");
+  assertEquals(d.actionKind, null);
+  assertEquals(d.canExecute, false);
+  assertEquals(d.proposedBudgetCents, null);
+  assertEquals(d.blockers.some((b) => b.code === "campanha_nao_suportada"), true);
+});
+
+Deno.test("campanha recusada pela Meta também fica em hold", async () => {
+  const snap = await snapshot({
+    campaign: { rejectionReason: "AD_POLICY_VIOLATION" } as never,
+    meta: meta({ spendCents: 6000, conversations: 20 }),
+    attribution: aggregateAttribution(leads(30, 12)),
+  });
+  const d = decide(snap);
+  assertEquals(d.support.support, "unsupported");
+  assertEquals(d.action, "hold");
+  assertEquals(d.canExecute, false);
+});
+
+Deno.test("meta_only nunca vira vencedora comercial", async () => {
+  // Entrega ótima, custo por conversa metade do alvo, zero lead no CRM.
+  const snap = await snapshot({
+    meta: meta({ spendCents: 6000, conversations: 20 }),
+    attribution: aggregateAttribution([]),
+  });
+  const d = decide(snap);
+
+  assertEquals(d.support.support, "meta_only");
+  assertEquals(d.support.allowsCommercialWin, false);
+  assertEquals(d.action, "hold");
+  assertEquals(d.canExecute, false);
+  assertEquals(d.confidence, "low", "sem CRM ligado a confiança é rebaixada");
+  assertEquals(d.stepPct, 0);
+  assertEquals(
+    d.blockers.some((b) => b.code === "sem_atribuicao_comercial"),
+    true,
+  );
+});
+
+Deno.test("atribuição parcial reduz a confiança e o degrau", async () => {
+  // Leads existem e são muitos, mas nenhum tem AD ID confirmado.
+  const semAdId: AttributableCustomer[] = Array.from(
+    { length: 30 },
+    (_, i) => ({
+      id: `ctwa-${i}`,
+      source_campaign_id: CAMP,
+      ctwa_clid: `clid-${i}`,
+      status: i < 12 ? "approved" : "pending",
+    }),
+  );
+  const snap = await snapshot({
+    meta: meta({ spendCents: 6000, conversations: 20 }),
+    attribution: aggregateAttribution(semAdId),
+  });
+  const d = decide(snap);
+
+  assertEquals(d.support.support, "commercial_attribution_partial");
+  assertEquals(d.confidence, "moderate", "teto da atribuição parcial");
+  // Moderada vale 5% na política — nunca os 10% da confiança alta.
+  assertEquals(maxStepPctForConfidence(d.confidence, POLICY), 5);
+  if (d.action === "increase_budget") assertEquals(d.stepPct, 5);
+});
+
+Deno.test("atribuição completa mantém o teto de 10%", async () => {
+  const snap = await snapshot({
+    meta: meta({ spendCents: 6000, conversations: 20 }),
+    attribution: aggregateAttribution(leads(30, 12)),
+  });
+  const d = decide(snap);
+  assertEquals(d.support.support, "commercial_attribution_full");
+  assertEquals(d.action, "increase_budget");
+  assertEquals(d.stepPct, 10);
+  assertEquals(d.confidence, "high");
+});
+
+Deno.test("duplicidade na janela rebaixa a campanha para parcial", async () => {
+  const comDuplicata = [...leads(30, 12), ...leads(3, 1)];
+  const snap = await snapshot({
+    meta: meta({ spendCents: 6000, conversations: 20 }),
+    attribution: aggregateAttribution(comDuplicata),
+    dataQuality: quality({ duplicatesIgnored: 3 }),
+  });
+  const d = decide(snap);
+  assertEquals(d.support.support, "commercial_attribution_partial");
+  // Duplicata pesa duas vezes: rebaixa a classificação e suja a saúde dos
+  // dados. O que importa é que nunca sobra confiança para escalar no teto.
+  assertEquals(["low", "moderate"].includes(d.confidence), true);
+  assertEquals(d.action, "hold");
+});
+
 // ─────────────────────── Saúdes separadas ───────────────────────
 
 Deno.test("saúde Meta boa com comercial insuficiente não é vencedora", async () => {
