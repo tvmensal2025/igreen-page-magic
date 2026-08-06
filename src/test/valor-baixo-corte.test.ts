@@ -37,6 +37,23 @@ describe.each(CHANNELS)("corte de conta baixa (%s)", (channel) => {
     expect(corte).toBeLessThan(avanco);
   });
 
+  it("não confunde passo do valor com passo do nome por causa do título", () => {
+    // O passo do valor tem título "Áudio (nome) + texto pedir valor da conta" e
+    // slot "a2_audio_activate_name" — os dois citam o nome porque o ÁUDIO é
+    // personalizado. Com a heurística de texto vencendo, `stepIsAskName` ficava
+    // true e o bloco `!stepIsAskName` nunca capturava o valor: lead de R$ 60
+    // ouvia "economia de R$ 4 a R$ 12" e seguia até o documento.
+    expect(src).toContain("const _stepCapturaValor = Array.isArray(currentStep.captures)");
+    // Título e slot só decidem quando o passo NÃO declara captura de valor.
+    expect(src).toMatch(/!_stepCapturaValor && \([\s\S]{0,320}?slot_key/);
+    const decisao = src.slice(src.indexOf("const stepIsAskName ="), src.indexOf("const extracted = extractCaptures"));
+    // Sinais estruturados continuam valendo sempre.
+    expect(decisao).toContain("_stepCapturaNome ||");
+    expect(decisao).toContain('=== "capture_name"');
+    // A heurística de título não pode ficar solta no topo do OU.
+    expect(decisao).not.toMatch(/stepIsAskName =\s*\n\s*lastOutboundWasNameQuestion/);
+  });
+
   it("interrompe o turno quando o lead está fora da esteira", () => {
     const trecho = src.slice(src.indexOf("if (_cutoff.reject)"), src.indexOf("if (_cutoff.reject)") + 260);
     expect(trecho).toContain("return { reply: _cutoff.reply, updates: _cutoff.updates }");

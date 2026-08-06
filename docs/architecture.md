@@ -182,6 +182,26 @@ explícito remapeando os legados. Na prática a regra não rodava: o E2E de
 2026-08 levou um lead de R$ 60 até o pedido de documento ouvindo "economia de
 R$ 4 a R$ 12".
 
+### `captures` decide o que o passo pede, não o título
+
+Mesmo depois de instalado, o corte continuou sem rodar. O passo do valor tem
+título *"Áudio (nome) + texto pedir valor da conta"* e slot
+`a2_audio_activate_name`: os dois citam o nome porque o **áudio** é
+personalizado, não porque o passo peça nome. A heurística `stepIsAskName`
+casava `\bnome\b` no título, o bloco `!stepIsAskName` não capturava o valor e
+`captureUpdates.electricity_bill_value` chegava vazio ao corte.
+
+Agora só `captures` e `step_type` — dados estruturados que o consultor declara —
+decidem que um passo pede nome. Título e `slot_key` são texto livre e passaram a
+valer apenas quando o passo **não** declara captura de `electricity_bill_value`.
+É o espelho da proteção que já existia do outro lado: o branding "Conta de Luz"
+no `message_text` do `a1` fazia `isValueStep=true` no passo do nome.
+
+O roteiro E2E também dava PASS falso aqui: no cenário `valor_baixo` qualquer
+pausa virava `low_value`, inclusive pausa por documento recusado. `classifyStop`
+passou a olhar `bot_paused_reason`, e o check exige que o lead **não** tenha
+chegado a `aguardando_conta`/`aguardando_doc_auto`.
+
 ## Uma mensagem do lead avança um passo, não dois
 
 `a1_ask_name` tem transição `default` para `a2_text_ask_bill_value`, que tem

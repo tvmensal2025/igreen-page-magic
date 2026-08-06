@@ -1532,13 +1532,24 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       const txt = String((lastOut as any)?.message_text || "");
       lastOutboundWasNameQuestion = /qual\s+(?:é\s+)?(?:o\s+)?(?:seu\s+)?(?:primeiro\s+)?nome|como\s+(?:posso\s+)?(?:te\s+)?(?:chamar|chamo)|me\s+diz(?:a)?\s+(?:o\s+)?(?:seu\s+)?(?:primeiro\s+)?nome|informe\s+(?:seu\s+)?(?:primeiro\s+)?nome|agilizar\s+(?:seu\s+)?atendimento|primeiro\s+nome/i.test(txt);
     } catch { /* best-effort */ }
+    // `captures` é declaração do consultor; título e slot são texto livre. O
+    // passo do valor chama-se "Áudio (nome) + texto pedir valor da conta" e
+    // tem slot "a2_audio_activate_name" — os dois citam o nome porque o ÁUDIO é
+    // personalizado, não porque o passo peça nome. Deixar a heurística de texto
+    // vencer fazia o valor nunca ser capturado nesse passo e, com ele, o corte
+    // de conta baixa nunca rodar (lead de R$ 60 seguia até pedir documento).
+    const _stepCapturaNome = Array.isArray(currentStep.captures) &&
+      currentStep.captures.some((c: any) => c?.field === "name" && c?.enabled !== false);
+    const _stepCapturaValor = Array.isArray(currentStep.captures) &&
+      currentStep.captures.some((c: any) => c?.field === "electricity_bill_value" && c?.enabled !== false);
     const stepIsAskName =
-      lastOutboundWasNameQuestion ||
-      /\bnome\b|\bchama\b/i.test(String((currentStep as any).title || "")) ||
-      /nome|ask_name/i.test(String((currentStep as any).slot_key || "")) ||
+      _stepCapturaNome ||
       String(currentStep.step_type || "") === "capture_name" ||
-      (Array.isArray(currentStep.captures) &&
-        currentStep.captures.some((c: any) => c?.field === "name" && c?.enabled !== false));
+      (!_stepCapturaValor && (
+        lastOutboundWasNameQuestion ||
+        /\bnome\b|\bchama\b/i.test(String((currentStep as any).title || "")) ||
+        /nome|ask_name/i.test(String((currentStep as any).slot_key || ""))
+      ));
 
     const extracted = extractCaptures(ctx.messageText || "", currentStep.captures || []);
     // No pedido de nome: SÓ nome. Número (RG/CPF/tel) NÃO vira conta nem CPF.

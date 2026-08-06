@@ -97,10 +97,29 @@ let stuckCount = 0;
 
 const TERMINAL = ["complete", "portal_submitting", "aguardando_otp", "aguardando_facial", "cadastro_em_analise"];
 
+/**
+ * Classifica a parada pelo MOTIVO real, não pelo cenário em execução.
+ *
+ * Antes, no cenário `valor_baixo` qualquer pausa virava `low_value` — inclusive
+ * pausa por documento recusado. O corte de conta baixa estava quebrado e o
+ * roteiro dava PASS: o lead de R$ 60 recebia "economia de R$ 4 a R$ 12", pedia
+ * conta e documento, e o único motivo de parar era o OCR.
+ */
+function classifyStop(
+  stepKey: string,
+  c: { status?: string | null; bot_paused_reason?: string | null } | null,
+): string {
+  const motivo = String(c?.bot_paused_reason || "");
+  if (stepKey === "valor_baixo" || motivo === "low_bill_value") return "low_value";
+  if (motivo) return `paused:${motivo}`;
+  if (c?.status === "rejected") return "rejected";
+  return "paused_or_rejected";
+}
+
 for (let turn = 1; turn <= MAX_TURNS; turn++) {
   const { data: cur } = await supabase
     .from("customers")
-    .select("conversation_step,status,bot_paused,electricity_bill_value,document_type")
+    .select("conversation_step,status,bot_paused,bot_paused_reason,electricity_bill_value,document_type")
     .eq("id", customer.id).maybeSingle();
 
   const stepBefore = cur?.conversation_step || null;
@@ -109,7 +128,7 @@ for (let turn = 1; turn <= MAX_TURNS; turn++) {
 
   if (TERMINAL.includes(stepKey)) { finalStatus = "completed"; stopReason = "conversion_step_reached"; break; }
   if (stepKey === "valor_baixo" || cur?.status === "rejected" || cur?.bot_paused === true) {
-    finalStatus = scenario === "valor_baixo" ? "low_value" : "paused_or_rejected";
+    finalStatus = classifyStop(stepKey, cur);
     stopReason = "lead_disqualified_or_paused";
     break;
   }
@@ -157,7 +176,7 @@ for (let turn = 1; turn <= MAX_TURNS; turn++) {
   if (!botSaid?.length) console.log("  BOT  → (silêncio)");
 
   const { data: after } = await supabase
-    .from("customers").select("conversation_step,status,bot_paused").eq("id", customer.id).maybeSingle();
+    .from("customers").select("conversation_step,status,bot_paused,bot_paused_reason").eq("id", customer.id).maybeSingle();
   const afterKey = cleanStep(after?.conversation_step, stepIndex);
   visitedSteps.add(afterKey);
   console.log(`  passo agora: ${afterKey} · http ${res.status} · ${latency}ms`);
@@ -169,7 +188,7 @@ for (let turn = 1; turn <= MAX_TURNS; turn++) {
 
   if (TERMINAL.includes(afterKey)) { finalStatus = "completed"; stopReason = "conversion_step_reached"; break; }
   if (afterKey === "valor_baixo" || after?.status === "rejected" || after?.bot_paused === true) {
-    finalStatus = scenario === "valor_baixo" ? "low_value" : "paused_or_rejected";
+    finalStatus = classifyStop(afterKey, after);
     stopReason = "lead_disqualified_or_paused";
     break;
   }
@@ -199,7 +218,15 @@ if (["happy_path", "joia_validacao", "documento_cnh", "lead_indeciso"].includes(
   checks.push({ name: "Chegou em estado de conversão", passed: finalStatus === "completed", detail: `${finalStatus} · ${finalCustomer?.conversation_step}` });
   checks.push({ name: "Valor da conta capturado", passed: Number(finalCustomer?.electricity_bill_value || 0) >= 100, detail: String(finalCustomer?.electricity_bill_value) });
 }
-if (scenario === "valor_baixo") checks.push({ name: "Valor baixo não seguiu para venda", passed: finalStatus === "low_value", detail: `${finalStatus}` });
+if (scenario === "valor_baixo") {
+  // Não basta parar: tem de parar POR conta baixa e antes de pedir conta/documento.
+  const pediuCadastro = visited.some((s) => s === "aguardando_conta" || s === "aguardando_doc_auto");
+  checks.push({
+    name: "Valor baixo não seguiu para venda",
+    passed: finalStatus === "low_value" && !pediuCadastro,
+    detail: pediuCadastro ? `${finalStatus} · mas pediu conta/documento` : `${finalStatus}`,
+  });
+}
 
 console.log(`\n${"─".repeat(70)}\nResultado: ${finalStatus} (${stopReason})`);
 for (const c of checks) console.log(`  ${c.passed ? "PASS " : "FALHA"} ${c.name} — ${c.detail}`);
