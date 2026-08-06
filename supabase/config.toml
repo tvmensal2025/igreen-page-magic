@@ -33,6 +33,11 @@ verify_jwt = false
 [functions.campaign-brain-rank]
 verify_jwt = false
 
+# Só lê e decide (analyze/shadow/backtest). Nunca escreve na Meta.
+# Autoriza internamente: service_role ou consultor dono.
+[functions.campaign-brain-shadow]
+verify_jwt = false
+
 [functions.facebook-list-assets]
 verify_jwt = true
 

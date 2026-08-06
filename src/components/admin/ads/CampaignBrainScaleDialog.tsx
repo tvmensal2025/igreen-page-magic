@@ -25,6 +25,16 @@ import {
   isBrainScaleEligible as checkBrainScaleEligible,
   type BrainScaleEligibilityOpts,
 } from "@/lib/brainScaleEligibility";
+import {
+  BRAIN_DEFAULT_STEP_PCT,
+  BRAIN_MIN_HOURS_BETWEEN_EXECUTIONS,
+  BRAIN_STEP_OPTIONS,
+  BRAIN_TARGET_CPL_CENTS,
+  BRAIN_TARGET_CPL_MAX_CENTS,
+  BRAIN_TARGET_CPL_MIN_CENTS,
+  clampBrainStepPct,
+  resolveTargetCplCents,
+} from "@/lib/brainPolicy";
 
 export type BrainScaleCampaign = {
   id: string;
@@ -45,7 +55,7 @@ type Props = {
   anchorCampaignId?: string | null;
 };
 
-const STEP_OPTS = [15, 20, 25, 30];
+const STEP_OPTS = BRAIN_STEP_OPTIONS;
 
 /**
  * Liga o Cérebro de orçamento nesta campanha (qualquer cidade).
@@ -60,17 +70,26 @@ export function CampaignBrainScaleDialog({
 }: Props) {
   const { toast } = useToast();
   const [enabled, setEnabled] = useState(false);
-  const [stepPct, setStepPct] = useState(15);
+  const [stepPct, setStepPct] = useState(BRAIN_DEFAULT_STEP_PCT);
   const [maxReais, setMaxReais] = useState("500");
-  const [targetCpl, setTargetCpl] = useState("2.00");
+  const [targetCpl, setTargetCpl] = useState(
+    (BRAIN_TARGET_CPL_CENTS / 100).toFixed(2),
+  );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!campaign || !open) return;
     setEnabled(Boolean(campaign.brain_scale_enabled));
-    setStepPct(Math.max(15, Math.min(30, Number(campaign.brain_scale_step_pct) || 15)));
+    setStepPct(clampBrainStepPct(campaign.brain_scale_step_pct));
     setMaxReais(String(Math.round((campaign.brain_scale_max_budget_cents ?? 50000) / 100)));
-    setTargetCpl(((campaign.brain_scale_target_cpl_cents ?? 200) / 100).toFixed(2));
+    setTargetCpl(
+      (
+        resolveTargetCplCents(
+          campaign.brain_scale_target_cpl_cents,
+          "campaign_column",
+        ) / 100
+      ).toFixed(2),
+    );
   }, [campaign, open]);
 
   if (!campaign) return null;
@@ -97,8 +116,14 @@ export function CampaignBrainScaleDialog({
     setSaving(true);
     try {
       const maxCents = Math.max(517, Math.min(50000, Math.round(Number(maxReais || "0") * 100)));
-      const targetCents = Math.max(50, Math.min(2000, Math.round(Number(targetCpl || "0") * 100)));
-      const step = Math.max(15, Math.min(30, stepPct));
+      const targetCents = Math.max(
+        BRAIN_TARGET_CPL_MIN_CENTS,
+        Math.min(
+          BRAIN_TARGET_CPL_MAX_CENTS,
+          Math.round(Number(targetCpl || "0") * 100),
+        ),
+      );
+      const step = clampBrainStepPct(stepPct);
       const { data: saved, error } = await supabase
         .from("facebook_campaigns")
         .update({
@@ -123,7 +148,7 @@ export function CampaignBrainScaleDialog({
       toast({
         title: enabled ? `Cérebro ligado (+${step}%)` : "Cérebro desligado",
         description: enabled
-          ? "Sobe se o custo por conversa estiver bom · desce se estiver alto · mede 48h · ajuste ~4h. Aviso no seu WhatsApp."
+          ? `Sobe se o custo por conversa estiver bom · desce se estiver alto · mede 48h · no máximo 1 ajuste a cada ${BRAIN_MIN_HOURS_BETWEEN_EXECUTIONS}h. Aviso no seu WhatsApp.`
           : "Esta campanha não sobe/desce orçamento sozinha.",
       });
       onOpenChange(false);
@@ -207,7 +232,8 @@ export function CampaignBrainScaleDialog({
 
           <p className="text-[11px] text-muted-foreground leading-relaxed">
             Budget atual: R$ {(campaign.daily_budget_cents / 100).toFixed(0)}/dia.
-            Sobe se custo ≤ alvo · desce se estiver alto · mede 48h · próximo ajuste ~4h.
+            Sobe se custo ≤ alvo · desce se estiver alto · mede 48h · no máximo 1 ajuste
+            a cada {BRAIN_MIN_HOURS_BETWEEN_EXECUTIONS}h, limitado a {STEP_OPTS[STEP_OPTS.length - 1]}%.
             Você recebe aviso no WhatsApp quando mudar.
           </p>
         </div>
