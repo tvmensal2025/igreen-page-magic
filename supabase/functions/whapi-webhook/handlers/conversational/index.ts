@@ -23,10 +23,10 @@ import { validateAiFallbackChoice } from "../../../_shared/grounding.ts";
 // Sprint 2.6 — helpers compartilhados (cooldown e dedupe)
 import { aiInCooldown, setAiCooldown, aiInCooldownPersistent, setAiCooldownPersistent } from "../../../_shared/bot/ai-cooldown.ts";
 import { checkAndMarkWebhookDedupe } from "../../../_shared/bot/dedupe.ts";
-import { matchTransition as matchTransitionShared, CADASTRO_STEPS as CADASTRO_STEPS_SHARED } from "../../../_shared/flow-router.ts";
+import { matchTransition as matchTransitionShared, CADASTRO_STEPS as CADASTRO_STEPS_SHARED, resolveFlowButtonFromText } from "../../../_shared/flow-router.ts";
 import { matchButtonIntent, extractStepButtons } from "../../../_shared/ai-button-intent.ts";
 import { notifyHandoff } from "../../../_shared/notify-consultant.ts";
-import { safeFirstNameForAddress } from "../../../_shared/customer-display-name.ts";
+import { isNameFilledForFlowSkip, safeFirstNameForAddress } from "../../../_shared/customer-display-name.ts";
 import { resolveFlowId, resolveMediaOwnerId } from "../../../_shared/resolve-flow.ts";
 import {
   resolveCanonicalFlowVariant,
@@ -1187,10 +1187,6 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // próximo passo ativo por position. Loop limitado a 5 saltos com visited
   // set pra nunca ciclar. Falha silenciosa: se algo der errado, mantém o
   // passo original (comportamento atual).
-  const TRUSTED_NAME_SKIP = new Set([
-    // NÃO incluir "cadence" / "whatsapp_profile": push-name vira "Oi NomeErrado".
-    "ocr", "ocr_conta", "ocr_doc", "user_confirmed", "self_introduced", "manual",
-  ]);
   const stepCapturesField = (s: DbStep, field: string): boolean => {
     if (!Array.isArray(s.captures)) return false;
     return s.captures.some((c: any) => c?.field === field && c?.enabled !== false);
@@ -1210,13 +1206,12 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   const isFieldAlreadyCaptured = (field: string, c: any): boolean => {
     if (!c) return false;
     if (field === "name") {
-      const v = String(c.name || "").trim();
-      if (v.length < 2) return false;
-      return TRUSTED_NAME_SKIP.has(String(c.name_source || ""));
+      return isNameFilledForFlowSkip(c.name, c.name_source);
     }
     if (field === "electricity_bill_value") {
       const v = Number(c.electricity_bill_value || 0);
-      return v > 0;
+      // Alinha com cadence (≥100) — 1–99 não pula a2 (corte valor baixo).
+      return Number.isFinite(v) && v >= 100;
     }
     if (field === "cpf") {
       const v = String(c.cpf || "").replace(/\D/g, "");
@@ -1763,10 +1758,25 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         stepKey = currentStep.id;
         postCaptureLanded = true;
       }
+    } else {
+      // Push-name plausível (ex.: Viviane) — off-topic no a1 não pode prender o funil.
+      const advanced = resolveLandingStep(currentStep);
+      if (advanced && advanced.id !== currentStep.id) {
+        console.log(`[skip-step] pre-filled: ${currentStep.step_key} → ${advanced.step_key}`);
+        currentStep = advanced;
+        stepKey = currentStep.id;
+        postCaptureLanded = true;
+        entryLandedByCapture = true;
+      }
     }
   } catch (e) {
     console.error("[conversational] capture phase failed", e);
   }
+
+  const stepIsCaptureNameEarly =
+    String(currentStep?.step_type || "") === "capture_name"
+    || /\bnome\b/i.test(String((currentStep as any)?.title || ""))
+    || /nome|ask_name/i.test(String(currentStep?.slot_key || ""));
 
   // Intents virtuais derivados das capturas (precisamos cedo para suprimir QA/regras).
   const captureIntents: string[] = [];
@@ -1781,6 +1791,15 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // tem_duvida→orch ou FAQ, reemitir a3 e nunca chamar matchTransition
   // (docs/captacao/BUG-SOFIA-A3-QUERO-ATIVAR.md).
   const earlyStepButtons = extractStepButtons(currentStep);
+  let inferredStepButton = false;
+  if (!ctx.buttonId && ctx.messageText && earlyStepButtons.length > 0) {
+    const inferred = resolveFlowButtonFromText(ctx.messageText, earlyStepButtons);
+    if (inferred) {
+      ctx.buttonId = inferred;
+      inferredStepButton = true;
+      console.log(`[conversational] 🔘 botão inferido do texto: ${inferred} step=${currentStep.step_key}`);
+    }
+  }
   const earlyTransition = matchTransitionShared({
     transitions: currentStep.transitions ?? [],
     buttonId: ctx.buttonId,
@@ -1793,7 +1812,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // ainda não casou — ex. tipografia estranha; o bloco 1.25 resolve destino).
   const skipAiDetour =
     hasDeterministicTransition ||
-    isActivateIntent(ctx.messageText, ctx.buttonId);
+    isActivateIntent(ctx.messageText, ctx.buttonId) ||
+    inferredStepButton;
   if (hasDeterministicTransition) {
     console.log(
       `[conversational] 🔒 transição cedo step="${currentStep.step_key}" ` +
@@ -2271,7 +2291,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // e conversation_summary injetados. Sempre responde quando há reply
   // (mesmo com shouldHandoff) — silenciar a pergunta fazia o lead voltar
   // para "me manda a conta" sem resposta, frustrando a conversa.
-  if (cls.intent === "tem_duvida" && !hasCapture && !skipAiDetour) {
+  if (cls.intent === "tem_duvida" && !hasCapture && !skipAiDetour && !stepIsCaptureNameEarly) {
     try {
       // Histórico recente para contexto do orquestrador
       const { data: hist } = await ctx.supabase
@@ -2321,8 +2341,16 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       if (answerText && orch.confidence >= 0.55) {
         console.log(`[conversational-orch] hit step="${stepKey}" route=${orch.route} conf=${orch.confidence.toFixed(2)} handoff=${orch.shouldHandoff} chain=${orch.modelChain.join("→")}`);
 
-        // Se handoff sugerido, pausa o bot APÓS responder a pergunta
-        const handoffUpdates = orch.shouldHandoff
+        // Grupo A / passos aN_*: responde a dúvida e reconduz — NUNCA pausa.
+        // shouldHandoff no meio do funil matava o cadastro (Viviane/Fernando).
+        const orchStepKey = String(currentStep.step_key || currentStep.slot_key || stepKey || "");
+        const orchSlotKey = String(currentStep.slot_key || "");
+        const isGrupoAOrch =
+          String((ctx.customer as any)?.flow_variant || "").toUpperCase() === "A" ||
+          /^a\d+_/i.test(orchStepKey) ||
+          /^a\d+_/i.test(orchSlotKey);
+        const allowOrchHandoff = orch.shouldHandoff && !isGrupoAOrch;
+        const handoffUpdates = allowOrchHandoff
           ? {
               bot_paused: true,
               bot_paused_reason: "ai_handoff_duvidas",
@@ -2330,10 +2358,12 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
             }
           : {};
 
-        if (orch.shouldHandoff) {
+        if (allowOrchHandoff) {
           try {
             await notifyHandoff(ctx.supabase, ctx.customer, `Dúvida exigiu humano (passo ${stepKey})`).catch(() => {});
           } catch (_) { /* best-effort */ }
+        } else if (orch.shouldHandoff && isGrupoAOrch) {
+          console.log(`[conversational-orch] handoff IGNORADO no Grupo A step=${orchStepKey}`);
         }
 
         // a3b sem botões → volta ao a3 (mesmo mapa do bot-flow / 11971254913).
@@ -2358,7 +2388,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           {
             leadName: ctx.customer.name,
             stepQuestion: currentStep.message_text,
-            skip: orch.shouldHandoff,
+            skip: allowOrchHandoff,
           },
         );
 
@@ -2380,7 +2410,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           console.warn("[conversational-orch] sendText falhou:", (e as Error)?.message || e);
         }
 
-        if (!orch.shouldHandoff) {
+        if (!allowOrchHandoff) {
           try {
             await reemitStepButtons({
               supabase: ctx.supabase,

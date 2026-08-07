@@ -1,6 +1,7 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   isCadenceReturnContext,
+  looksLikeQuestion,
   resolveCadenceInboundRoute,
 } from "./cadence-inbound-router.ts";
 
@@ -10,7 +11,7 @@ const baseCustomer = {
   origin_recovery: "cadence",
 };
 
-Deno.test("resolveCadenceInboundRoute: bill_mid → Grupo A a2 (re-pede valor)", () => {
+Deno.test("resolveCadenceInboundRoute: bill_mid → Grupo A a3 (faixa grava estimativa)", () => {
   const r = resolveCadenceInboundRoute({
     customer: baseCustomer,
     buttonId: "bill_mid",
@@ -21,22 +22,30 @@ Deno.test("resolveCadenceInboundRoute: bill_mid → Grupo A a2 (re-pede valor)",
   assertEquals(r?.reply, undefined);
   assertEquals(r?.updates.flow_variant, "A");
   assertEquals(r?.updates.conversation_step, null);
-  // Tempo passou: faixa NÃO grava valor — a2 pede de novo
-  assertEquals(r?.updates.electricity_bill_value, null);
-  // NÃO promover name_source=cadence (push-name virava saudação errada)
+  assertEquals(r?.updates.electricity_bill_value, 500);
   assertEquals(r?.updates.name_source, undefined);
 });
 
-Deno.test("resolveCadenceInboundRoute: bill_low → a2 sem gravar faixa 200", () => {
+Deno.test("resolveCadenceInboundRoute: bill_low → a3 com estimativa 200", () => {
   const r = resolveCadenceInboundRoute({
     customer: baseCustomer,
     buttonId: "bill_low",
     isButton: true,
   });
   assertEquals(r?.continueBotFlow, true);
-  assertEquals(r?.updates.electricity_bill_value, null);
+  assertEquals(r?.updates.electricity_bill_value, 200);
   assertEquals(r?.updates.conversation_step, null);
   assertEquals(r?.updates.name_source, undefined);
+});
+
+Deno.test("resolveCadenceInboundRoute: bill_mid com valor preciso antigo → mantém preciso", () => {
+  const r = resolveCadenceInboundRoute({
+    customer: { ...baseCustomer, electricity_bill_value: 376 },
+    buttonId: "bill_mid",
+    isButton: true,
+  });
+  assertEquals(r?.continueBotFlow, true);
+  assertEquals(r?.updates.electricity_bill_value, 376);
 });
 
 Deno.test("resolveCadenceInboundRoute: texto 450 → grava valor preciso (não re-pede a2)", () => {
@@ -196,23 +205,23 @@ Deno.test("resolveCadenceInboundRoute: economy → educativo + faixas", () => {
   assertEquals(r?.buttons?.[0]?.id, "bill_low");
 });
 
-Deno.test("digitar 'Conhecer mais' com valor salvo → a2 (re-pede valor)", () => {
+Deno.test("digitar 'Conhecer mais' com valor salvo → avança mantendo valor", () => {
   const r = resolveCadenceInboundRoute({
     customer: { ...baseCustomer, electricity_bill_value: 900 },
     messageText: "Conhecer mais",
   });
   assertEquals(r?.continueBotFlow, true);
-  assertEquals(r?.updates.electricity_bill_value, null);
+  assertEquals(r?.updates.electricity_bill_value, 900);
   assertEquals(String(r?.reason || "").includes("educational_to_cadastro") || r?.reason === "cadence_cadastro_more_benefits" || String(r?.reason || "").includes("more_benefits"), true);
 });
 
-Deno.test("digitar 'Até R$300' limpa valor antigo e re-pede no a2", () => {
+Deno.test("digitar 'Até R$300' mantém valor preciso antigo (mergeBillValue)", () => {
   const r = resolveCadenceInboundRoute({
     customer: { ...baseCustomer, electricity_bill_value: 900 },
     messageText: "Até R$300",
   });
   assertEquals(r?.continueBotFlow, true);
-  assertEquals(r?.updates.electricity_bill_value, null);
+  assertEquals(r?.updates.electricity_bill_value, 900);
   assertEquals(r?.updates.name_source, undefined);
 });
 
@@ -241,14 +250,31 @@ Deno.test("meio do fluxo a3 (flow:uuid) → NÃO intercepta cadência", () => {
   assertEquals(r, null);
 });
 
-Deno.test("valor já salvo + texto ambíguo → a2 (re-pede valor)", () => {
+Deno.test("valor já salvo + texto ambíguo → avança mantendo valor", () => {
   const r = resolveCadenceInboundRoute({
     customer: { ...baseCustomer, electricity_bill_value: 450 },
     messageText: "ok",
   });
   assertEquals(r?.continueBotFlow, true);
   assertEquals(r?.reason, "cadence_known_bill_forward");
-  assertEquals(r?.updates.electricity_bill_value, null);
+  assertEquals(r?.updates.electricity_bill_value, 450);
+});
+
+Deno.test("off-topic 4 palavras NÃO vira FAQ — known bill avança", () => {
+  const r = resolveCadenceInboundRoute({
+    customer: { ...baseCustomer, electricity_bill_value: 450 },
+    messageText: "Isso é um teste",
+  });
+  assertEquals(r?.reason, "cadence_known_bill_forward");
+  assertEquals(r?.continueBotFlow, true);
+  assertEquals(r?.updates.electricity_bill_value, 450);
+});
+
+Deno.test("looksLikeQuestion: interrogação/objeção SIM; frase neutra NÃO", () => {
+  assertEquals(looksLikeQuestion("é golpe?"), true);
+  assertEquals(looksLikeQuestion("como funciona"), true);
+  assertEquals(looksLikeQuestion("Isso é um teste"), false);
+  assertEquals(looksLikeQuestion("tudo bem por aqui"), false);
 });
 
 Deno.test("nome digitado no a1 (flow) NUNCA vira handoff de cadência", () => {

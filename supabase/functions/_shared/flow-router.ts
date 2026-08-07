@@ -252,6 +252,26 @@ function _maxPhraseLen(t: FlowTransition): number {
   return max;
 }
 
+/** Digitar título/número do botão (Evolution sem botão nativo) → id do botão. */
+export function resolveFlowButtonFromText(
+  messageText: string | null | undefined,
+  buttons: ReadonlyArray<{ id?: string | null; title?: string | null }>,
+): string | null {
+  const message = _norm(messageText);
+  if (!message || !buttons.length) return null;
+  const n = Number((message.match(/^([1-9])(?:\D|$)/) || [])[1] || 0);
+  const byNum = n > 0 ? buttons[n - 1] : null;
+  if (byNum?.id) return String(byNum.id);
+  for (const b of buttons) {
+    const t = _norm(b.title);
+    if (!t) continue;
+    if (message === t || (t.length >= 4 && (message.includes(t) || t.includes(message)))) {
+      if (b.id) return String(b.id);
+    }
+  }
+  return null;
+}
+
 /**
  * Casa o input do cliente contra as `transitions` configuradas no step.
  *
@@ -283,22 +303,7 @@ export function matchTransition(input: MatchTransitionInput): FlowTransition | n
 
   let resolvedButtonId = buttonId;
   if (!resolvedButtonId && messageText && visibleButtons.length) {
-    const n = Number((messageText.match(/^([1-9])(?:\D|$)/) || [])[1] || 0);
-    const btn = n > 0 ? visibleButtons[n - 1] : null;
-    if (btn?.id) resolvedButtonId = _norm(btn.id);
-    // Digitar o título do botão (Evolution sem botão nativo) = clique
-    if (!resolvedButtonId) {
-      for (const b of visibleButtons) {
-        const t = _norm(b.title);
-        if (!t) continue;
-        if (messageText === t || (t.length >= 4 && (messageText.includes(t) || t.includes(messageText)))) {
-          if (b.id) {
-            resolvedButtonId = _norm(b.id);
-            break;
-          }
-        }
-      }
-    }
+    resolvedButtonId = _norm(resolveFlowButtonFromText(input.messageText, visibleButtons) || "");
   }
 
   // (a) buttonId em trigger_phrases.

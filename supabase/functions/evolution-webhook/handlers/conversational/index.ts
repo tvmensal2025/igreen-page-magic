@@ -12,7 +12,7 @@ import {
   extractValor, extractValorPermissivo, extractTelefone, extractCPF, extractNome, detectRegexIntents,
 } from "../../../_shared/captureExtractors.ts";
 import { getStepMediaOrder, makeKindComparator } from "../../../_shared/step-media-order.ts";
-import { safeFirstNameForAddress } from "../../../_shared/customer-display-name.ts";
+import { isNameFilledForFlowSkip, safeFirstNameForAddress } from "../../../_shared/customer-display-name.ts";
 import { isMockMode, isTestMode } from "../../../_shared/test-mode.ts";
 import { isFlowInstantMode } from "../../../_shared/flow-pace.ts";
 // rules-engine removido em Sprint 2.5 (bot_flow_rules = 0 linhas, código morto)
@@ -22,7 +22,7 @@ import { validateAiFallbackChoice } from "../../../_shared/grounding.ts";
 // Sprint 2.6 — helpers compartilhados (cooldown e dedupe)
 import { aiInCooldown, setAiCooldown, aiInCooldownPersistent, setAiCooldownPersistent } from "../../../_shared/bot/ai-cooldown.ts";
 // `checkAndMarkWebhookDedupe` removido — dedupe canônico fica no orquestrador.
-import { matchTransition as matchTransitionShared, CADASTRO_STEPS } from "../../../_shared/flow-router.ts";
+import { matchTransition as matchTransitionShared, CADASTRO_STEPS, resolveFlowButtonFromText } from "../../../_shared/flow-router.ts";
 import { extractStepButtons, matchButtonIntent } from "../../../_shared/ai-button-intent.ts";
 import { notifyHandoff } from "../../../_shared/notify-consultant.ts";
 import { resolveFlowId, resolveMediaOwnerId } from "../../../_shared/resolve-flow.ts";
@@ -1155,10 +1155,6 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // próximo passo ativo por position. Loop limitado a 5 saltos com visited
   // set pra nunca ciclar. Falha silenciosa: se algo der errado, mantém o
   // passo original (comportamento atual).
-  const TRUSTED_NAME_SKIP = new Set([
-    // NÃO incluir "cadence" / "whatsapp_profile": push-name vira "Oi NomeErrado".
-    "ocr", "ocr_conta", "ocr_doc", "user_confirmed", "self_introduced", "manual",
-  ]);
   const stepCapturesField = (s: DbStep, field: string): boolean => {
     if (!Array.isArray(s.captures)) return false;
     return s.captures.some((c: any) => c?.field === field && c?.enabled !== false);
@@ -1178,13 +1174,12 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   const isFieldAlreadyCaptured = (field: string, c: any): boolean => {
     if (!c) return false;
     if (field === "name") {
-      const v = String(c.name || "").trim();
-      if (v.length < 2) return false;
-      return TRUSTED_NAME_SKIP.has(String(c.name_source || ""));
+      return isNameFilledForFlowSkip(c.name, c.name_source);
     }
     if (field === "electricity_bill_value") {
       const v = Number(c.electricity_bill_value || 0);
-      return v > 0;
+      // Alinha com cadence (≥100) — 1–99 não pula a2 (corte valor baixo).
+      return Number.isFinite(v) && v >= 100;
     }
     if (field === "cpf") {
       const v = String(c.cpf || "").replace(/\D/g, "");
@@ -1696,10 +1691,24 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         stepKey = currentStep.id;
         postCaptureLanded = true;
       }
+    } else {
+      const advanced = resolveLandingStep(currentStep);
+      if (advanced && advanced.id !== currentStep.id) {
+        console.log(`[skip-step] pre-filled: ${currentStep.step_key} → ${advanced.step_key}`);
+        currentStep = advanced;
+        stepKey = currentStep.id;
+        postCaptureLanded = true;
+        entryLandedByCapture = true;
+      }
     }
   } catch (e) {
     console.error("[conversational] capture phase failed", e);
   }
+
+  const stepIsCaptureNameEarly =
+    String(currentStep?.step_type || "") === "capture_name"
+    || /\bnome\b/i.test(String((currentStep as any)?.title || ""))
+    || /nome|ask_name/i.test(String(currentStep?.slot_key || ""));
 
   // Intents virtuais derivados das capturas (precisamos cedo para suprimir QA/regras).
   const captureIntents: string[] = [];
@@ -1712,6 +1721,15 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   // 🔒 Transição DETERMINÍSTICA cedo (botão/frase) — ANTES de FAQ/IA.
   // Paridade whapi: evita "Quero ativar" no a3 Sofia ser engolido por tem_duvida.
   const earlyStepButtons = extractStepButtons(currentStep);
+  let inferredStepButton = false;
+  if (!ctx.buttonId && ctx.messageText && earlyStepButtons.length > 0) {
+    const inferred = resolveFlowButtonFromText(ctx.messageText, earlyStepButtons);
+    if (inferred) {
+      ctx.buttonId = inferred;
+      inferredStepButton = true;
+      console.log(`[conversational] 🔘 botão inferido do texto: ${inferred} step=${currentStep.step_key}`);
+    }
+  }
   const earlyTransition = matchTransitionShared({
     transitions: currentStep.transitions ?? [],
     buttonId: ctx.buttonId,
@@ -1722,7 +1740,8 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   const hasDeterministicTransition = !!earlyTransition;
   const skipAiDetour =
     hasDeterministicTransition ||
-    isActivateIntent(ctx.messageText, ctx.buttonId);
+    isActivateIntent(ctx.messageText, ctx.buttonId) ||
+    inferredStepButton;
   if (hasDeterministicTransition) {
     console.log(
       `[conversational] 🔒 transição cedo step="${currentStep.step_key}" ` +
@@ -2166,7 +2185,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
   }
 
   // ─── AI Orchestrator (memória persistente + RAG) ─────────────────────
-  if (cls.intent === "tem_duvida" && !hasCapture && !skipAiDetour) {
+  if (cls.intent === "tem_duvida" && !hasCapture && !skipAiDetour && !stepIsCaptureNameEarly) {
     try {
       const { data: hist } = await ctx.supabase
         .from("conversations")
@@ -2207,13 +2226,23 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
       const answerText = (orch.reply || "").trim();
       if (answerText && orch.confidence >= 0.55) {
         console.log(`[conversational-orch/evo] hit step="${stepKey}" route=${orch.route} conf=${orch.confidence.toFixed(2)} handoff=${orch.shouldHandoff}`);
-        const handoffUpdates = orch.shouldHandoff
+        // Grupo A / passos aN_*: responde a dúvida e reconduz — NUNCA pausa.
+        const orchStepKey = String(currentStep.step_key || currentStep.slot_key || stepKey || "");
+        const orchSlotKey = String(currentStep.slot_key || "");
+        const isGrupoAOrch =
+          String((ctx.customer as any)?.flow_variant || "").toUpperCase() === "A" ||
+          /^a\d+_/i.test(orchStepKey) ||
+          /^a\d+_/i.test(orchSlotKey);
+        const allowOrchHandoff = orch.shouldHandoff && !isGrupoAOrch;
+        const handoffUpdates = allowOrchHandoff
           ? { bot_paused: true, bot_paused_reason: "ai_handoff_duvidas", bot_paused_at: new Date().toISOString() }
           : {};
-        if (orch.shouldHandoff) {
+        if (allowOrchHandoff) {
           try {
             await notifyHandoff(ctx.supabase, ctx.customer, `Dúvida exigiu humano (passo ${stepKey})`).catch(() => {});
           } catch (_) { /* best-effort */ }
+        } else if (orch.shouldHandoff && isGrupoAOrch) {
+          console.log(`[conversational-orch/evo] handoff IGNORADO no Grupo A step=${orchStepKey}`);
         }
         // a3b sem botões → volta ao a3 (mesmo mapa do bot-flow / 11971254913).
         const orchReturnStep = resolveFaqReturnStep(currentStep, dbSteps);
@@ -2237,7 +2266,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
           {
             leadName: ctx.customer.name,
             stepQuestion: currentStep.message_text,
-            skip: orch.shouldHandoff,
+            skip: allowOrchHandoff,
           },
         );
         try {
@@ -2256,7 +2285,7 @@ export async function runConversationalFlow(ctx: BotContext): Promise<BotResult>
         } catch (e) {
           console.warn("[conversational-orch/evo] sendText falhou:", (e as Error)?.message || e);
         }
-        if (!orch.shouldHandoff) {
+        if (!allowOrchHandoff) {
           try {
             await reemitStepButtons({
               supabase: ctx.supabase, customerId: ctx.customer.id,

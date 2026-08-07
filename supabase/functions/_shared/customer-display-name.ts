@@ -127,6 +127,21 @@ export function isUsableCustomerName(raw: string | null | undefined): boolean {
   return /[A-Za-zÀ-ÿ]/.test(full);
 }
 
+/**
+ * Nome suficiente para pular o passo a1 no funil (`resolveLandingStep`).
+ * Push-name plausível conta para avançar o fluxo; saudação continua via
+ * `safeFirstNameForAddress` (sem "Oi Nome" até o lead confirmar).
+ */
+export function isNameFilledForFlowSkip(
+  raw: string | null | undefined,
+  nameSource?: string | null,
+): boolean {
+  if (!isUsableCustomerName(raw)) return false;
+  const src = String(nameSource || "").trim().toLowerCase();
+  if (isAddressableNameSource(src)) return true;
+  return src === "whatsapp_profile";
+}
+
 function titleCaseFirst(part: string): string {
   const clean = part.replace(/[.,;:!?]+$/g, "");
   if (!clean) return "";

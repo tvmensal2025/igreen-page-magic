@@ -17,6 +17,7 @@ import {
   CADASTRO_STEPS,
   type FlowTransition,
   matchTransition,
+  resolveFlowButtonFromText,
   routeEngine,
   SPECIAL_GOTO_VALUES,
 } from "./flow-router.ts";
@@ -510,4 +511,14 @@ Deno.test("CADASTRO_STEPS contains the canonical pipeline entries", () => {
   ) {
     assert(CADASTRO_STEPS.has(expected), `missing ${expected} from CADASTRO_STEPS`);
   }
+});
+
+Deno.test("resolveFlowButtonFromText: título do botão a3 → more_benefits", () => {
+  const buttons = [
+    { id: "more_benefits", title: "Saber mais benefício" },
+    { id: "activate", title: "Quero ativar" },
+    { id: "human", title: "Falar com humano" },
+  ];
+  assertEquals(resolveFlowButtonFromText("Saber mais benefício", buttons), "more_benefits");
+  assertEquals(resolveFlowButtonFromText("1", buttons), "more_benefits");
 });

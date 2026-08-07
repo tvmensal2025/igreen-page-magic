@@ -8,6 +8,7 @@
 import { resolveFlowId } from "../../_shared/resolve-flow.ts";
 import { discountRates } from "../../_shared/discount-rates.ts";
 import {
+  isNameFilledForFlowSkip,
   isUsableCustomerName,
   safeFirstNameForAddress,
 } from "../../_shared/customer-display-name.ts";
@@ -2461,12 +2462,18 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       (customer as any).name,
       (customer as any).name_source,
     );
+    const hasNameForFlow = isNameFilledForFlowSkip(
+      (customer as any).name,
+      (customer as any).name_source,
+    );
     const typedName = normalizeLeadName(txt);
     const typedBillValue = extractMoneyFromText(txt) ?? 0;
 
     if (RE_GREETING_ONLY.test(txt)) {
       return {
-        reply: currentNameTrusted ? "Oi! Qual a média da sua conta de luz?" : "Oi! Qual é o seu nome?",
+        reply: (currentNameTrusted || hasNameForFlow)
+          ? "Oi! Qual a média da sua conta de luz?"
+          : "Oi! Qual é o seu nome?",
         updates: { conversation_step: "qualificacao" },
       };
     }
@@ -2492,6 +2499,13 @@ export async function runBotFlow(ctx: BotContext): Promise<BotResult> {
       return {
         reply: "Com essa média, já dá para calcular sua economia. Me envie uma FOTO ou PDF da sua conta de energia para eu confirmar os dados.",
         updates: { electricity_bill_value: typedBillValue, sales_phase: "fechamento", conversation_step: "aguardando_conta" },
+      };
+    }
+
+    if (hasNameForFlow || currentNameTrusted) {
+      return {
+        reply: "Para calcular sua economia, me diga a *média da sua conta de luz* (ex: 350).",
+        updates: { conversation_step: "qualificacao" },
       };
     }
   }

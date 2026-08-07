@@ -312,9 +312,10 @@ responde a B ou C, `isCadenceReturnContext` devolve ao Grupo A — não existe
 fluxo paralelo — e a cadência pausa 72h por `lead_responded`.
 
 O retorno não pode re-perguntar o que já se sabe. `resolveLandingStep` pula todo
-passo cujos campos já estão preenchidos (`name` de fonte confiável,
-`electricity_bill_value`, `cpf`, `phone_whatsapp`), limitado a 5 saltos com
-`visited` set. `name_source` de `cadence`/`whatsapp_profile` **não** conta como
+passo cujos campos já estão preenchidos (`name` de fonte confiável ou push-name
+plausível via `isNameFilledForFlowSkip`, `electricity_bill_value ≥ 100`, `cpf`,
+`phone_whatsapp`), limitado a 5 saltos com `visited` set.
+`name_source` de `cadence`/`whatsapp_profile` **não** conta como
 confiável para *saudação* ("Oi Nome") — ver `safeFirstNameForAddress`. Para
 **avançar o funil**, push-name plausível (`isUsableCustomerName`) pula o a1 via
 `isNameFilledForFlowSkip`: o lead vai direto ao valor/simulação sem ficar preso
@@ -324,8 +325,13 @@ Valor informado no próprio turno do retorno é gravado antes do motor rodar
 (`cadence_typed_bill`), então o `a2` é pulado e o lead cai direto na simulação.
 Faixa de botão (200/500/800) grava a estimativa da faixa — o COLD_1 promete
 "apenas com a faixa" — e também pula o `a2`. Valor preciso antigo nunca é
-substituído por estimativa de faixa (`mergeBillValue`). Texto ambíguo ("ok") com
-valor já salvo avança mantendo o valor, sem re-perguntar.
+substituído por estimativa de faixa (`mergeBillValue`). Texto ambíguo ("ok") ou
+off-topic com valor já salvo avança mantendo o valor (`known_bill_forward` antes
+do FAQ). `looksLikeQuestion` só com `?` ou termos de objeção — não por contagem
+de palavras.
+
+No Grupo A, orquestrador de dúvida **nunca** pausa o bot (`ai_handoff_duvidas`):
+responde + reconduz ao passo.
 
 Evidência em produção: lead de 12/07 esfriou, recebeu `COLD_2` e em 05/08
 respondeu só "150,00". O valor foi gravado, o `a2` pulado e o `a3` emitido com

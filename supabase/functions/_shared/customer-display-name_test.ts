@@ -4,6 +4,7 @@
 import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   isAddressableNameSource,
+  isNameFilledForFlowSkip,
   isUsableCustomerName,
   safeFirstNameForAddress,
   safeFullNameForAddress,
@@ -42,6 +43,13 @@ Deno.test("isAddressableNameSource — Zap/unknown NÃO; digitado/OCR/portal SIM
   assertEquals(isAddressableNameSource("ocr_conta"), true);
   assertEquals(isAddressableNameSource("igreen_portal"), true);
   assertEquals(isAddressableNameSource("manual"), true);
+});
+
+Deno.test("isNameFilledForFlowSkip — push plausível pula a1; saudação continua bloqueada", () => {
+  assertEquals(isNameFilledForFlowSkip("Viviane", "whatsapp_profile"), true);
+  assertEquals(isNameFilledForFlowSkip("Ixi Kkk", "whatsapp_profile"), false);
+  assertEquals(isNameFilledForFlowSkip("Maria", "self_introduced"), true);
+  assertEquals(safeFirstNameForAddress("Viviane", "whatsapp_profile"), "");
 });
 
 Deno.test("safeFirstNameForAddress — exige fonte confiável", () => {

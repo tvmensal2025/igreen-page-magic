@@ -298,25 +298,26 @@ function cadastroUpdates(billValue?: number): Record<string, unknown> {
 /**
  * Entrada no fluxo conversacional Grupo A após retorno de cadência B/C.
  *
- * Valor:
- *   - Digitado AGORA (preciso) → grava: resolveLandingStep pula a2 (não
- *     re-pede o que o lead acabou de informar — bug 2026-08-05).
- *   - Faixa/botão (200/500/800) → limpa: a2 pede o valor oficial.
- *   - Sem valor → limpa: a2 pede.
+ * Valor (resolveLandingStep pula a2 quando electricity_bill_value ≥ 100):
+ *   - Digitado AGORA (preciso) → grava e não re-pede (fix 2026-08-05).
+ *   - Faixa/botão (200/500/800) → grava a estimativa — COLD_1 promete
+ *     "apenas com a faixa"; re-perguntar a2 quebra a promessa (Dulce 349…).
+ *   - Valor preciso antigo + faixa nova → mergeBillValue mantém o preciso.
+ *   - Sem valor nem faixa → null: a2 pede.
  *
- * Nome: NÃO promove name_source para "cadence" (não é fonte addressable —
- * push-name do Zap virava "Oi NomeErrado"). Se a fonte já for confiável,
- * resolveLandingStep pula a1 sozinho.
+ * Nome: NÃO promove name_source para "cadence" (push-name virava "Oi NomeErrado").
  */
 function conversationalEntryUpdates(
   customer: CadenceInboundInput["customer"],
   billValue?: number,
 ): Record<string, unknown> {
-  const precise =
-    billValue != null &&
-    Number.isFinite(billValue) &&
-    billValue > 0 &&
-    !BILL_RANGE_ESTIMATES.has(billValue);
+  let stored: number | null = null;
+  if (billValue != null && Number.isFinite(billValue) && billValue > 0) {
+    stored = mergeBillValue(customer, billValue) ?? billValue;
+  } else {
+    const prev = existingBill(customer);
+    if (prev != null && prev >= 100) stored = prev;
+  }
   return {
     flow_variant: "A",
     conversation_step: null,
@@ -325,7 +326,7 @@ function conversationalEntryUpdates(
     custom_step_retries: 0,
     last_custom_prompt_at: null,
     ai_followups_count: 0,
-    electricity_bill_value: precise ? billValue : null,
+    electricity_bill_value: stored != null && stored >= 100 ? stored : null,
   };
 }
 
@@ -358,18 +359,16 @@ function nudgeReply(customer: CadenceInboundInput["customer"]): string {
 
 /**
  * Texto do lead parece dúvida/pergunta (dispara FAQ + atalhos do consultor).
- * Conservador: interrogação, termos clássicos de objeção OU frase com ≥4
- * palavras (nome próprio / "ok" / "blz" continuam fora).
+ * Conservador: só interrogação ou termos clássicos de objeção.
+ * NÃO usa “≥4 palavras” — "Isso é um teste" / frases neutras prendiam o
+ * retorno B/C em FAQ e bloqueavam known_bill_forward (Viviane / Dulce).
  */
 export function looksLikeQuestion(text: string | null | undefined): boolean {
   const t = String(text || "").trim();
   if (t.length < 4) return false;
   if (/\?/.test(t)) return true;
-  if (
-    /(como\s+funciona|é\s+seguro|e\s+seguro|é\s+golpe|e\s+golpe|tem\s+taxa|cobra|aceita\s+pix|quanto\s+custa|quanto\s+fica|fidelidade|multa|cancelar|aluguel|titular|economiz|desconto|painel\s+solar|placa|minha\s+cidade|tem\s+cobertura|atende\s+(?:na\s+)?minha|preciso\s+|posso\s+|voc[eê]s\s+|qual\s+|quando\s+|onde\s+|por\s?que|pq\b)/i
-      .test(t)
-  ) return true;
-  return t.split(/\s+/).filter(Boolean).length >= 4;
+  return /(como\s+funciona|é\s+seguro|e\s+seguro|é\s+golpe|e\s+golpe|tem\s+taxa|cobra|aceita\s+pix|quanto\s+custa|quanto\s+fica|fidelidade|multa|cancelar|aluguel|titular|economiz|desconto|painel\s+solar|placa|minha\s+cidade|tem\s+cobertura|atende\s+(?:na\s+)?minha|preciso\s+|posso\s+|voc[eê]s\s+|qual\s+|quando\s+|onde\s+|por\s?que|pq\b)/i
+    .test(t);
 }
 
 
@@ -451,11 +450,9 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     };
   }
 
-  // Educativo com valor antigo: entra no Grupo A, mas a2 re-pede (tempo passou).
-  // Só valor digitado NESTE turno (cadence_typed_bill) grava no updates.
   if (EDUCATIONAL_BUTTON_IDS.has(buttonId)) {
     if (knownBill != null && knownBill >= 100) {
-      return pushToCadastro(input.customer, `cadence_educational_to_cadastro_${buttonId}`);
+      return pushToCadastro(input.customer, `cadence_educational_to_cadastro_${buttonId}`, knownBill);
     }
     return {
       handled: true,
@@ -511,26 +508,23 @@ export function resolveCadenceInboundRoute(input: CadenceInboundInput): CadenceR
     };
   }
 
+  // Valor antigo confiável → avança ao Grupo A ANTES do FAQ genérico.
+  // Off-topic ("Isso é um teste") não pode prender em qualificacao.
+  if (knownBill != null && knownBill >= 100) {
+    return pushToCadastro(input.customer, "cadence_known_bill_forward", knownBill);
+  }
+
   if (text && looksLikeQuestion(text)) {
-    const known = knownBill != null && knownBill >= 100;
     return {
       handled: true,
       continueBotFlow: false,
       updates: { origin_recovery: "cadence", flow_variant: "A", conversation_step: "qualificacao" },
       reply:
         "Sem taxa para iniciar a análise e sem pedir Pix ao consultor. Funciona com créditos de energia na sua fatura — sem obra.\n\n" +
-        (known
-          ? "Me envie a *foto ou PDF da sua conta de luz* que eu já sigo com o cadastro 📸"
-          : "Qual a faixa da sua conta hoje? 👇"),
-      buttons: known ? [...ANALYZE_OR_CALL_BUTTONS] : [...BILL_RANGE_BUTTONS],
+        "Qual a faixa da sua conta hoje? 👇",
+      buttons: [...BILL_RANGE_BUTTONS],
       reason: "cadence_faq_nudge",
     };
-  }
-
-  // Já tem valor antigo → avança ao Grupo A, mas re-pede no a2 (tempo passou).
-  // Valor digitado NESTE turno já foi tratado em cadence_typed_bill acima.
-  if (knownBill != null && knownBill >= 100) {
-    return pushToCadastro(input.customer, "cadence_known_bill_forward");
   }
 
 
