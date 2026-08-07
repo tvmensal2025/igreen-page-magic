@@ -55,6 +55,8 @@ localhost:3102 · docker interno · typo `d9v83a` · usar `portal2_worker_url` p
   - `button_enabled` — opt-in do botão “Receber boleto” (arquivo no Zap; default off)
   - **Apps Android/iOS sempre** (`buildAppStoreInviteMessage`) — mensagem própria com Play Store + App Store, independente dos toggles
 - Ordem: áudio? → texto? → apps (sempre) → botão boleto?
+- **Acesso ao Club = e-mail do cadastro** (`customers.email`), nunca `club.igreenenergy.com.br/?id=…`. Helper `buildClubAccessLine`; sem e-mail a mensagem só orienta “use o e-mail do seu cadastro”. Var do texto: `{{email_acesso}}` (`{{link_club}}` é legado e também rende e-mail). `buildClubLink` = `@deprecated` para copy ao cliente.
+- **Boleto já pago não gera aviso** (`isBoletoStatusPago`): o sync não enfileira e o dispatcher marca `skipped_pago`. Depende de `status` vir em `new_boletos` (`persistBoletos`).
 - **Não usar a palavra PDF** nos textos ao cliente. FAQ de medo aponta Club.
 - Handler `tryHandleBoletoReceberDoc` ativo só quando o botão foi enviado/armado.
 - Helper: `_shared/boleto-notify.ts`. UI: Automações iGreen.

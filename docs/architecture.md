@@ -315,18 +315,23 @@ O retorno não pode re-perguntar o que já se sabe. `resolveLandingStep` pula to
 passo cujos campos já estão preenchidos (`name` de fonte confiável,
 `electricity_bill_value`, `cpf`, `phone_whatsapp`), limitado a 5 saltos com
 `visited` set. `name_source` de `cadence`/`whatsapp_profile` **não** conta como
-confiável: é push-name do Zap e viraria "Oi NomeErrado".
+confiável para *saudação* ("Oi Nome") — ver `safeFirstNameForAddress`. Para
+**avançar o funil**, push-name plausível (`isUsableCustomerName`) pula o a1 via
+`isNameFilledForFlowSkip`: o lead vai direto ao valor/simulação sem ficar preso
+quando manda saudação ou off-topic ("Isso é um teste") — caso Viviane 11971073983.
 
 Valor informado no próprio turno do retorno é gravado antes do motor rodar
 (`cadence_typed_bill`), então o `a2` é pulado e o lead cai direto na simulação.
-Faixa de botão (200/500/800) nunca sobrescreve valor preciso já salvo —
-`mergeBillValue`. Já quando o lead volta **sem** falar valor, o valor antigo é
-descartado de propósito e o `a2` reconfirma: semanas depois a conta mudou.
+Faixa de botão (200/500/800) grava a estimativa da faixa — o COLD_1 promete
+"apenas com a faixa" — e também pula o `a2`. Valor preciso antigo nunca é
+substituído por estimativa de faixa (`mergeBillValue`). Texto ambíguo ("ok") com
+valor já salvo avança mantendo o valor, sem re-perguntar.
 
 Evidência em produção: lead de 12/07 esfriou, recebeu `COLD_2` e em 05/08
 respondeu só "150,00". O valor foi gravado, o `a2` pulado e o `a3` emitido com
-*"Com base no valor de R$ 150,00"*. No mesmo caminho em 04/08, antes do salto de
-passo, o bot pedia o valor de novo depois de o lead já ter respondido.
+*"Com base no valor de R$ 150,00"*. Caso Dulce (07/08): respondeu faixa
+`R$300 a R$700` após COLD_1 — antes do fix o bot re-pedia o valor no `a2`;
+depois grava estimativa ou mantém valor preciso existente e segue ao `a3`.
 
 ## Conversa E2E do Grupo A (sem envio real)
 
@@ -360,9 +365,14 @@ Evolution (opção numérica).
   Na hora configurada dispara `sync-igreen-customers` com `mode=sync_boletos`
   (exceção ao bloqueio Evomi do sync full).
 - Boleto novo → fila `customer_auto_message_log` (`boleto_chegou:{mes}`).
+  Boleto que chega já quitado não entra na fila e, se entrou, o dispatcher
+  marca `skipped_pago` (`isBoletoStatusPago`).
 - Pacote Zap (toggles): `send_audio` / `send_text` (áudio e/ou texto);
   `button_enabled` opt-in do botão “Receber boleto” (arquivo). Links
   **Android/iOS do app Club sempre** em mensagem própria. Sem a palavra “PDF”.
+- Acesso ao Club vai pelo **e-mail do cadastro** (`customers.email`), nunca
+  pelo link com o id. Sem e-mail, a mensagem só orienta a entrar com o e-mail
+  do cadastro. Var do texto: `{{email_acesso}}`.
 - Helper: `_shared/boleto-notify.ts`. UI: Automações iGreen.
 
 ## Validação e implantação
