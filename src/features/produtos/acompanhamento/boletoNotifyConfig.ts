@@ -14,6 +14,18 @@ import {
   firstNameFromPublicConsultant,
 } from "@/lib/consultantPublicLabel";
 
+export type BoletoImagePosition = "first" | "after_audio" | "after_text" | "last";
+
+export const BOLETO_IMAGE_POSITION_LABELS: Array<{
+  value: BoletoImagePosition;
+  label: string;
+}> = [
+  { value: "first", label: "Primeiro (antes do áudio)" },
+  { value: "after_audio", label: "Depois do áudio" },
+  { value: "after_text", label: "Depois do texto" },
+  { value: "last", label: "Por último (depois dos apps)" },
+];
+
 export type BoletoNotifyConfig = {
   id: string;
   sync_enabled: boolean;
@@ -23,6 +35,10 @@ export type BoletoNotifyConfig = {
   wa_text: string;
   send_audio: boolean;
   send_text: boolean;
+  send_image: boolean;
+  image_url: string | null;
+  image_caption: string;
+  image_position: BoletoImagePosition;
   button_boleto_label: string;
   button_enabled: boolean;
   doc_caption: string;
@@ -68,10 +84,34 @@ A iGreen cuida do envio oficial do boleto. Aqui o nosso recado é te lembrar e t
 Qualquer dúvida, responde aqui 💚`,
   send_audio: true,
   send_text: true,
+  send_image: false,
+  image_url: null,
+  image_caption: "",
+  image_position: "first",
   button_boleto_label: "Receber boleto",
   button_enabled: false,
   doc_caption: "Segue seu boleto. O lugar oficial continua no app iGreen Club 👆",
 };
+
+export function normalizeBoletoImagePosition(raw: unknown): BoletoImagePosition {
+  const s = String(raw || "").trim().toLowerCase();
+  return BOLETO_IMAGE_POSITION_LABELS.some((p) => p.value === s)
+    ? (s as BoletoImagePosition)
+    : "first";
+}
+
+/** Só https — o WhatsApp precisa baixar a imagem. */
+export function normalizeBoletoImageUrl(raw: unknown): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  return /^https:\/\/\S+$/i.test(s) ? s : null;
+}
+
+export function shouldSendBoletoImage(
+  cfg: Pick<BoletoNotifyConfig, "send_image" | "image_url">,
+): boolean {
+  return cfg.send_image === true && !!normalizeBoletoImageUrl(cfg.image_url);
+}
 
 /** Espelha `_shared/boleto-notify.ts`: boleto quitado não gera aviso. */
 export function isBoletoStatusPago(status?: string | null): boolean {
@@ -204,6 +244,10 @@ export function useBoletoNotifyConfig() {
         ...row,
         send_audio: row.send_audio !== false,
         send_text: row.send_text !== false,
+        send_image: row.send_image === true,
+        image_url: normalizeBoletoImageUrl(row.image_url),
+        image_caption: String(row.image_caption || ""),
+        image_position: normalizeBoletoImagePosition(row.image_position),
         button_enabled: row.button_enabled === true,
       };
     },

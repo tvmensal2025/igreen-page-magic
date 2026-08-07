@@ -31,6 +31,7 @@ import {
   buildAppStoreNumberedMessage,
   buildBoletoButtonPrompt,
   isBoletoStatusPago,
+  shouldSendBoletoImage,
   formatBoletoValor,
   formatBoletoVencimento,
   loadBoletoNotifyConfig,
@@ -355,11 +356,36 @@ async function sendOne(
   const wantAudio = cfg.send_audio !== false;
   const wantText = cfg.send_text !== false;
   const wantBoletoBtn = cfg.button_enabled === true;
+  const wantImage = shouldSendBoletoImage(cfg);
 
   let audioOk = !wantAudio;
   let textOk = !wantText;
   let appsOk = false;
   let buttonOk = !wantBoletoBtn;
+  let imageOk = !wantImage;
+  let imageSent = false;
+
+  // Imagem em mensagem própria, na posição escolhida na UI.
+  const maybeSendImage = async (position: string) => {
+    if (!wantImage || imageSent || cfg.image_position !== position) return;
+    imageSent = true;
+    try {
+      const r = await resolved.adapter.sendMedia(
+        jid,
+        {
+          kind: "image",
+          url: String(cfg.image_url),
+          caption: renderBoletoNotifyTemplate(cfg.image_caption, vars),
+        },
+        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:image`, supabase },
+      );
+      imageOk = !!r.ok;
+    } catch (e) {
+      console.warn("[boleto-notify] image:", e instanceof Error ? e.message : e);
+    }
+  };
+
+  await maybeSendImage("first");
 
   if (wantAudio) {
     try {
@@ -381,6 +407,8 @@ async function sendOne(
     }
   }
 
+  await maybeSendImage("after_audio");
+
   if (wantText) {
     try {
       const r = await resolved.adapter.sendText(
@@ -393,6 +421,8 @@ async function sendOne(
       console.warn("[boleto-notify] text:", e instanceof Error ? e.message : e);
     }
   }
+
+  await maybeSendImage("after_text");
 
   // Sempre: Android/iOS — Whapi = botões; Evolution = lista numerada com links.
   try {
@@ -425,6 +455,8 @@ async function sendOne(
     console.warn("[boleto-notify] apps:", e instanceof Error ? e.message : e);
   }
 
+  await maybeSendImage("last");
+
   if (wantBoletoBtn) {
     try {
       const r = await resolved.adapter.sendChoice(
@@ -447,10 +479,10 @@ async function sendOne(
     }
   }
 
-  const coreOk = appsOk || textOk || audioOk;
+  const coreOk = appsOk || textOk || audioOk || (wantImage && imageOk);
   const status = !coreOk
     ? "failed"
-    : (audioOk && textOk && appsOk && buttonOk)
+    : (audioOk && textOk && appsOk && buttonOk && imageOk)
     ? "sent"
     : "partial";
 
@@ -585,11 +617,35 @@ async function runTestSend(
   const wantAudio = cfg.send_audio !== false;
   const wantText = cfg.send_text !== false;
   const wantBoletoBtn = cfg.button_enabled === true;
+  const wantImage = shouldSendBoletoImage(cfg);
   const ts = Date.now();
   let audioOk = !wantAudio;
   let textOk = !wantText;
   let appsOk = false;
   let buttonOk = !wantBoletoBtn;
+  let imageOk = !wantImage;
+  let imageSent = false;
+
+  const maybeSendImage = async (position: string) => {
+    if (!wantImage || imageSent || cfg.image_position !== position) return;
+    imageSent = true;
+    try {
+      const r = await resolved.adapter.sendMedia(
+        jid,
+        {
+          kind: "image",
+          url: String(cfg.image_url),
+          caption: renderBoletoNotifyTemplate(cfg.image_caption, vars),
+        },
+        { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:image:${ts}`, supabase },
+      );
+      imageOk = !!r.ok;
+    } catch (e) {
+      console.warn("[boleto-notify] test image:", e instanceof Error ? e.message : e);
+    }
+  };
+
+  await maybeSendImage("first");
 
   if (wantAudio) {
     try {
@@ -607,6 +663,8 @@ async function runTestSend(
     }
   }
 
+  await maybeSendImage("after_audio");
+
   if (wantText) {
     try {
       const r = await resolved.adapter.sendText(
@@ -619,6 +677,8 @@ async function runTestSend(
       console.warn("[boleto-notify] test text:", e instanceof Error ? e.message : e);
     }
   }
+
+  await maybeSendImage("after_text");
 
   try {
     const canButtons = !!resolved.adapter.capabilities?.supportsButtons;
@@ -649,6 +709,8 @@ async function runTestSend(
   } catch (e) {
     console.warn("[boleto-notify] test apps:", e instanceof Error ? e.message : e);
   }
+
+  await maybeSendImage("last");
 
   if (wantBoletoBtn) {
     try {
@@ -707,10 +769,11 @@ async function runTestSend(
   }
 
   return {
-    success: appsOk || textOk || audioOk,
+    success: appsOk || textOk || audioOk || (wantImage && imageOk),
     audio_ok: audioOk,
     text_ok: textOk,
     apps_ok: appsOk,
+    image_ok: wantImage ? imageOk : null,
     button_ok: buttonOk,
     doc_ok: false,
     click_armed: clickArmed,

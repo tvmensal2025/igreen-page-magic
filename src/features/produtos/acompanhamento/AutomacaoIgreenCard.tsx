@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, Volume2, Send } from "lucide-react";
+import { Loader2, Volume2, Send, ImagePlus, X } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -34,9 +34,13 @@ import {
   buildBoletoButtonPrompt,
   isBoletoStatusPago,
   normalizeClubAccessEmail,
+  normalizeBoletoImageUrl,
   renderBoletoAudioBody,
   resolveBoletoAudioConsultantVars,
+  shouldSendBoletoImage,
   stripBoletoButtonCta,
+  BOLETO_IMAGE_POSITION_LABELS,
+  type BoletoImagePosition,
   type BoletoNotifyConfig,
 } from "./boletoNotifyConfig";
 
@@ -138,7 +142,9 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
   const [audioBusy, setAudioBusy] = useState(false);
   const [sendBusy, setSendBusy] = useState(false);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [imageBusy, setImageBusy] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const imageInputRef = useRef<HTMLInputElement | null>(null);
 
   const cfg = { ...(boletoCfg || {}), ...(draft || {}) } as BoletoNotifyConfig;
 
@@ -226,6 +232,43 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
       consultantDisplayName: data?.display_name ?? null,
       consultantGender: data?.gender ?? null,
     };
+  };
+
+  const pickImage = async (file: File | null) => {
+    if (!file) return;
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Arquivo não é imagem",
+        description: "Escolha um JPG, PNG ou WEBP.",
+        variant: "destructive",
+      });
+      return;
+    }
+    setImageBusy(true);
+    try {
+      const up = await uploadMedia(file, undefined, {
+        scope: "admin",
+        consultant_id: consultantId,
+        kind: "image",
+        slug: "boleto-aviso",
+      });
+      const url = normalizeBoletoImageUrl(up.url);
+      if (!url) throw new Error("O upload não devolveu um endereço https válido.");
+      setDraft((d) => ({ ...d, image_url: url, send_image: true }));
+      toast({
+        title: "Imagem carregada",
+        description: "Clique em “Salvar textos” para valer no envio.",
+      });
+    } catch (e) {
+      toast({
+        title: "Erro ao subir a imagem",
+        description: toUserFacingError(e),
+        variant: "destructive",
+      });
+    } finally {
+      setImageBusy(false);
+      if (imageInputRef.current) imageInputRef.current.value = "";
+    }
   };
 
   const generateAndListen = async () => {
@@ -372,6 +415,35 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
       const buttonLabel = (cfg.button_boleto_label || "Receber boleto").slice(0, 25);
       const BOLETO_BTN_ID = "boleto_receber_doc";
 
+      const wantImage = shouldSendBoletoImage(cfg);
+      let imageSent = false;
+      const maybeSendImage = async (position: BoletoImagePosition) => {
+        if (!wantImage || imageSent || cfg.image_position !== position) return;
+        imageSent = true;
+        const legenda = renderWaTemplate(cfg.image_caption || "", {
+          saudacao,
+          nome,
+          mes: boleto.mes_referencia || "—",
+          valor: formatValor(boleto.total),
+          vencimento: formatVenc(boleto.vencimento),
+          email_acesso: emailAcesso || "",
+          link_club: emailAcesso || "",
+          link_play: IGREEN_CLUB_PLAY_STORE_URL,
+          link_appstore: IGREEN_CLUB_APP_STORE_URL,
+          url_boleto: boleto.url_boleto || "",
+        });
+        await whapiSendMedia(
+          phone,
+          String(cfg.image_url),
+          "image",
+          legenda || undefined,
+          undefined,
+          { intent: "reply", customerId: cust?.id },
+        );
+      };
+
+      await maybeSendImage("first");
+
       if (wantAudio) {
         const cons = await loadConsAudioVars();
         const spoken = buildSpokenPreview(cfg.audio_script, nome, cons);
@@ -393,12 +465,16 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         });
       }
 
+      await maybeSendImage("after_audio");
+
       if (wantText) {
         await whapiSendText(phone, stripBoletoButtonCta(waText), {
           intent: "reply",
           customerId: cust?.id,
         });
       }
+
+      await maybeSendImage("after_text");
 
       // Sempre: Android + iOS (botões Whapi; se falhar, lista *1.* / *2.* com links)
       try {
@@ -414,6 +490,8 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
           customerId: cust?.id,
         });
       }
+
+      await maybeSendImage("last");
 
       if (wantBoletoBtn) {
         const btnBody = buildBoletoButtonPrompt(buttonLabel);
@@ -627,8 +705,8 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                       <audio ref={audioRef} controls src={audioUrl} className="w-full mt-1" />
                     )}
                     <p className="text-[11px] text-muted-foreground">
-                      Respeita os toggles abaixo. Links Android/iOS vão sempre.
-                      Sem boleto no cliente, usa mês/valor de exemplo só para o teste.
+                      Respeita os toggles abaixo (áudio, texto, imagem, botão). Links Android/iOS
+                      vão sempre. Sem boleto no cliente, usa mês/valor de exemplo só para o teste.
                     </p>
                   </div>
 
@@ -652,6 +730,16 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                     </div>
                     <div className="flex items-center gap-2">
                       <Switch
+                        id="send_image"
+                        checked={cfg.send_image === true}
+                        onCheckedChange={(v) => setDraft((d) => ({ ...d, send_image: v }))}
+                      />
+                      <Label htmlFor="send_image" className="text-xs">
+                        Imagem (mensagem própria)
+                      </Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch
                         id="button_enabled"
                         checked={cfg.button_enabled === true}
                         onCheckedChange={(v) => setDraft((d) => ({ ...d, button_enabled: v }))}
@@ -665,21 +753,126 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                       {" "}— botões no Whapi; no Evolution vira *1.* / *2.* com os links.
                     </p>
                     {cfg.button_enabled === true && (
+                      <>
+                        <div>
+                          <Label className="text-xs">Texto do botão (máx. 25)</Label>
+                          <Input
+                            maxLength={25}
+                            value={cfg.button_boleto_label}
+                            onChange={(e) =>
+                              setDraft((d) => ({
+                                ...d,
+                                button_boleto_label: e.target.value.slice(0, 25),
+                              }))
+                            }
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Legenda ao mandar o arquivo</Label>
+                          <Textarea
+                            rows={2}
+                            value={cfg.doc_caption || ""}
+                            onChange={(e) => setDraft((d) => ({ ...d, doc_caption: e.target.value }))}
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {cfg.send_image === true && (
+                    <div className="rounded-lg border p-3 space-y-2.5 bg-muted/10">
+                      <p className="text-xs font-semibold">Imagem do aviso</p>
+
+                      {cfg.image_url ? (
+                        <div className="flex items-start gap-2.5">
+                          <img
+                            src={cfg.image_url}
+                            alt="Imagem do aviso de boleto"
+                            className="h-20 w-20 rounded-md border object-cover"
+                          />
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => setDraft((d) => ({ ...d, image_url: null }))}
+                          >
+                            <X className="h-4 w-4" />
+                            <span className="ml-1">Remover</span>
+                          </Button>
+                        </div>
+                      ) : (
+                        <p className="text-[11px] text-muted-foreground">
+                          Nenhuma imagem escolhida — com o toggle ligado e sem imagem, o aviso sai
+                          sem ela.
+                        </p>
+                      )}
+
+                      <input
+                        ref={imageInputRef}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => void pickImage(e.target.files?.[0] || null)}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={imageBusy}
+                        onClick={() => imageInputRef.current?.click()}
+                      >
+                        {imageBusy
+                          ? <Loader2 className="h-4 w-4 animate-spin" />
+                          : <ImagePlus className="h-4 w-4" />}
+                        <span className="ml-1.5">
+                          {cfg.image_url ? "Trocar imagem" : "Escolher imagem"}
+                        </span>
+                      </Button>
+
                       <div>
-                        <Label className="text-xs">Texto do botão (máx. 25)</Label>
+                        <Label className="text-xs">Ou cole o endereço da imagem (https)</Label>
                         <Input
-                          maxLength={25}
-                          value={cfg.button_boleto_label}
+                          value={cfg.image_url || ""}
+                          placeholder="https://…"
                           onChange={(e) =>
-                            setDraft((d) => ({
-                              ...d,
-                              button_boleto_label: e.target.value.slice(0, 25),
-                            }))
+                            setDraft((d) => ({ ...d, image_url: e.target.value.trim() || null }))
                           }
                         />
                       </div>
-                    )}
-                  </div>
+
+                      <div>
+                        <Label className="text-xs">Legenda da imagem (opcional)</Label>
+                        <Textarea
+                          rows={3}
+                          value={cfg.image_caption || ""}
+                          placeholder="Seu boleto de {{mes}} chegou 💚"
+                          onChange={(e) => setDraft((d) => ({ ...d, image_caption: e.target.value }))}
+                        />
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Aceita as mesmas variáveis do texto ({"{{nome}}"}, {"{{mes}}"},{" "}
+                          {"{{valor}}"}, {"{{vencimento}}"}).
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label className="text-xs">Quando enviar a imagem</Label>
+                        <select
+                          className="mt-1 h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                          value={cfg.image_position || "first"}
+                          onChange={(e) =>
+                            setDraft((d) => ({
+                              ...d,
+                              image_position: e.target.value as BoletoImagePosition,
+                            }))
+                          }
+                        >
+                          {BOLETO_IMAGE_POSITION_LABELS.map((p) => (
+                            <option key={p.value} value={p.value}>{p.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  )}
 
                   <div>
                     <Label className="text-xs">Texto do WhatsApp</Label>

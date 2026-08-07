@@ -374,8 +374,11 @@ Evolution (opção numérica).
   Boleto que chega já quitado não entra na fila e, se entrou, o dispatcher
   marca `skipped_pago` (`isBoletoStatusPago`).
 - Pacote Zap (toggles): `send_audio` / `send_text` (áudio e/ou texto);
-  `button_enabled` opt-in do botão “Receber boleto” (arquivo). Links
-  **Android/iOS do app Club sempre** em mensagem própria. Sem a palavra “PDF”.
+  `send_image` opt-in de imagem em mensagem própria (`image_url` https,
+  `image_caption` com variáveis, `image_position` = `first` | `after_audio` |
+  `after_text` | `last`); `button_enabled` opt-in do botão “Receber boleto”
+  (arquivo). Links **Android/iOS do app Club sempre** em mensagem própria.
+  Sem a palavra “PDF”.
 - Acesso ao Club vai pelo **e-mail do cadastro** (`customers.email`), nunca
   pelo link com o id. Sem e-mail, a mensagem só orienta a entrar com o e-mail
   do cadastro. Var do texto: `{{email_acesso}}`.

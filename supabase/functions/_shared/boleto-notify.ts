@@ -34,6 +34,16 @@ export const IGREEN_CLUB_PLAY_STORE_URL =
 export const IGREEN_CLUB_APP_STORE_URL =
   "https://apps.apple.com/br/app/igreen-club/id6444493340";
 
+/** Onde a imagem entra no pacote (editável na UI). */
+export type BoletoImagePosition = "first" | "after_audio" | "after_text" | "last";
+
+export const BOLETO_IMAGE_POSITIONS: BoletoImagePosition[] = [
+  "first",
+  "after_audio",
+  "after_text",
+  "last",
+];
+
 export type BoletoNotifyConfig = {
   id: string;
   sync_enabled: boolean;
@@ -45,6 +55,12 @@ export type BoletoNotifyConfig = {
   send_audio: boolean;
   /** Enviar texto (mensagem formatada). */
   send_text: boolean;
+  /** Opt-in: imagem em mensagem própria. */
+  send_image: boolean;
+  image_url: string | null;
+  /** Legenda da imagem (aceita as mesmas variáveis do texto). */
+  image_caption: string;
+  image_position: BoletoImagePosition;
   button_boleto_label: string;
   /** Opt-in: botão que manda o arquivo no Zap. */
   button_enabled: boolean;
@@ -83,6 +99,10 @@ A iGreen cuida do envio oficial do boleto. Aqui o nosso recado é te lembrar e t
 Qualquer dúvida, responde aqui 💚`,
   send_audio: true,
   send_text: true,
+  send_image: false,
+  image_url: null,
+  image_caption: "",
+  image_position: "first",
   button_boleto_label: "Receber boleto",
   /** Default off — empresa já manda o boleto; toggle libera o arquivo no Zap. */
   button_enabled: false,
@@ -419,6 +439,10 @@ export async function loadBoletoNotifyConfig(supabase: SB): Promise<BoletoNotify
       sync_enabled: data.sync_enabled !== false,
       send_audio: data.send_audio !== false,
       send_text: data.send_text !== false,
+      send_image: data.send_image === true,
+      image_url: normalizeBoletoImageUrl(data.image_url),
+      image_caption: String(data.image_caption || ""),
+      image_position: normalizeBoletoImagePosition(data.image_position),
       // Opt-in explícito: default off (empresa já manda o boleto no Zap).
       button_enabled: data.button_enabled === true,
     };
@@ -468,6 +492,28 @@ export function isBoletoReceberDocIntent(opts: {
   if (/^(quero\s+)?(o\s+)?boleto(\s+aqui)?$/i.test(norm)) return true;
   if (/receber\s+boleto/i.test(norm)) return true;
   return false;
+}
+
+export function normalizeBoletoImagePosition(raw: unknown): BoletoImagePosition {
+  const s = String(raw || "").trim().toLowerCase();
+  return (BOLETO_IMAGE_POSITIONS as string[]).includes(s)
+    ? (s as BoletoImagePosition)
+    : "first";
+}
+
+/** Só https — o WhatsApp precisa baixar a imagem. */
+export function normalizeBoletoImageUrl(raw: unknown): string | null {
+  const s = String(raw ?? "").trim();
+  if (!s) return null;
+  if (!/^https:\/\/\S+$/i.test(s)) return null;
+  return s;
+}
+
+/** Imagem só sai com o toggle ligado e uma URL utilizável. */
+export function shouldSendBoletoImage(
+  cfg: Pick<BoletoNotifyConfig, "send_image" | "image_url">,
+): boolean {
+  return cfg.send_image === true && !!normalizeBoletoImageUrl(cfg.image_url);
 }
 
 /** Boleto já quitado no portal iGreen — não avisar "chegou". */

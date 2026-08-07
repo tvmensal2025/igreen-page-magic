@@ -52,6 +52,7 @@ localhost:3102 · docker interno · typo `d9v83a` · usar `portal2_worker_url` p
 - Fila: `customer_auto_message_log` stage `boleto_chegou:{mes}`.
 - Pacote com toggles em `boleto_notify_config`:
   - `send_audio` / `send_text` — áudio Sofia e/ou texto (default ambos on)
+  - `send_image` — opt-in de imagem em mensagem própria (default off): `image_url` (https), `image_caption` (aceita variáveis) e `image_position` (`first` | `after_audio` | `after_text` | `last`). Tudo pela UI (upload `kind=image` ou URL colada); toggle ligado sem imagem válida não quebra o aviso (`shouldSendBoletoImage`)
   - `button_enabled` — opt-in do botão “Receber boleto” (arquivo no Zap; default off)
   - **Apps Android/iOS sempre** (`buildAppStoreInviteMessage`) — mensagem própria com Play Store + App Store, independente dos toggles
 - Ordem: áudio? → texto? → apps (sempre) → botão boleto?

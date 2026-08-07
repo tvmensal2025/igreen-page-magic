@@ -16,8 +16,11 @@ import {
   isBoletoFearOrDoubtText,
   isBoletoReceberDocIntent,
   isBoletoStatusPago,
+  normalizeBoletoImagePosition,
+  normalizeBoletoImageUrl,
   normalizeClubAccessEmail,
   parseMesFromStageKey,
+  shouldSendBoletoImage,
   renderBoletoNotifyTemplate,
   shouldRunBoletoNotifyNow,
 } from "./boleto-notify.ts";
@@ -90,6 +93,27 @@ Deno.test("acesso ao Club: e-mail do cadastro, com fallback sem link", () => {
   assertEquals(semEmail.includes("http"), false);
   // Lixo no cadastro não vira acesso inventado.
   assertEquals(buildClubAccessLine("sem arroba"), semEmail);
+});
+
+Deno.test("imagem: só sai com toggle ligado e URL https", () => {
+  assertEquals(normalizeBoletoImageUrl("https://cdn.exemplo.com/arte.png"), "https://cdn.exemplo.com/arte.png");
+  assertEquals(normalizeBoletoImageUrl("http://sem-tls.com/a.png"), null);
+  assertEquals(normalizeBoletoImageUrl("  "), null);
+  assertEquals(normalizeBoletoImageUrl(null), null);
+
+  const url = "https://cdn.exemplo.com/arte.png";
+  assertEquals(shouldSendBoletoImage({ send_image: true, image_url: url }), true);
+  // Toggle ligado sem imagem não quebra o aviso.
+  assertEquals(shouldSendBoletoImage({ send_image: true, image_url: null }), false);
+  assertEquals(shouldSendBoletoImage({ send_image: false, image_url: url }), false);
+});
+
+Deno.test("posição da imagem é editável, com default seguro", () => {
+  assertEquals(normalizeBoletoImagePosition("after_audio"), "after_audio");
+  assertEquals(normalizeBoletoImagePosition("AFTER_TEXT"), "after_text");
+  assertEquals(normalizeBoletoImagePosition("last"), "last");
+  assertEquals(normalizeBoletoImagePosition("qualquer_coisa"), "first");
+  assertEquals(normalizeBoletoImagePosition(null), "first");
 });
 
 Deno.test("boleto pago não vira aviso", () => {
