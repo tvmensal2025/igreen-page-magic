@@ -62,6 +62,11 @@ test-results/
 # Supabase CLI temp/cache
 supabase/.temp/
 
+# Artefatos locais de deploy de edge (payload/resposta)
+.deploy-parts/
+.tmp-deploy-*.json
+.tmp-mcp-*.json
+
 # TestSprite local artifacts
 testsprite_tests/
 

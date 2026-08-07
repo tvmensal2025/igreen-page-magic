@@ -1726,6 +1726,8 @@ async function persistBoletos(supabase: any, consultantId: string | null, boleto
     total: r.total,
     vencimento: r.vencimento,
     nome: r.nome,
+    // Necessário para não avisar "boleto chegou" de boleto já pago.
+    status: r.status || null,
     customer_id: customerByCode.get(String(r.idcliente)) || null,
   }));
 

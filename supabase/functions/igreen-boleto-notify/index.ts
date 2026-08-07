@@ -30,7 +30,7 @@ import {
   buildAppStoreButtonsPrompt,
   buildAppStoreNumberedMessage,
   buildBoletoButtonPrompt,
-  buildClubLink,
+  isBoletoStatusPago,
   formatBoletoValor,
   formatBoletoVencimento,
   loadBoletoNotifyConfig,
@@ -100,7 +100,7 @@ Deno.serve(async (req) => {
   }
 
   const auth = await assertCronAuth(req, supabase);
-  if (!auth.ok) return cronAuthUnauthorized(auth);
+  if (!auth.ok) return cronAuthUnauthorized(auth.reason, corsHeaders);
 
   const dryRun = body.dryRun === true || String(body.dryRun) === "true";
   const limit = Math.min(Number(body.limit) || 40, 80);
@@ -261,7 +261,7 @@ async function sendOne(
   const { data: customer } = await supabase
     .from("customers")
     .select(
-      "id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id, igreen_code, do_not_contact",
+      "id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id, igreen_code, email, do_not_contact",
     )
     .eq("id", row.customer_id)
     .maybeSingle();
@@ -296,21 +296,27 @@ async function sendOne(
   const mes = parseMesFromStageKey(row.stage_key);
   const { data: boleto } = await supabase
     .from("igreen_customer_boletos")
-    .select("url_boleto, total, vencimento, mes_referencia")
+    .select("url_boleto, total, vencimento, mes_referencia, status")
     .eq("customer_id", customer.id)
     .eq("mes_referencia", mes || "")
     .order("synced_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
-  const linkClub = buildClubLink(customer.igreen_code);
+  // Pagou antes do disparo (ou débito automático) → nada de aviso de boleto.
+  if (isBoletoStatusPago(boleto?.status)) {
+    await mark(supabase, row.id, "skipped_pago");
+    return { status: "skipped_pago" };
+  }
+
+  const emailAcesso = customer.email || null;
   const vars = {
     name: customer.name,
     nameSource: customer.name_source,
     mes: mes || boleto?.mes_referencia || "—",
     valor: formatBoletoValor(boleto?.total),
     vencimento: formatBoletoVencimento(boleto?.vencimento),
-    linkClub,
+    emailAcesso,
     urlBoleto: boleto?.url_boleto || "",
   };
 
@@ -394,7 +400,7 @@ async function sendOne(
     if (canButtons) {
       const r = await resolved.adapter.sendChoice(
         jid,
-        buildAppStoreButtonsPrompt(linkClub),
+        buildAppStoreButtonsPrompt(emailAcesso),
         { preferred: "button", options: boletoAppStoreChoiceOptions() },
         { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps`, supabase },
       );
@@ -402,7 +408,7 @@ async function sendOne(
       if (!appsOk) {
         const fb = await resolved.adapter.sendText(
           jid,
-          buildAppStoreNumberedMessage(linkClub),
+          buildAppStoreNumberedMessage(emailAcesso),
           { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps_fb`, supabase },
         );
         appsOk = !!fb.ok;
@@ -410,7 +416,7 @@ async function sendOne(
     } else {
       const r = await resolved.adapter.sendText(
         jid,
-        buildAppStoreNumberedMessage(linkClub),
+        buildAppStoreNumberedMessage(emailAcesso),
         { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps`, supabase },
       );
       appsOk = !!r.ok;
@@ -547,14 +553,23 @@ async function runTestSend(
     return { success: false, error: "Número inválido para WhatsApp." };
   }
 
-  const igreenId = boleto.idcliente != null ? String(boleto.idcliente) : "";
+  let emailAcesso: string | null = null;
+  if (boleto.customer_id) {
+    const { data: custEmail } = await supabase
+      .from("customers")
+      .select("email")
+      .eq("id", String(boleto.customer_id))
+      .maybeSingle();
+    emailAcesso = custEmail?.email || null;
+  }
+
   const vars = {
     name: opts.name,
     nameSource: "manual" as const,
     mes: String(boleto.mes_referencia || "—"),
     valor: formatBoletoValor(boleto.total),
     vencimento: formatBoletoVencimento(boleto.vencimento),
-    linkClub: buildClubLink(igreenId),
+    emailAcesso,
     urlBoleto: String(boleto.url_boleto || ""),
   };
   const waText = renderBoletoNotifyTemplate(cfg.wa_text, vars);
@@ -610,7 +625,7 @@ async function runTestSend(
     if (canButtons) {
       const r = await resolved.adapter.sendChoice(
         jid,
-        buildAppStoreButtonsPrompt(vars.linkClub),
+        buildAppStoreButtonsPrompt(vars.emailAcesso),
         { preferred: "button", options: boletoAppStoreChoiceOptions() },
         { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps:${ts}`, supabase },
       );
@@ -618,7 +633,7 @@ async function runTestSend(
       if (!appsOk) {
         const fb = await resolved.adapter.sendText(
           jid,
-          buildAppStoreNumberedMessage(vars.linkClub),
+          buildAppStoreNumberedMessage(vars.emailAcesso),
           { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps_fb:${ts}`, supabase },
         );
         appsOk = !!fb.ok;
@@ -626,7 +641,7 @@ async function runTestSend(
     } else {
       const r = await resolved.adapter.sendText(
         jid,
-        buildAppStoreNumberedMessage(vars.linkClub),
+        buildAppStoreNumberedMessage(vars.emailAcesso),
         { ...sendCtxBase, idempotencyKey: `${sendCtxBase.idempotencyKey}:apps:${ts}`, supabase },
       );
       appsOk = !!r.ok;

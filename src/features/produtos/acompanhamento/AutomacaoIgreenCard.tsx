@@ -32,6 +32,8 @@ import {
   buildAppStoreButtonsPrompt,
   buildAppStoreNumberedMessage,
   buildBoletoButtonPrompt,
+  isBoletoStatusPago,
+  normalizeClubAccessEmail,
   renderBoletoAudioBody,
   resolveBoletoAudioConsultantVars,
   stripBoletoButtonCta,
@@ -289,7 +291,7 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
 
       const { data: cust } = await supabase
         .from("customers")
-        .select("id, name, igreen_code, phone_whatsapp")
+        .select("id, name, igreen_code, phone_whatsapp, email")
         .eq("consultant_id", consultantId)
         .or(phoneVariants.map((p) => `phone_whatsapp.eq.${p}`).join(","))
         .limit(1)
@@ -304,11 +306,12 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         nome: string | null;
         idcliente: number | null;
         customer_id: string | null;
+        status: string | null;
       };
       const pickBoleto = async (customerOnly: boolean): Promise<BoletoRow[]> => {
         let q = supabase
           .from("igreen_customer_boletos")
-          .select("url_boleto, total, vencimento, mes_referencia, nome, idcliente, customer_id")
+          .select("url_boleto, total, vencimento, mes_referencia, nome, idcliente, customer_id, status")
           .eq("consultant_id", consultantId)
           .order("synced_at", { ascending: false })
           .limit(30);
@@ -322,7 +325,9 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
 
       const now = new Date();
       const mesDemo = `${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()}`;
-      const boleto: BoletoRow = list[0] || {
+      // Em produção o aviso nunca sai de boleto pago: no teste, preferir um em aberto.
+      const emAberto = list.find((b) => !isBoletoStatusPago(b.status));
+      const boleto: BoletoRow = emAberto || list[0] || {
         url_boleto: null,
         total: 189.9,
         vencimento: new Date(now.getFullYear(), now.getMonth(), 15).toISOString().slice(0, 10),
@@ -330,6 +335,7 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         nome: cust?.name || previewName || "Maria",
         idcliente: Number(String(cust?.igreen_code || "").replace(/\D/g, "")) || null,
         customer_id: cust?.id || null,
+        status: null,
       };
       const usedDemo = list.length === 0;
 
@@ -342,10 +348,7 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         );
       }
 
-      const clubId = String(boleto.idcliente || cust?.igreen_code || "").replace(/\D/g, "");
-      const linkClub = clubId
-        ? `https://club.igreenenergy.com.br/?id=${clubId}`
-        : "https://club.igreenenergy.com.br/";
+      const emailAcesso = normalizeClubAccessEmail(cust?.email);
 
       const nome =
         firstName(previewName) ||
@@ -359,7 +362,9 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
         mes: boleto.mes_referencia || "—",
         valor: formatValor(boleto.total),
         vencimento: formatVenc(boleto.vencimento),
-        link_club: linkClub,
+        email_acesso: emailAcesso || "",
+        // Legado: textos antigos ainda podem ter {{link_club}}.
+        link_club: emailAcesso || "",
         link_play: IGREEN_CLUB_PLAY_STORE_URL,
         link_appstore: IGREEN_CLUB_APP_STORE_URL,
         url_boleto: boleto.url_boleto || "",
@@ -399,12 +404,12 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
       try {
         await whapiSendButtons(
           phone,
-          buildAppStoreButtonsPrompt(linkClub),
+          buildAppStoreButtonsPrompt(emailAcesso),
           boletoAppStoreChoiceOptions(),
           { intent: "reply", customerId: cust?.id },
         );
       } catch {
-        await whapiSendText(phone, buildAppStoreNumberedMessage(linkClub), {
+        await whapiSendText(phone, buildAppStoreNumberedMessage(emailAcesso), {
           intent: "reply",
           customerId: cust?.id,
         });
@@ -683,6 +688,11 @@ export function AutomacaoIgreenCard({ consultantId }: { consultantId?: string })
                       value={cfg.wa_text}
                       onChange={(e) => setDraft((d) => ({ ...d, wa_text: e.target.value }))}
                     />
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      Variáveis: {"{{saudacao}}"}, {"{{mes}}"}, {"{{valor}}"}, {"{{vencimento}}"},{" "}
+                      {"{{email_acesso}}"} (e-mail de acesso do cliente no app). A mensagem dos
+                      aplicativos já leva o acesso — sem link com o número do cliente.
+                    </p>
                   </div>
                   <Button
                     type="button"

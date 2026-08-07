@@ -10,10 +10,13 @@ import {
   resolveBoletoAppStoreChoice,
   buildBoletoButtonPrompt,
   buildBoletoFearFaqReply,
+  buildClubAccessLine,
   buildClubLink,
   stripBoletoButtonCta,
   isBoletoFearOrDoubtText,
   isBoletoReceberDocIntent,
+  isBoletoStatusPago,
+  normalizeClubAccessEmail,
   parseMesFromStageKey,
   renderBoletoNotifyTemplate,
   shouldRunBoletoNotifyNow,
@@ -25,13 +28,17 @@ Deno.test("stage_key boleto_chegou", () => {
 });
 
 Deno.test("apps Android/iOS: numerado (Evolution) e botões (Whapi)", () => {
-  const numbered = buildAppStoreNumberedMessage("https://club.igreenenergy.com.br/?id=1");
+  const numbered = buildAppStoreNumberedMessage("maria@example.com");
   assertEquals(numbered.includes("*1.*"), true);
   assertEquals(numbered.includes("*2.*"), true);
   assertEquals(numbered.includes("play.google.com"), true);
   assertEquals(numbered.includes("apps.apple.com"), true);
-  const prompt = buildAppStoreButtonsPrompt("https://club.igreenenergy.com.br/?id=1");
+  // Acesso vai pelo e-mail — nunca o link com id do cliente.
+  assertEquals(numbered.includes("maria@example.com"), true);
+  assertEquals(numbered.includes("club.igreenenergy.com.br"), false);
+  const prompt = buildAppStoreButtonsPrompt("maria@example.com");
   assertEquals(prompt.includes("qual celular"), true);
+  assertEquals(prompt.includes("club.igreenenergy.com.br"), false);
   assertEquals(resolveBoletoAppStoreChoice({ buttonId: BOLETO_APP_ANDROID_BUTTON_ID }), "android");
   assertEquals(resolveBoletoAppStoreChoice({ buttonId: BOLETO_APP_IOS_BUTTON_ID }), "ios");
   assertEquals(resolveBoletoAppStoreChoice({ text: "iphone" }), "ios");
@@ -70,6 +77,31 @@ Deno.test("club link", () => {
   assertEquals(buildClubLink("12345"), "https://club.igreenenergy.com.br/?id=12345");
 });
 
+Deno.test("acesso ao Club: e-mail do cadastro, com fallback sem link", () => {
+  assertEquals(normalizeClubAccessEmail(" Maria@Example.COM "), "maria@example.com");
+  assertEquals(normalizeClubAccessEmail("nao-e-email"), null);
+  assertEquals(normalizeClubAccessEmail(null), null);
+
+  const comEmail = buildClubAccessLine("maria@example.com");
+  assertEquals(comEmail.includes("maria@example.com"), true);
+
+  const semEmail = buildClubAccessLine(null);
+  assertEquals(semEmail.includes("e-mail do seu cadastro"), true);
+  assertEquals(semEmail.includes("http"), false);
+  // Lixo no cadastro não vira acesso inventado.
+  assertEquals(buildClubAccessLine("sem arroba"), semEmail);
+});
+
+Deno.test("boleto pago não vira aviso", () => {
+  assertEquals(isBoletoStatusPago("pago"), true);
+  assertEquals(isBoletoStatusPago("PAGO"), true);
+  assertEquals(isBoletoStatusPago("baixado"), true);
+  assertEquals(isBoletoStatusPago("liquidado"), true);
+  assertEquals(isBoletoStatusPago("disponivel"), false);
+  assertEquals(isBoletoStatusPago("vencido"), false);
+  assertEquals(isBoletoStatusPago(null), false);
+});
+
 Deno.test("intent receber boleto (sem palavra PDF)", () => {
   assertEquals(
     isBoletoReceberDocIntent({ buttonId: BOLETO_RECEBER_DOC_BUTTON_ID }),
@@ -88,20 +120,43 @@ Deno.test("medo/dúvida boleto", () => {
 });
 
 Deno.test("FAQ medo aponta Club e não oferece arquivo no Zap", () => {
-  const faq = buildBoletoFearFaqReply({ name: "Ana", nameSource: "manual", igreenCode: "99" });
+  const faq = buildBoletoFearFaqReply({
+    name: "Ana",
+    nameSource: "manual",
+    igreenCode: "99",
+    email: "ana@example.com",
+  });
   assertEquals(faq.includes("iGreen Club"), true);
+  assertEquals(faq.includes("ana@example.com"), true);
+  assertEquals(faq.includes("club.igreenenergy.com.br"), false);
   assertEquals(/receber\s+boleto/i.test(faq), false);
   assertEquals(/\bPDF\b/i.test(faq), false);
 });
 
 Deno.test("template renderiza mes e saudacao", () => {
   const out = renderBoletoNotifyTemplate(
-    "{{saudacao}}boleto de *{{mes}}* no app {{link_club}}",
-    { name: "Maria", nameSource: "manual", mes: "03/2026", linkClub: "https://x" },
+    "{{saudacao}}boleto de *{{mes}}* no app {{email_acesso}}",
+    { name: "Maria", nameSource: "manual", mes: "03/2026", emailAcesso: "maria@example.com" },
   );
   assertEquals(out.includes("PDF"), false);
   assertEquals(out.includes("03/2026"), true);
   assertEquals(out.includes("Maria"), true);
+  assertEquals(out.includes("maria@example.com"), true);
+});
+
+Deno.test("template legado: {{link_club}} virou e-mail, não link", () => {
+  const out = renderBoletoNotifyTemplate(
+    "Seu acesso no Club:\n{{link_club}}",
+    { name: null, nameSource: null, emailAcesso: "maria@example.com" },
+  );
+  assertEquals(out.includes("maria@example.com"), true);
+  assertEquals(out.includes("club.igreenenergy.com.br"), false);
+
+  const semEmail = renderBoletoNotifyTemplate(
+    "Seu acesso no Club:\n{{link_club}}",
+    { name: null, nameSource: null },
+  );
+  assertEquals(semEmail.includes("http"), false);
 });
 
 Deno.test("template injeta Play Store e App Store", () => {

@@ -65,9 +65,6 @@ Vencimento: *{{vencimento}}*
 
 A iGreen cuida do envio oficial do boleto. Aqui o nosso recado é te lembrar e te levar ao lugar mais completo: o app *iGreen Club*.
 
-Seu acesso no Club:
-{{link_club}}
-
 Qualquer dúvida, responde aqui 💚`,
   send_audio: true,
   send_text: true,
@@ -76,18 +73,41 @@ Qualquer dúvida, responde aqui 💚`,
   doc_caption: "Segue seu boleto. O lugar oficial continua no app iGreen Club 👆",
 };
 
-export function buildAppStoreButtonsPrompt(linkClub?: string | null): string {
-  const club = String(linkClub || "https://club.igreenenergy.com.br/").trim();
+/** Espelha `_shared/boleto-notify.ts`: boleto quitado não gera aviso. */
+export function isBoletoStatusPago(status?: string | null): boolean {
+  const s = String(status || "").toLowerCase();
+  if (!s) return false;
+  return (
+    s.includes("pago") ||
+    s.includes("baixad") ||
+    s.includes("liquidad") ||
+    s.includes("quitad")
+  );
+}
+
+/** Espelha `_shared/boleto-notify.ts`: acesso pelo e-mail, nunca link com id. */
+export function normalizeClubAccessEmail(raw: unknown): string | null {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s)) return null;
+  return s;
+}
+
+export function buildClubAccessLine(emailAcesso?: string | null): string {
+  const email = normalizeClubAccessEmail(emailAcesso);
+  if (email) return `Seu acesso é o e-mail *${email}*`;
+  return "Para entrar, use o e-mail do seu cadastro.";
+}
+
+export function buildAppStoreButtonsPrompt(emailAcesso?: string | null): string {
   return `📱 *Baixe o iGreen Club* — qual celular você usa?
 
-Seu acesso no Club:
-${club}
+${buildClubAccessLine(emailAcesso)}
 
 Toque no botão 👇`;
 }
 
-export function buildAppStoreNumberedMessage(linkClub?: string | null): string {
-  const club = String(linkClub || "https://club.igreenenergy.com.br/").trim();
+export function buildAppStoreNumberedMessage(emailAcesso?: string | null): string {
   return `📱 *Baixe o iGreen Club — escolha seu celular:*
 
 *1.* 🤖 *Android* (Play Store)
@@ -96,8 +116,7 @@ ${IGREEN_CLUB_PLAY_STORE_URL}
 *2.* 🍎 *iPhone* (App Store)
 ${IGREEN_CLUB_APP_STORE_URL}
 
-Seu acesso no Club:
-${club}
+${buildClubAccessLine(emailAcesso)}
 
 _Digite *1* ou *2*, ou toque no link._`;
 }

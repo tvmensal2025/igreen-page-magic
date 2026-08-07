@@ -12,7 +12,7 @@ import { safeFirstNameForAddress } from "./customer-display-name.ts";
 import {
   buildAppStoreLinkReply,
   buildBoletoFearFaqReply,
-  buildClubLink,
+  fetchCustomerAccessEmail,
   isBoletoFearOrDoubtText,
   resolveBoletoAppStoreChoice,
   tryHandleBoletoReceberDoc,
@@ -91,6 +91,8 @@ export async function tryReplyClienteCanalNovidades(opts: {
     name_source?: string | null;
     consultant_id?: string | null;
     igreen_code?: string | number | null;
+    /** E-mail do cadastro = acesso do cliente no app iGreen Club. */
+    email?: string | null;
     cliente_canal_last_reply_at?: string | null;
   };
   consultantId: string;
@@ -107,10 +109,12 @@ export async function tryReplyClienteCanalNovidades(opts: {
     text: opts.text,
   });
   if (appChoice) {
-    const reply = buildAppStoreLinkReply(
-      appChoice,
-      buildClubLink(opts.customer.igreen_code),
+    const emailAcesso = await fetchCustomerAccessEmail(
+      opts.supabase,
+      opts.customer.id,
+      opts.customer.email,
     );
+    const reply = buildAppStoreLinkReply(appChoice, emailAcesso);
     let ok = false;
     try {
       ok = await opts.sendText(reply);
@@ -148,6 +152,11 @@ export async function tryReplyClienteCanalNovidades(opts: {
       name: opts.customer.name,
       nameSource: opts.customer.name_source,
       igreenCode: opts.customer.igreen_code,
+      email: await fetchCustomerAccessEmail(
+        opts.supabase,
+        opts.customer.id,
+        opts.customer.email,
+      ),
     });
     let ok = false;
     try {

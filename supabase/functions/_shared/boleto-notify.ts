@@ -80,9 +80,6 @@ Vencimento: *{{vencimento}}*
 
 A iGreen cuida do envio oficial do boleto. Aqui o nosso recado é te lembrar e te levar ao lugar mais completo: o app *iGreen Club*.
 
-Seu acesso no Club:
-{{link_club}}
-
 Qualquer dúvida, responde aqui 💚`,
   send_audio: true,
   send_text: true,
@@ -213,13 +210,53 @@ export function stripBoletoButtonCta(waText: string): string {
     .trim();
 }
 
+/** E-mail de acesso válido, ou null (não inventa nem mostra lixo). */
+export function normalizeClubAccessEmail(raw: unknown): string | null {
+  const s = String(raw ?? "").trim().toLowerCase();
+  if (!s) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(s)) return null;
+  return s;
+}
+
+/**
+ * E-mail de acesso do cliente. O objeto vindo dos webhooks não garante a
+ * coluna `email`, então busca no banco quando não veio.
+ */
+export async function fetchCustomerAccessEmail(
+  supabase: SB,
+  customerId: string,
+  known?: string | null,
+): Promise<string | null> {
+  const norm = normalizeClubAccessEmail(known);
+  if (norm) return norm;
+  if (!customerId) return null;
+  try {
+    const { data } = await supabase
+      .from("customers")
+      .select("email")
+      .eq("id", customerId)
+      .maybeSingle();
+    return normalizeClubAccessEmail(data?.email);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Como o cliente entra no app. Nunca o link com id — a empresa já manda o
+ * boleto e o acesso do Club é pelo e-mail do cadastro.
+ */
+export function buildClubAccessLine(emailAcesso?: string | null): string {
+  const email = normalizeClubAccessEmail(emailAcesso);
+  if (email) return `Seu acesso é o e-mail *${email}*`;
+  return "Para entrar, use o e-mail do seu cadastro.";
+}
+
 /** Prompt curto p/ Whapi (botões reais Android / iPhone). */
-export function buildAppStoreButtonsPrompt(linkClub?: string | null): string {
-  const club = String(linkClub || "https://club.igreenenergy.com.br/").trim();
+export function buildAppStoreButtonsPrompt(emailAcesso?: string | null): string {
   return `📱 *Baixe o iGreen Club* — qual celular você usa?
 
-Seu acesso no Club:
-${club}
+${buildClubAccessLine(emailAcesso)}
 
 Toque no botão 👇`;
 }
@@ -228,8 +265,7 @@ Toque no botão 👇`;
  * Evolution (sem botão visual): lista numerada com links clicáveis.
  * Não usar sendChoice aqui — ele re-numera e esconde as URLs.
  */
-export function buildAppStoreNumberedMessage(linkClub?: string | null): string {
-  const club = String(linkClub || "https://club.igreenenergy.com.br/").trim();
+export function buildAppStoreNumberedMessage(emailAcesso?: string | null): string {
   return `📱 *Baixe o iGreen Club — escolha seu celular:*
 
 *1.* 🤖 *Android* (Play Store)
@@ -238,15 +274,14 @@ ${IGREEN_CLUB_PLAY_STORE_URL}
 *2.* 🍎 *iPhone* (App Store)
 ${IGREEN_CLUB_APP_STORE_URL}
 
-Seu acesso no Club:
-${club}
+${buildClubAccessLine(emailAcesso)}
 
 _Digite *1* ou *2*, ou toque no link._`;
 }
 
 /** @deprecated — preferir buttons/numbered específicos do canal. */
-export function buildAppStoreInviteMessage(linkClub?: string | null): string {
-  return buildAppStoreNumberedMessage(linkClub);
+export function buildAppStoreInviteMessage(emailAcesso?: string | null): string {
+  return buildAppStoreNumberedMessage(emailAcesso);
 }
 
 export function boletoAppStoreChoiceOptions(): Array<{ id: string; title: string }> {
@@ -278,21 +313,19 @@ export function resolveBoletoAppStoreChoice(opts: {
 
 export function buildAppStoreLinkReply(
   kind: "android" | "ios",
-  linkClub?: string | null,
+  emailAcesso?: string | null,
 ): string {
-  const club = String(linkClub || "https://club.igreenenergy.com.br/").trim();
+  const acesso = buildClubAccessLine(emailAcesso);
   if (kind === "android") {
     return `🤖 *Android — Play Store:*
 ${IGREEN_CLUB_PLAY_STORE_URL}
 
-Seu acesso no Club:
-${club}`;
+${acesso}`;
   }
   return `🍎 *iPhone — App Store:*
 ${IGREEN_CLUB_APP_STORE_URL}
 
-Seu acesso no Club:
-${club}`;
+${acesso}`;
 }
 
 export function boletoChegouStageKey(mesReferencia: string): string {
@@ -306,6 +339,10 @@ export function parseMesFromStageKey(stageKey: string): string | null {
   return mes || null;
 }
 
+/**
+ * @deprecated Não usar em mensagem ao cliente: o acesso ao Club vai pelo
+ * e-mail do cadastro (buildClubAccessLine). Mantido para telas internas.
+ */
 export function buildClubLink(igreenId: string | number | null | undefined): string {
   const id = String(igreenId ?? "").replace(/\D/g, "");
   return id ? `https://club.igreenenergy.com.br/?id=${id}` : "https://club.igreenenergy.com.br/";
@@ -335,7 +372,7 @@ export function renderBoletoNotifyTemplate(
     mes?: string | null;
     valor?: string | null;
     vencimento?: string | null;
-    linkClub?: string | null;
+    emailAcesso?: string | null;
     linkPlay?: string | null;
     linkAppStore?: string | null;
     urlBoleto?: string | null;
@@ -343,13 +380,16 @@ export function renderBoletoNotifyTemplate(
 ): string {
   const first = safeFirstNameForAddress(vars.name, vars.nameSource);
   const saudacao = first ? `Oi ${first}, ` : "";
+  const emailAcesso = normalizeClubAccessEmail(vars.emailAcesso) || "";
   return String(raw || "")
     .replace(/\{\{saudacao\}\}/gi, saudacao)
     .replace(/\{\{nome\}\}/gi, first || "")
     .replace(/\{\{mes\}\}/gi, String(vars.mes || "—"))
     .replace(/\{\{valor\}\}/gi, String(vars.valor || "—"))
     .replace(/\{\{vencimento\}\}/gi, String(vars.vencimento || "—"))
-    .replace(/\{\{link_club\}\}/gi, String(vars.linkClub || ""))
+    .replace(/\{\{email_acesso\}\}/gi, emailAcesso)
+    // Legado: textos salvos antes da mudança traziam o link com id do cliente.
+    .replace(/\{\{link_club\}\}/gi, emailAcesso)
     .replace(/\{\{link_play\}\}/gi, String(vars.linkPlay || IGREEN_CLUB_PLAY_STORE_URL))
     .replace(/\{\{link_appstore\}\}/gi, String(vars.linkAppStore || IGREEN_CLUB_APP_STORE_URL))
     .replace(/\{\{url_boleto\}\}/gi, String(vars.urlBoleto || ""))
@@ -430,6 +470,18 @@ export function isBoletoReceberDocIntent(opts: {
   return false;
 }
 
+/** Boleto já quitado no portal iGreen — não avisar "chegou". */
+export function isBoletoStatusPago(status?: string | null): boolean {
+  const s = String(status || "").toLowerCase();
+  if (!s) return false;
+  return (
+    s.includes("pago") ||
+    s.includes("baixad") ||
+    s.includes("liquidad") ||
+    s.includes("quitad")
+  );
+}
+
 export type NewBoletoCandidate = {
   idcliente: number;
   mes_referencia: string;
@@ -438,6 +490,7 @@ export type NewBoletoCandidate = {
   vencimento: string | null;
   nome: string | null;
   customer_id: string | null;
+  status?: string | null;
 };
 
 /**
@@ -448,12 +501,18 @@ export async function enqueueBoletoChegouCandidates(
   supabase: SB,
   consultantId: string,
   candidates: NewBoletoCandidate[],
-): Promise<{ queued: number }> {
-  if (!consultantId || !candidates.length) return { queued: 0 };
+): Promise<{ queued: number; skipped_pago: number }> {
+  if (!consultantId || !candidates.length) return { queued: 0, skipped_pago: 0 };
 
   let queued = 0;
+  let skippedPago = 0;
   for (const c of candidates) {
     if (!c.customer_id || !c.mes_referencia) continue;
+    // Boleto que já chegou pago não vira aviso de cobrança.
+    if (isBoletoStatusPago(c.status)) {
+      skippedPago += 1;
+      continue;
+    }
     const stageKey = boletoChegouStageKey(c.mes_referencia);
     const preview = [
       `boleto ${c.mes_referencia}`,
@@ -479,7 +538,7 @@ export async function enqueueBoletoChegouCandidates(
       console.warn("[boleto-notify] enqueue:", error.message);
     }
   }
-  return { queued };
+  return { queued, skipped_pago: skippedPago };
 }
 
 /** Busca url_boleto do mês (ou o mais recente aberto) para o clique. */
@@ -514,8 +573,7 @@ export async function resolveBoletoDocUrl(
     status: string | null;
   }>;
   for (const r of rows) {
-    const st = String(r.status || "").toLowerCase();
-    if (st.includes("pago") || st.includes("baixad")) continue;
+    if (isBoletoStatusPago(r.status)) continue;
     if (r.url_boleto) return { url: String(r.url_boleto), mes: r.mes_referencia };
   }
   const first = rows[0];
@@ -536,6 +594,7 @@ export async function tryHandleBoletoReceberDoc(opts: {
     igreen_code?: string | number | null;
     name?: string | null;
     name_source?: string | null;
+    email?: string | null;
   };
   buttonId?: string | null;
   text?: string | null;
@@ -564,11 +623,18 @@ export async function tryHandleBoletoReceberDoc(opts: {
     .maybeSingle();
   if (lastLog?.stage_key) mes = parseMesFromStageKey(String(lastLog.stage_key));
 
+  const emailAcesso = await fetchCustomerAccessEmail(
+    opts.supabase,
+    opts.customer.id,
+    opts.customer.email,
+  );
+
   const resolved = await resolveBoletoDocUrl(opts.supabase, opts.customer.id, mes);
   if (!resolved.url) {
-    const link = buildClubLink(opts.customer.igreen_code);
     await opts.sendText(
-      `Não achei o boleto agora. Confira no aplicativo *iGreen Club*:\n${link}`,
+      `Não achei o boleto agora. Confira no aplicativo *iGreen Club*.\n\n${
+        buildClubAccessLine(emailAcesso)
+      }`,
     );
     return { handled: true, sent: true, reason: "no_url" };
   }
@@ -577,7 +643,7 @@ export async function tryHandleBoletoReceberDoc(opts: {
     name: opts.customer.name,
     nameSource: opts.customer.name_source,
     mes: resolved.mes,
-    linkClub: buildClubLink(opts.customer.igreen_code),
+    emailAcesso,
   });
   const ok = await opts.sendDocument(resolved.url, caption);
   return { handled: true, sent: ok, reason: ok ? "sent_doc" : "send_failed" };
@@ -602,16 +668,17 @@ export function buildBoletoFearFaqReply(opts: {
   name?: string | null;
   nameSource?: string | null;
   igreenCode?: string | number | null;
+  email?: string | null;
 }): string {
   const first = safeFirstNameForAddress(opts.name, opts.nameSource);
   const oi = first ? `Oi ${first}, ` : "";
-  const link = buildClubLink(opts.igreenCode);
   return `${oi}pode ficar tranquilo(a) 💚
 
 É o *boleto normal* da sua energia iGreen do mês — a empresa cuida do envio oficial.
 
-O lugar mais seguro e completo para conferir é o aplicativo *iGreen Club*:
-${link}
+O lugar mais seguro e completo para conferir é o aplicativo *iGreen Club*.
+
+${buildClubAccessLine(opts.email)}
 
 Qualquer dúvida, responde aqui.`;
 }
