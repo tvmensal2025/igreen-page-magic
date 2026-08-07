@@ -22,6 +22,7 @@ import {
   History,
   CheckCheck,
   Check,
+  ChevronDown,
   type LucideProps,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -40,6 +41,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { CADENCE_CALENDAR, CHANNEL_LABEL, type CadenceChannelUi } from "@/lib/cadenceCalendarMap";
@@ -1102,6 +1104,7 @@ function PizzaRing({
   const svgMax = compact ? 320 : 420;
   const iconBox = compact ? 14 : 16;
   const detailedLegend = steps.some((s) => s.hint);
+  const [legendOpen, setLegendOpen] = useState(false);
 
   return (
     <div className="flex flex-col items-center gap-2.5 min-w-0 w-full">
@@ -1267,23 +1270,18 @@ function PizzaRing({
         </text>
       </svg>
 
-      <div
-        className={cn(
-          "w-full max-w-[380px] px-1",
-          detailedLegend ? "flex flex-col gap-1.5" : "flex flex-wrap justify-center gap-x-2 gap-y-1",
-        )}
-      >
-        {steps.map((s) => {
-          const nStep = perStep[s.id] || 0;
-          const Icon = s.Icon;
-          if (!detailedLegend) {
+      <div className="w-full max-w-[380px] px-1">
+        {/* Sempre compacto: short + contagem (fácil de clicar sem ocupar a tela) */}
+        <div className="flex flex-wrap justify-center gap-x-2 gap-y-1">
+          {steps.map((s) => {
+            const nStep = perStep[s.id] || 0;
             return (
               <button
                 type="button"
                 key={`b-${s.id}`}
                 disabled={!onSliceClick}
                 onClick={() => onSliceClick?.(s)}
-                title={s.label}
+                title={s.hint || s.label}
                 className={cn(
                   "text-[10px] tracking-wide tabular-nums transition-colors",
                   nStep > 0
@@ -1297,50 +1295,73 @@ function PizzaRing({
                 <span className={cn("ml-1", nStep > 0 ? "text-primary font-semibold" : "")}>{nStep}</span>
               </button>
             );
-          }
-          return (
-            <button
-              type="button"
-              key={`b-${s.id}`}
-              disabled={!onSliceClick}
-              onClick={() => onSliceClick?.(s)}
-              title={s.hint || s.label}
-              className={cn(
-                "flex items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
-                onSliceClick ? "hover:bg-primary/10 cursor-pointer" : "cursor-default",
-                nStep <= 0 && "opacity-55",
-              )}
-            >
-              {Icon ? (
-                <Icon
-                  className={cn(
-                    "mt-0.5 h-3.5 w-3.5 shrink-0",
-                    nStep > 0 ? "text-primary" : "text-muted-foreground",
-                  )}
+          })}
+        </div>
+
+        {detailedLegend && (
+          <Collapsible open={legendOpen} onOpenChange={setLegendOpen} className="mt-1.5">
+            <CollapsibleTrigger asChild>
+              <button
+                type="button"
+                className="mx-auto flex w-full max-w-[280px] items-center justify-center gap-1 rounded-md px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+              >
+                {legendOpen ? "Ocultar" : "Ver"} o que cada fatia faz
+                <ChevronDown
+                  className={cn("h-3 w-3 shrink-0 transition-transform", legendOpen && "rotate-180")}
                   aria-hidden
                 />
-              ) : (
-                <span className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-              )}
-              <span className="min-w-0 flex-1">
-                <span className="flex items-baseline justify-between gap-2">
-                  <span className="text-[11px] font-semibold text-foreground">{s.short}</span>
-                  <span
+              </button>
+            </CollapsibleTrigger>
+            <CollapsibleContent className="mt-1 flex flex-col gap-1.5">
+              {steps.map((s) => {
+                const nStep = perStep[s.id] || 0;
+                const Icon = s.Icon;
+                return (
+                  <button
+                    type="button"
+                    key={`d-${s.id}`}
+                    disabled={!onSliceClick}
+                    onClick={() => onSliceClick?.(s)}
+                    title={s.hint || s.label}
                     className={cn(
-                      "text-[11px] tabular-nums font-bold",
-                      nStep > 0 ? "text-primary" : "text-muted-foreground/60",
+                      "flex items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+                      onSliceClick ? "hover:bg-primary/10 cursor-pointer" : "cursor-default",
+                      nStep <= 0 && "opacity-55",
                     )}
                   >
-                    {nStep}
-                  </span>
-                </span>
-                {s.hint && (
-                  <span className="block text-[10px] leading-snug text-muted-foreground">{s.hint}</span>
-                )}
-              </span>
-            </button>
-          );
-        })}
+                    {Icon ? (
+                      <Icon
+                        className={cn(
+                          "mt-0.5 h-3.5 w-3.5 shrink-0",
+                          nStep > 0 ? "text-primary" : "text-muted-foreground",
+                        )}
+                        aria-hidden
+                      />
+                    ) : (
+                      <span className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-baseline justify-between gap-2">
+                        <span className="text-[11px] font-semibold text-foreground">{s.short}</span>
+                        <span
+                          className={cn(
+                            "text-[11px] tabular-nums font-bold",
+                            nStep > 0 ? "text-primary" : "text-muted-foreground/60",
+                          )}
+                        >
+                          {nStep}
+                        </span>
+                      </span>
+                      {s.hint && (
+                        <span className="block text-[10px] leading-snug text-muted-foreground">{s.hint}</span>
+                      )}
+                    </span>
+                  </button>
+                );
+              })}
+            </CollapsibleContent>
+          </Collapsible>
+        )}
       </div>
     </div>
   );

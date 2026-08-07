@@ -157,7 +157,7 @@ export const HELP_CATALOG: HelpArticle[] = [
         selector: '[data-tour="wa-conectar"], [data-tour="menu-whatsapp"]',
       },
       {
-        text: "Em Links → Meus Links, copie um link de produto e teste no navegador.",
+        text: "Em Links, copie o link de um produto e teste no navegador.",
         route: "/admin?tab=links",
         selector: '[data-tour="links-copiar"], [data-tour="links-meus"]',
       },
@@ -769,7 +769,7 @@ export const HELP_CATALOG: HelpArticle[] = [
     "links",
     "Captação e anúncios",
     "Compartilhe seus links",
-    "Meus Links, copiar por produto, QR e panfleto para gráfica.",
+    "Seus links, copiar por produto, QR e panfleto para gráfica.",
     "/admin?tab=links",
     ["link", "página", "landing page", "divulgar", "licença", "copiar", "qr"],
     [
@@ -779,17 +779,17 @@ export const HELP_CATALOG: HelpArticle[] = [
         selector: '[data-tour="menu-links"]',
       },
       {
-        text: "Aba Meus Links.",
+        text: "Na página Seus links, escolha Página padrão ou Premium.",
         route: "/admin?tab=links",
         selector: '[data-tour="links-meus"]',
       },
       {
-        text: "Copie o link do produto/rede desejada e teste no navegador.",
+        text: "Copie o link do produto (ou por rede, em Compartilhar por rede) e teste no navegador.",
         route: "/admin?tab=links",
         selector: '[data-tour="links-copiar"], [data-tour="links-meus"]',
       },
       {
-        text: "Panfleto pra gráfica → Gerar para impressão com QR.",
+        text: "Panfleto A5 → Gerar para impressão com QR.",
         route: "/admin?tab=links",
         selector: '[data-tour="links-panfleto"], [data-tour="links-panfleto-gerar"]',
       },

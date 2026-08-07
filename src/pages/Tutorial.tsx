@@ -185,7 +185,7 @@ const sections: Array<{ def: SectionDef; content: ReactNode }> = [
         <p>Página enxuta com <strong>QR Code + WhatsApp</strong> para o lead falar com você em ~3 minutos. Não é o formulário multiproduto completo — serve para captura rápida no ponto de venda ou panfleto.</p>
 
         <h3 className="text-xl font-bold mt-6" id="conexao">3.4 Páginas Conexão (produtos)</h3>
-        <p>No menu <strong>Meus Links</strong> há 10 entradas: Green (página do cliente), Expansão (página do licenciado), Cadastro Rápido e 7 LPs <code>/conexao-*</code> (Telecom, Seguros, Solar, Placas, Livre, Club, Club PJ). Cada LP de produto tem o mesmo formato: hero, benefícios, preço, botão WhatsApp.</p>
+        <p>No menu <strong>Links</strong> (Seus links) há 10 entradas: Green (página do cliente), Expansão (página do licenciado), Cadastro Rápido e 7 LPs <code>/conexao-*</code> (Telecom, Seguros, Solar, Placas, Livre, Club, Club PJ). Cada LP de produto tem o mesmo formato: hero, benefícios, preço, botão WhatsApp. Há versão padrão e premium em paralelo.</p>
         <ButtonRow items={[
           { name: "Conexão Green", desc: "Landing do cliente — desconto na conta de luz (/slug)." },
           { name: "Conexão Expansão", desc: "Landing do licenciado — oportunidade e carreira (/licenciado/slug)." },

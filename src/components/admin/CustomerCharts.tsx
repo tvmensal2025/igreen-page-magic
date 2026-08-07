@@ -1,5 +1,15 @@
 import { useEffect, useMemo, useState } from "react";
-import { Trophy, ScanFace, TrendingUp, MessageCircle, Trash2, Plus, Percent, SlidersHorizontal } from "lucide-react";
+import {
+  Trophy,
+  ScanFace,
+  TrendingUp,
+  MessageCircle,
+  Trash2,
+  Plus,
+  Percent,
+  SlidersHorizontal,
+  ChevronDown,
+} from "lucide-react";
 import {
   Bar,
   BarChart,
@@ -19,7 +29,9 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Combobox } from "@/components/ui/combobox";
+import { cn } from "@/lib/utils";
 import { normalizeBrazilPhone, validateBrazilPhone } from "@/lib/phone";
 import { useEntradaRules, useGreenSettings } from "@/features/produtos/acompanhamento/greenHooks";
 import { EntradaRulesDialog } from "@/features/produtos/acompanhamento/EntradaRulesDialog";
@@ -188,6 +200,7 @@ export function CustomerCharts({ filteredMetrics, topLicenciados, consultantId, 
   const [slicePick, setSlicePick] = useState<SlicePick | null>(null);
   const [overrides, setOverrides] = useState<GanhosOverrides>(() => loadOverrides(consultantId));
   const [addId, setAddId] = useState("");
+  const [bonusOpen, setBonusOpen] = useState(false);
 
   const { data: entradaRules = [] } = useEntradaRules(consultantId);
   const { data: greenSettings } = useGreenSettings(consultantId);
@@ -463,40 +476,69 @@ export function CustomerCharts({ filteredMetrics, topLicenciados, consultantId, 
             </div>
 
             {consultantId ? (
-              <div className="mt-3 rounded-xl border border-border/60 bg-muted/20 px-3 py-2.5 space-y-1.5">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
-                  <Percent className="w-3 h-3" /> Bônus de entrada (editável nas Configurações)
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-muted-foreground">
-                  <div>
-                    <p className="font-medium text-foreground mb-0.5">
-                      Alto até {bonusTiers.alto.percent}%
-                    </p>
-                    <p>
-                      {bonusTiers.alto.faixas.map((f) => f.label).join(" · ") || "Sem faixas"}
-                    </p>
-                    <p className="text-[10px] mt-1">
-                      {bonusTiers.alto.distribuidoras.map((d) => `${d.ufs.join("/")}: ${d.label}`).join(" · ") || "—"}
-                    </p>
+              <Collapsible
+                open={bonusOpen}
+                onOpenChange={setBonusOpen}
+                className="mt-3 rounded-xl border border-border/60 bg-muted/20 px-3 py-2"
+              >
+                <CollapsibleTrigger asChild>
+                  <button
+                    type="button"
+                    className="flex w-full items-center justify-between gap-2 text-left transition-colors hover:text-foreground"
+                  >
+                    <span className="min-w-0">
+                      <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1.5">
+                        <Percent className="w-3 h-3 shrink-0" /> Bônus de entrada
+                      </span>
+                      <span className="mt-0.5 block text-[11px] text-muted-foreground tabular-nums">
+                        Alto até {bonusTiers.alto.percent}% · Médio até {bonusTiers.medio.percent}%
+                        {entradaRules.length > 0
+                          ? ` · ${entradaRules.length} faixa(s)`
+                          : " · sem faixas suas"}
+                      </span>
+                    </span>
+                    <ChevronDown
+                      className={cn(
+                        "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+                        bonusOpen && "rotate-180",
+                      )}
+                      aria-hidden
+                    />
+                  </button>
+                </CollapsibleTrigger>
+                <CollapsibleContent className="space-y-1.5 pt-2">
+                  <p className="text-[10px] text-muted-foreground">Editável nas Configurações · Bônus / cidades</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] text-muted-foreground">
+                    <div>
+                      <p className="font-medium text-foreground mb-0.5">
+                        Alto até {bonusTiers.alto.percent}%
+                      </p>
+                      <p>
+                        {bonusTiers.alto.faixas.map((f) => f.label).join(" · ") || "Sem faixas"}
+                      </p>
+                      <p className="text-[10px] mt-1">
+                        {bonusTiers.alto.distribuidoras.map((d) => `${d.ufs.join("/")}: ${d.label}`).join(" · ") || "—"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-foreground mb-0.5">
+                        Médio até {bonusTiers.medio.percent}%
+                      </p>
+                      <p>
+                        {bonusTiers.medio.faixas.map((f) => f.label).join(" · ") || "Sem faixas"}
+                      </p>
+                      <p className="text-[10px] mt-1">
+                        {bonusTiers.medio.distribuidoras.map((d) => `${d.ufs.join("/")}: ${d.label}`).join(" · ") || "—"}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <p className="font-medium text-foreground mb-0.5">
-                      Médio até {bonusTiers.medio.percent}%
-                    </p>
-                    <p>
-                      {bonusTiers.medio.faixas.map((f) => f.label).join(" · ") || "Sem faixas"}
-                    </p>
-                    <p className="text-[10px] mt-1">
-                      {bonusTiers.medio.distribuidoras.map((d) => `${d.ufs.join("/")}: ${d.label}`).join(" · ") || "—"}
-                    </p>
-                  </div>
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                  {entradaRules.length === 0
-                    ? "Nenhuma faixa sua ainda — abra Bônus / cidades e aplique a tabela oficial."
-                    : `${entradaRules.length} faixa(s) ativas · modo ${countMode === "somado" ? "somado" : "individual"}. Edite quando quiser.`}
-                </p>
-              </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {entradaRules.length === 0
+                      ? "Nenhuma faixa sua ainda — abra Bônus / cidades e aplique a tabela oficial."
+                      : `${entradaRules.length} faixa(s) ativas · modo ${countMode === "somado" ? "somado" : "individual"}. Edite quando quiser.`}
+                  </p>
+                </CollapsibleContent>
+              </Collapsible>
             ) : null}
 
             <div className="grid grid-cols-1 min-[380px]:grid-cols-3 gap-2 sm:gap-3 mt-4 mb-2 min-w-0">

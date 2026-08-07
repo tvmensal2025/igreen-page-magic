@@ -75,7 +75,7 @@ Abra: /admin?tab=dashboard
 3. Abra Configurações (engrenagem no menu) e confirme nome + ID iGreen — sem isso a sync e os links falham.
 4. Confirme o ID iGreen e salve. Só digite o ID completo e use Salvar Dados.
 5. Conecte o WhatsApp (menu WhatsApp). Se pedir QR, escaneie em Aparelhos conectados no celular.
-6. Em Links → Meus Links, copie um link de produto e teste no navegador.
+6. Em Links, copie um link de produto e teste no navegador.
 7. Em Clientes interessados, veja quem já chegou e abra um card para a conversa.
 8. Sempre que travar: botão ? no topo da tela ou Central de ajuda → suporte com IA.
 
@@ -211,9 +211,9 @@ Abra: /admin?tab=central-anuncios
 [Captação e anúncios] Compartilhe seus links
 Abra: /admin?tab=links
 1. Menu → Links.
-2. Aba Meus Links.
-3. Copie o link do produto/rede desejada e teste no navegador.
-4. Panfleto pra gráfica → Gerar para impressão com QR.
+2. Na página Seus links, escolha Página padrão ou Premium.
+3. Copie o link do produto (ou por rede, em Compartilhar por rede) e teste no navegador.
+4. Panfleto A5 → Gerar para impressão com QR.
 
 [Captação e anúncios] Baixe materiais de divulgação
 Abra: /admin?tab=materiais

@@ -529,7 +529,7 @@ const AdminContent = () => {
     "whatsapp": { title: "WhatsApp", subtitle: "Conversas, mensagens prontas e envios agendados" },
     "agendamentos": { title: "Agendamentos", subtitle: "Envios programados e mensagens automáticas" },
     "central-anuncios": { title: "Central de Anúncios", subtitle: "Resultados das suas campanhas" },
-    "links": { title: "Links", subtitle: "Sua página, QR Codes e materiais" },
+    "links": { title: "Links", subtitle: "Copie, compartilhe e veja os resultados" },
     "materiais": { title: "Materiais", subtitle: "Arquivos prontos para divulgar" },
     "audio-studio": { title: "Estúdio de Áudio", subtitle: "Grave sua voz ou gere com IA e envie pelo WhatsApp" },
     "voz": { title: "Ligação", subtitle: "Ligações com número da empresa e histórico detalhado" },

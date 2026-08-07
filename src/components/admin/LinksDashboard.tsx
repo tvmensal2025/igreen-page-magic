@@ -1,13 +1,41 @@
 import { useState, useEffect, useMemo } from "react";
-import { Eye, Smartphone, Monitor, MousePointerClick, MessageCircle, UserPlus, TrendingUp, Clock, CalendarDays, FileText as FileTextIcon } from "lucide-react";
+import {
+  Eye,
+  Smartphone,
+  Monitor,
+  MousePointerClick,
+  MessageCircle,
+  UserPlus,
+  TrendingUp,
+  Clock,
+  CalendarDays,
+  FileText as FileTextIcon,
+  ChevronDown,
+} from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
-import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
+import {
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  ResponsiveContainer,
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
 
 // Dashboard de métricas das landing pages do consultor.
 // Lê page_views + page_events (todo período ou N dias) e filtra Normal / Premium / Todas.
 
 interface LinksDashboardProps {
   consultantId?: string;
+  /** Embutido na página Seus links — recolhido por padrão, com chips de resumo. */
+  embedded?: boolean;
 }
 
 const PIE_COLORS = ["#25D366", "#E1306C", "#1877F2", "#69C9D0", "#FF0000", "#4285F4", "#9ca3af"];
@@ -21,7 +49,7 @@ const FAIXAS_HORARIO = [
 
 /** `all` = desde o primeiro registro (nada de fora). */
 type Period = 7 | 30 | 90 | "all";
-/** Filtro do painel Resultados — independente do botão Normal/Premium em Meus Links. */
+/** Filtro do painel Resultados — independente do toggle Padrão/Premium dos links. */
 type VersionFilter = "all" | "normal" | "premium";
 
 const PERIOD_OPTS: { value: Period; label: string }[] = [
@@ -33,7 +61,7 @@ const PERIOD_OPTS: { value: Period; label: string }[] = [
 
 const VERSION_OPTS: { value: VersionFilter; label: string }[] = [
   { value: "all", label: "Todas" },
-  { value: "normal", label: "Só normais" },
+  { value: "normal", label: "Só padrão" },
   { value: "premium", label: "Só premium" },
 ];
 
@@ -101,13 +129,14 @@ async function fetchAllRows<T>(
   return { rows: out, error: null };
 }
 
-export function LinksDashboard({ consultantId }: LinksDashboardProps) {
+export function LinksDashboard({ consultantId, embedded = false }: LinksDashboardProps) {
   const [period, setPeriod] = useState<Period>("all");
   const [version, setVersion] = useState<VersionFilter>("all");
   const [views, setViews] = useState<any[]>([]);
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [open, setOpen] = useState(!embedded);
 
   useEffect(() => {
     if (!consultantId) {
@@ -254,14 +283,9 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
   const periodLabel =
     period === "all" ? "todo o período" : period === 7 ? "7 dias" : period === 30 ? "30 dias" : "90 dias";
 
-  return (
-    <div className="space-y-6">
-      {/* Cabeçalho + período */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h2 className="font-heading font-bold text-foreground text-lg flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-primary" />
-          Painel de Resultados
-        </h2>
+  const body = (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex gap-1 bg-muted/50 rounded-lg p-1 flex-wrap">
           {PERIOD_OPTS.map((p) => (
             <button
@@ -274,56 +298,52 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
             </button>
           ))}
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Filtrar visitas:</span>
+          <div className="flex gap-1 bg-muted/50 rounded-lg p-1">
+            {VERSION_OPTS.map((v) => (
+              <button
+                key={v.value}
+                type="button"
+                onClick={() => setVersion(v.value)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${version === v.value ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                {v.label}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
-      {/* Filtro Normal × Premium (só neste painel — Meus Links é outra aba) */}
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="text-xs text-muted-foreground">Versão do link:</span>
-        <div className="flex gap-1 bg-muted/50 rounded-lg p-1">
-          {VERSION_OPTS.map((v) => (
-            <button
-              key={v.value}
-              type="button"
-              onClick={() => setVersion(v.value)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${version === v.value ? "bg-card text-primary shadow-sm" : "text-muted-foreground hover:text-foreground"}`}
-            >
-              {v.label}
-            </button>
-          ))}
-        </div>
-        {!loading && metrics.rawTotal > 0 && (
-          <span className="text-[11px] text-muted-foreground">
-            Base: {metrics.rawTotal} visitas · {metrics.normalCount} normal · {metrics.premiumCount} premium
-          </span>
-        )}
-      </div>
-      <p className="text-[11px] text-muted-foreground -mt-3">
-        Instagram / Facebook só aparecem em “De onde vêm” se o visitante abriu o link com rastreio
-        (botão 📸 Instagram em Meus Links). Sem UTM cai em <strong className="font-medium text-foreground/80">Direto</strong>.
-      </p>
+      {!loading && metrics.rawTotal > 0 && (
+        <p className="text-[11px] text-muted-foreground -mt-2">
+          Base: {metrics.rawTotal} visitas · {metrics.normalCount} padrão · {metrics.premiumCount} premium.
+          Instagram / Facebook só entram em “De onde vêm” se o link tiver rastreio (Compartilhar por rede).
+          Sem UTM cai em <strong className="font-medium text-foreground/80">Direto</strong>.
+        </p>
+      )}
 
       {loading || !consultantId ? (
-        <div className="h-64 flex items-center justify-center text-muted-foreground">
+        <div className="h-40 flex items-center justify-center text-sm text-muted-foreground">
           {!consultantId ? "Carregando seu painel…" : "Carregando dados reais…"}
         </div>
       ) : loadError ? (
-        <div className="bg-card rounded-2xl border border-destructive/30 p-8 text-center">
+        <div className="rounded-xl border border-destructive/30 bg-card p-6 text-center">
           <p className="font-heading font-bold text-foreground">Não consegui ler as visitas</p>
           <p className="text-sm text-muted-foreground mt-1">{loadError}</p>
         </div>
       ) : metrics.totalViews === 0 ? (
-        <div className="bg-card rounded-2xl border border-border p-10 text-center">
-          <Eye className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
+        <div className="rounded-xl border border-border bg-card p-8 text-center">
+          <Eye className="w-8 h-8 text-muted-foreground/40 mx-auto mb-2" />
           <p className="font-heading font-bold text-foreground">Ainda sem visitas neste filtro</p>
           <p className="text-sm text-muted-foreground mt-1">
             {version === "premium"
-              ? "Ainda não há visitas marcadas como premium neste período. Visitas antigas da Green premium podem estar em “Só normais” (antes do marcador separado)."
-              : "Compartilhe seus links e os dados aparecem aqui automaticamente."}
+              ? "Ainda não há visitas marcadas como premium neste período."
+              : "Compartilhe seus links acima — os dados aparecem aqui."}
           </p>
         </div>
       ) : (
         <>
-          {/* ─── Cards principais ─── */}
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
             <BigCard icon={<Eye />} value={metrics.totalViews} label="Visitas" sub={`em ${periodLabel}`} color="from-primary/20 to-primary/5" iconColor="text-primary" />
             <BigCard icon={<MessageCircle />} value={metrics.whatsappClicks} label="Cliques WhatsApp" sub="quiseram falar" color="from-[#25D366]/20 to-[#25D366]/5" iconColor="text-[#25D366]" />
@@ -332,7 +352,6 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
             <BigCard icon={<MousePointerClick />} value={`${metrics.conversao}%`} label="Conversão" sub="visitas que agiram" color="from-warning/20 to-warning/5" iconColor="text-warning" />
           </div>
 
-          {/* ─── Visitas por dia ─── */}
           <ChartCard title="Visitas por dia" icon={<TrendingUp className="w-4 h-4" />}>
             <ResponsiveContainer width="100%" height={200}>
               <AreaChart data={metrics.daily}>
@@ -350,7 +369,6 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
             </ResponsiveContainer>
           </ChartCard>
 
-          {/* ─── Páginas (Green / Premium / Telecom…) ─── */}
           <ChartCard title="Qual página foi visitada" icon={<Eye className="w-4 h-4" />}>
             {metrics.byPage.length > 0 ? (
               <div className="space-y-2">
@@ -369,10 +387,11 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
                   );
                 })}
               </div>
-            ) : <EmptyMini />}
+            ) : (
+              <EmptyMini />
+            )}
           </ChartCard>
 
-          {/* ─── Melhor dia + Melhor horário (destaques) ─── */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <HighlightCard
               icon={<CalendarDays className="w-5 h-5" />}
@@ -388,7 +407,6 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
             />
           </div>
 
-          {/* ─── Dia da semana + Horário (gráficos) ─── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <ChartCard title="Visitas por dia da semana" icon={<CalendarDays className="w-4 h-4" />}>
               <ResponsiveContainer width="100%" height={180}>
@@ -413,7 +431,6 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
             </ChartCard>
           </div>
 
-          {/* ─── Fontes + Dispositivo ─── */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
             <ChartCard title="De onde vêm as visitas (Instagram, WhatsApp…)" icon={<TrendingUp className="w-4 h-4" />}>
               {metrics.bySource.length > 0 ? (
@@ -421,7 +438,9 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
                   <ResponsiveContainer width={150} height={150}>
                     <PieChart>
                       <Pie data={metrics.bySource} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={38} outerRadius={65} strokeWidth={2}>
-                        {metrics.bySource.map((_, i) => <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />)}
+                        {metrics.bySource.map((_, i) => (
+                          <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
+                        ))}
                       </Pie>
                       <Tooltip contentStyle={tooltipStyle} />
                     </PieChart>
@@ -436,7 +455,9 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
                     ))}
                   </div>
                 </div>
-              ) : <EmptyMini />}
+              ) : (
+                <EmptyMini />
+              )}
             </ChartCard>
 
             <ChartCard title="Celular, tablet e computador" icon={<Smartphone className="w-4 h-4" />}>
@@ -487,6 +508,80 @@ export function LinksDashboard({ consultantId }: LinksDashboardProps) {
         </>
       )}
     </div>
+  );
+
+  if (!embedded) {
+    return (
+      <div className="space-y-4">
+        <h2 className="font-heading font-bold text-foreground text-lg flex items-center gap-2">
+          <TrendingUp className="w-5 h-5 text-primary" />
+          Resultados das páginas
+        </h2>
+        {body}
+      </div>
+    );
+  }
+
+  const showChips = !loading && !loadError && metrics.rawTotal > 0;
+
+  return (
+    <Collapsible
+      open={open}
+      onOpenChange={setOpen}
+      className="rounded-xl border border-border bg-card"
+    >
+      <CollapsibleTrigger asChild>
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-3 px-4 py-3.5 text-left transition-colors hover:bg-muted/20"
+        >
+          <div className="min-w-0 space-y-1.5">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-primary shrink-0" />
+              <span className="font-heading text-sm font-bold text-foreground">Resultados das páginas</span>
+              {!open && (
+                <span className="text-[10px] text-muted-foreground">toque para ver</span>
+              )}
+            </div>
+            {showChips ? (
+              <div className="flex flex-wrap gap-1.5">
+                <SummaryChip label="Visitas" value={metrics.totalViews} />
+                <SummaryChip label="WhatsApp" value={metrics.whatsappClicks} />
+                <SummaryChip label="Cadastro" value={metrics.cadastroClicks} />
+                <SummaryChip label="Conversão" value={`${metrics.conversao}%`} />
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">
+                {loading || !consultantId
+                  ? "Carregando resumo…"
+                  : "Visitas e cliques dos seus links — abra quando quiser."}
+              </p>
+            )}
+          </div>
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
+              open && "rotate-180",
+            )}
+            aria-hidden
+          />
+        </button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="border-t border-border px-4 py-4">{body}</div>
+      </CollapsibleContent>
+    </Collapsible>
+  );
+}
+
+function SummaryChip({ label, value }: { label: string; value: number | string }) {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-md border border-border bg-muted/40 px-2 py-0.5 text-[10px] tabular-nums">
+      <span className="text-muted-foreground">{label}</span>
+      <span className="font-semibold text-foreground">
+        {typeof value === "number" ? value.toLocaleString("pt-BR") : value}
+      </span>
+    </span>
   );
 }
 
