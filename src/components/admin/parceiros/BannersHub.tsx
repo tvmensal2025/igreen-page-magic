@@ -52,6 +52,7 @@ type HubTab = "lista" | "resultados";
 interface Props {
   consultantId: string;
   consultantName?: string;
+  consultantDisplayName?: string;
   consultantIgreenId?: string;
   consultantPhone?: string;
   license?: string | null;
@@ -72,6 +73,7 @@ interface Props {
 export function BannersHub({
   consultantId,
   consultantName = "",
+  consultantDisplayName = "",
   consultantIgreenId = "",
   consultantPhone = "",
   license = "",
@@ -95,10 +97,12 @@ export function BannersHub({
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const initials = useMemo(
-    () => buildConsultantBannerInitials(consultantName),
-    [consultantName],
+    () => buildConsultantBannerInitials(consultantName, consultantDisplayName),
+    [consultantName, consultantDisplayName],
   );
   const igreenId = String(consultantIgreenId || "").replace(/\D/g, "");
+  const phoneDigits = String(consultantPhone || "").replace(/\D/g, "");
+  const hasLivePhone = phoneDigits.length >= 10;
   const rootUrl = useMemo(
     () =>
       igreenId
@@ -401,6 +405,25 @@ export function BannersHub({
         />
       ) : (
         <div className="space-y-4">
+          {(!igreenId || !hasLivePhone) && (
+            <Alert variant="destructive">
+              <Info className="h-4 w-4" />
+              <AlertTitle className="text-sm">
+                Complete Dados antes de imprimir
+              </AlertTitle>
+              <AlertDescription className="text-xs leading-relaxed space-y-1">
+                {!igreenId && (
+                  <p>Falta o ID iGreen — sem ele o link do banner não resolve.</p>
+                )}
+                {!hasLivePhone && (
+                  <p>
+                    Falta o WhatsApp — sem número o QR não abre o Zap do
+                    consultor.
+                  </p>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
           <MyBannersInsights
             initials={initials}
             igreenId={igreenId}

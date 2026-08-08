@@ -863,6 +863,7 @@ const AdminContent = () => {
               consultantId={userId}
               consultantPhone={form.phone || ""}
               consultantName={form.name || ""}
+              consultantDisplayName={form.display_name || ""}
               consultantIgreenId={form.igreen_id || ""}
               license={form.license || ""}
               isWhapi={!!isWhapi}

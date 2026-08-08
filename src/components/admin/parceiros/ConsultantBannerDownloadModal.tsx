@@ -77,6 +77,7 @@ interface Props {
   onClose: () => void;
   consultantId: string;
   consultantName?: string;
+  consultantDisplayName?: string;
   consultantIgreenId?: string;
   consultantPhone: string;
   /** Frase padrão do QR raiz /{ini}/{id} */
@@ -110,6 +111,7 @@ export function ConsultantBannerDownloadModal({
   onClose,
   consultantId,
   consultantName = "",
+  consultantDisplayName = "",
   consultantIgreenId = "",
   consultantPhone,
   defaultPhrase = null,
@@ -138,8 +140,8 @@ export function ConsultantBannerDownloadModal({
 
   const template = FLYER_TEMPLATES[format];
   const initials = useMemo(
-    () => buildConsultantBannerInitials(consultantName),
-    [consultantName],
+    () => buildConsultantBannerInitials(consultantName, consultantDisplayName),
+    [consultantName, consultantDisplayName],
   );
   const igreenId = String(consultantIgreenId || "").replace(/\D/g, "");
 
@@ -453,8 +455,11 @@ export function ConsultantBannerDownloadModal({
     return `${format === "a4" ? "panfleto-a4" : "banner-504x904"}-${initials}-${igreenId}-${slugify(spot)}`;
   };
 
+  const phoneDigits = String(consultantPhone || "").replace(/\D/g, "");
+  const hasLivePhone = phoneDigits.length >= 10;
+
   const canDownload =
-    !!igreenId && (mode === "root" || !!selectedSpot);
+    !!igreenId && hasLivePhone && (mode === "root" || !!selectedSpot);
 
   const downloadPNG = async () => {
     if (!canDownload) return;
@@ -573,6 +578,29 @@ export function ConsultantBannerDownloadModal({
             </ul>
           </AlertDescription>
         </Alert>
+
+        {(!igreenId || !hasLivePhone) && (
+          <Alert variant="destructive">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle className="text-sm">
+              Falta dado para o banner funcionar
+            </AlertTitle>
+            <AlertDescription className="text-xs leading-relaxed space-y-1">
+              {!igreenId && (
+                <p>
+                  Salve seu <strong>ID iGreen</strong> na aba Dados — sem isso o
+                  link vivo não resolve.
+                </p>
+              )}
+              {!hasLivePhone && (
+                <p>
+                  Salve seu <strong>WhatsApp</strong> na aba Dados — sem número o
+                  QR abre e cai em erro (não chega no Zap).
+                </p>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
 
         <div className="grid gap-4 sm:gap-6 md:grid-cols-[auto_1fr] py-2 min-w-0">
           <div className="flex flex-col items-center gap-3 w-full min-w-0 max-w-full">

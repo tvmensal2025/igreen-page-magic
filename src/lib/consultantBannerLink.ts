@@ -37,7 +37,8 @@ export const BANNER_INITIALS_RESERVED = new Set([
   "super",
 ]);
 
-/** Iniciais a partir do nome: "Rafael Ferreira Dias" → "rfd". */
+/** Iniciais a partir do nome: "Rafael Ferreira Dias" → "rfd".
+ * Ignora partículas PT (de/da/do/dos/das/e) para não poluir a URL. */
 export function buildConsultantBannerInitials(
   name?: string | null,
   displayName?: string | null,
@@ -47,7 +48,10 @@ export function buildConsultantBannerInitials(
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-zA-Z\s]/g, " ")
     .trim();
-  const parts = raw.split(/\s+/).filter((p) => p.length > 0);
+  const skip = new Set(["de", "da", "do", "dos", "das", "e"]);
+  const parts = raw
+    .split(/\s+/)
+    .filter((p) => p.length > 0 && !skip.has(p.toLowerCase()));
   let initials = parts
     .map((p) => p[0] || "")
     .join("")

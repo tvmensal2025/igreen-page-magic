@@ -21,6 +21,8 @@ interface ParceirosTabProps {
   consultantId: string;
   consultantPhone: string;
   consultantName?: string;
+  /** Nome público (preferido nas iniciais do banner vivo). */
+  consultantDisplayName?: string;
   consultantIgreenId?: string;
   license?: string | null;
   /** Canal principal — prioriza chip vivo (settings) quando aplicável. */
@@ -36,6 +38,7 @@ export function ParceirosTab({
   consultantId,
   consultantPhone,
   consultantName = "",
+  consultantDisplayName = "",
   consultantIgreenId = "",
   license = "",
   isWhapi = false,
@@ -196,6 +199,7 @@ export function ParceirosTab({
         <BannersHub
           consultantId={consultantId}
           consultantName={consultantName}
+          consultantDisplayName={consultantDisplayName}
           consultantIgreenId={consultantIgreenId}
           consultantPhone={liveWaPhone || consultantPhone}
           license={license}
@@ -216,6 +220,7 @@ export function ParceirosTab({
           onClose={() => setBannerOpen(false)}
           consultantId={consultantId}
           consultantName={consultantName}
+          consultantDisplayName={consultantDisplayName}
           consultantIgreenId={consultantIgreenId}
           consultantPhone={liveWaPhone || consultantPhone}
           defaultPhrase={bannerDefaultPhrase}
