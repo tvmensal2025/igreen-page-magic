@@ -638,7 +638,7 @@ async function processCustomer(
 
   const { status, tag } = formatSendStatus(result);
   const previewText = result.preview
-    ? `[${channel.kind}]${tag ? ` ${tag}` : ""} ${result.preview}`.slice(0, 200)
+    ? `[${channel.kind}]${tag ? ` ${tag}` : ""} ${result.preview}`.slice(0, 400)
     : `[${channel.kind}]${tag ? ` ${tag}` : ""}`;
 
   // Finaliza o claim com o resultado real do envio.

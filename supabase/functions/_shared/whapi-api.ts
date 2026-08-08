@@ -373,10 +373,11 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
       }
     };
 
-    // base64 sem estouro de stack (chunks)
+    // base64 sem estouro de stack (chunks pequenos — spread de 32k args
+    // estoura o call stack no Deno/V8 com MP3 de pós-venda ~1–2MB).
     const bytesToBase64 = (bytes: Uint8Array): string => {
       let bin = "";
-      const chunk = 0x8000;
+      const chunk = 0x2000; // 8192
       for (let i = 0; i < bytes.length; i += chunk) {
         bin += String.fromCharCode(...bytes.subarray(i, i + chunk));
       }
@@ -477,13 +478,21 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     // Anti-ban: fila espaçadora ANTES da presence/upload (slot cobre a mensagem toda).
     await awaitWhapiSendSlot(to, { kind: `send_media_${mediatype}` });
 
+    // Baixa cedo: decide presence curta + multipart-first para MP3 longo (pós-venda).
+    let preferAudioEndpoint = false;
+    if (isMp3Family) {
+      const dl = await downloadMediaBytes();
+      preferAudioEndpoint = !!dl && dl.bytes.byteLength > 900_000;
+    }
+
     // Presence “gravando…” / “digitando…” — intencional: o lead vê status humano
-    // antes da mídia chegar. Não encurtar para áudio cacheado Sofia.
-    // - Áudio: "gravando" pelo tempo real do arquivo (+1s buffer), entre 4s e 25s.
+    // antes da mídia chegar. MP3 longo: presence curta (evita timeout da edge).
+    // - Áudio curto: "gravando" 4–25s · Áudio longo: 3–8s
     // - Imagem/Vídeo: "digitando" 4-6s aleatório (humano).
-    // Aguardamos o presence subir + pequena pausa para o status aparecer ANTES da mídia.
     const presenceSec = isAudio
-      ? Math.max(4, Math.min(25, Math.round((durationSec && durationSec > 0 ? durationSec : 6)) + 1))
+      ? (preferAudioEndpoint
+        ? Math.max(3, Math.min(8, Math.round((durationSec && durationSec > 0 ? durationSec : 6)) + 1))
+        : Math.max(4, Math.min(25, Math.round((durationSec && durationSec > 0 ? durationSec : 6)) + 1)))
       : (4 + Math.floor(Math.random() * 3)); // 4-6s
     try {
       await sendPresence(remoteJid, isAudio ? "recording" : "typing", presenceSec);
@@ -491,7 +500,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     await new Promise((r) => setTimeout(r, 700 + Math.floor(Math.random() * 400))); // 0.7-1.1s
 
     console.log(
-      `📤 [whapi:sendMedia] -> ${to} (${mediatype} via ${endpoint}, mime=${contentType}, mp3=${isMp3Family}, presence=${presenceSec}s) url=…${urlPreview}`,
+      `📤 [whapi:sendMedia] -> ${to} (${mediatype} via ${endpoint}, mime=${contentType}, mp3=${isMp3Family}, large=${preferAudioEndpoint}, presence=${presenceSec}s) url=…${urlPreview}`,
     );
 
     // MP3 Sofia: json_url em messages/voice costuma retornar 200 sem o áudio
@@ -514,21 +523,14 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
       console.log(`ℹ️ [whapi:sendMedia] MP3 detectado — pulando json_url; upload com mime ${contentType}`);
     }
 
-    // JSON Base64 com mime real (MP3 → audio/mpeg; webm → audio/webm)
-    // MP3 longo (pós-venda ~1–2MB): messages/voice (PTT) falha mais —
-    // tenta messages/audio primeiro quando o arquivo é grande.
-    let preferAudioEndpoint = false;
-    if (isMp3Family) {
-      const dl = await downloadMediaBytes();
-      preferAudioEndpoint = !!dl && dl.bytes.byteLength > 900_000;
-    }
+    // MP3 longo: multipart messages/audio PRIMEIRO (evita base64 2MB + stack/OOM).
     if (preferAudioEndpoint) {
-      if (await sendJsonBase64("messages/audio", "audio/mpeg", "json_base64_mp3_audio_first")) {
-        console.log(`✅ [whapi:sendMedia] ok via json_base64_mp3_audio_first (messages/audio, large)`);
-        return true;
-      }
       if (await sendMultipart("messages/audio")) {
         console.log(`✅ [whapi:sendMedia] ok via multipart messages/audio (large first)`);
+        return true;
+      }
+      if (await sendJsonBase64("messages/audio", "audio/mpeg", "json_base64_mp3_audio_first")) {
+        console.log(`✅ [whapi:sendMedia] ok via json_base64_mp3_audio_first (messages/audio, large)`);
         return true;
       }
     }

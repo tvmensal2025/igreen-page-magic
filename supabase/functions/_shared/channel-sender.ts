@@ -847,7 +847,7 @@ async function sendSingleMessage(
 
   const basePreview = messageText || "[mídia]";
   result.preview = audioBuildError && result.audio_ok === false
-    ? `${basePreview} [audio_err:${audioBuildError}]`.slice(0, 500)
+    ? `[audio_err:${audioBuildError}] ${basePreview}`.slice(0, 500)
     : basePreview;
   return result;
 }
