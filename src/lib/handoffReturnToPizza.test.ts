@@ -5,6 +5,8 @@ import {
   isHandoffClienteNotLead,
   classifyPauseReason,
   formatHandoffReason,
+  handoffEntryNextActionAt,
+  HANDOFF_GROUP_ENTRY_DELAY_HOURS,
 } from "./handoffReturnToPizza";
 
 describe("isHandoffBotPauseReason", () => {
@@ -118,5 +120,27 @@ describe("hasUsableHandoffPhone", () => {
 describe("formatHandoffReason", () => {
   it("label humano_assumiu", () => {
     expect(formatHandoffReason("humano_assumiu")).toContain("assumiu");
+  });
+});
+
+describe("handoffEntryNextActionAt", () => {
+  const base = new Date("2026-08-08T12:00:00.000Z");
+
+  it("A e B aguardam 6 dias (144h) — não dispara agora", () => {
+    expect(HANDOFF_GROUP_ENTRY_DELAY_HOURS.A).toBe(144);
+    expect(HANDOFF_GROUP_ENTRY_DELAY_HOURS.B).toBe(144);
+    expect(handoffEntryNextActionAt("A", base)).toBe(
+      new Date(base.getTime() + 144 * 3_600_000).toISOString(),
+    );
+    expect(handoffEntryNextActionAt("B", base)).toBe(
+      new Date(base.getTime() + 144 * 3_600_000).toISOString(),
+    );
+  });
+
+  it("C aguarda ~14 dias (336h) antes do recall", () => {
+    expect(HANDOFF_GROUP_ENTRY_DELAY_HOURS.C).toBe(336);
+    expect(handoffEntryNextActionAt("C", base)).toBe(
+      new Date(base.getTime() + 336 * 3_600_000).toISOString(),
+    );
   });
 });

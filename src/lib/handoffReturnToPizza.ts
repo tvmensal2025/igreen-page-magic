@@ -40,13 +40,34 @@ export const HANDOFF_GROUP_ENTRY_STAGE: Record<CadenceAbcGroup, string> = {
   C: "RECALL_60D",
 };
 
+/**
+ * Espera antes do 1º disparo ao colocar o lead no grupo (handoff → pizza).
+ * Espelha a “última espera” de cada trilha — NÃO manda mensagem na hora.
+ *   A/B: 144h = 6 dias (mesmo silêncio da cutucada A / entrada B)
+ *   C:   336h ≈ 14 dias (delay canônico de RECALL_60D; jornada completa ~30d)
+ */
+export const HANDOFF_GROUP_ENTRY_DELAY_HOURS: Record<CadenceAbcGroup, number> = {
+  A: 144,
+  B: 144,
+  C: 336,
+};
+
+/** `next_action_at` ao entrar no grupo — sempre no futuro (com delay). */
+export function handoffEntryNextActionAt(
+  group: CadenceAbcGroup,
+  from: Date = new Date(),
+): string {
+  const hours = HANDOFF_GROUP_ENTRY_DELAY_HOURS[group];
+  return new Date(from.getTime() + hours * 3_600_000).toISOString();
+}
+
 export const HANDOFF_GROUP_OPTION: Record<
   CadenceAbcGroup,
   { title: string; hint: string }
 > = {
-  A: { title: "Grupo A", hint: "Leads novos — retoma a conversa" },
-  B: { title: "Grupo B", hint: "Quem esfriou — reengaja em dias" },
-  C: { title: "Grupo C", hint: "Quem sumiu — tenta de novo mais tarde" },
+  A: { title: "Grupo A", hint: "Leads novos — 1ª msg em ~6 dias" },
+  B: { title: "Grupo B", hint: "Quem esfriou — reengaja em ~6 dias" },
+  C: { title: "Grupo C", hint: "Quem sumiu — recall em ~14–30 dias" },
 };
 
 export function handoffRecheckAtIso(from: Date = new Date()): string {
@@ -481,7 +502,8 @@ export type ReturnHandoffResult = {
  * Volta ao acompanhamento: limpa pausa humana, despausa bot, resolve alertas.
  *
  * - Lead: reativa cadência A/B/C (`next_action_at`). Com `targetGroup`,
- *   move o lead para a entrada daquele grupo (A=novos, B=esfriou, C=sumiu).
+ *   move o lead para a entrada daquele grupo (A=novos, B=esfriou, C=sumiu)
+ *   e agenda com delay (A/B ~6d, C ~14d) — não manda mensagem na hora.
  * - Cliente (carteira / convertido): só libera o handoff — pós-venda
  *   (aprovado / 30 / 60…) segue; NÃO entra em leads novos.
  */
@@ -551,10 +573,16 @@ export async function returnHandoffToPizza(opts: {
         .eq("paused_reason", HANDOFF_PAUSE_REASON);
     }
   } else {
+    // Com grupo escolhido: agenda no futuro (A/B ~6d, C ~14d) — não dispara agora.
+    // Sem grupo: libera pausa e remarca já (comportamento legado de “só despausar”).
+    const nextAt =
+      targetGroup && HANDOFF_GROUP_ENTRY_DELAY_HOURS[targetGroup] != null
+        ? handoffEntryNextActionAt(targetGroup, new Date(now))
+        : now;
     const leadPatch: Record<string, unknown> = {
       paused_reason: null,
       paused_until: null,
-      next_action_at: now,
+      next_action_at: nextAt,
     };
     if (entryStage) {
       leadPatch.stage = entryStage;
@@ -573,14 +601,15 @@ export async function returnHandoffToPizza(opts: {
       if (!consultantId) {
         return { ok: false, error: "Lead sem consultor — não deu para colocar no ciclo." };
       }
+      const insertGroup: CadenceAbcGroup = targetGroup || "A";
       const { error: insErr } = await supabase.from("lead_cadence_state").insert({
         customer_id: customerId,
         consultant_id: consultantId,
-        stage: entryStage || "A_NUDGE",
+        stage: entryStage || HANDOFF_GROUP_ENTRY_STAGE[insertGroup],
         stage_entered_at: now,
         paused_reason: null,
         paused_until: null,
-        next_action_at: now,
+        next_action_at: handoffEntryNextActionAt(insertGroup, new Date(now)),
         won_at: null,
       } as never);
       if (insErr) return { ok: false, error: insErr.message };
