@@ -523,10 +523,17 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
       console.log(`ℹ️ [whapi:sendMedia] MP3 detectado — pulando json_url; upload com mime ${contentType}`);
     }
 
-    // MP3 longo: multipart messages/audio PRIMEIRO (evita base64 2MB + stack/OOM).
+    // MP3 longo: json_url messages/audio PRIMEIRO — Whapi baixa do MinIO
+    // (evita base64/multipart de ~2MB pela edge, que falhava no pós-venda).
+    // Em seguida multipart; base64 só como último recurso.
     if (preferAudioEndpoint) {
+      const urlAudio = await tryJsonUrl("messages/audio");
+      if (urlAudio === true) {
+        console.log(`✅ [whapi:sendMedia] ok via json_url messages/audio (large first)`);
+        return true;
+      }
       if (await sendMultipart("messages/audio")) {
-        console.log(`✅ [whapi:sendMedia] ok via multipart messages/audio (large first)`);
+        console.log(`✅ [whapi:sendMedia] ok via multipart messages/audio (large)`);
         return true;
       }
       if (await sendJsonBase64("messages/audio", "audio/mpeg", "json_base64_mp3_audio_first")) {
