@@ -37,7 +37,7 @@ SET
   updated_at = now()
 WHERE oe.customer_id IN (SELECT customer_id FROM moved)
   AND oe.status IN ('reserved', 'failed_retryable')
-  AND oe.created_at >= ((timezone('America/Sao_Paulo', now()))::date AT TIME ZONE 'America/Sao_Paulo')
+  AND oe.reserved_at >= ((timezone('America/Sao_Paulo', now()))::date AT TIME ZONE 'America/Sao_Paulo')
   AND (
     oe.stage IN ('RECALL_60D', 'RECALL_60D_SMS', 'RECALL_60D_CALL')
     OR oe.idempotency_key ILIKE '%RECALL_60D%'
