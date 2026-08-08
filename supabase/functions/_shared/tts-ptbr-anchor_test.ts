@@ -2,11 +2,23 @@ import { assertEquals } from "https://deno.land/std@0.224.0/assert/mod.ts";
 import {
   buildNameOnlyTtsText,
   buildOlaGreetTtsText,
+  buildOlaTudoBemTtsText,
   buildNomeNaoTemSegredoTtsText,
   buildEntaoNomeTtsText,
   buildCallNameGreetTtsText,
   formatNameGreetForTts,
+  spokenNameForPtBrTts,
 } from "./tts-ptbr-anchor.ts";
+
+Deno.test("spokenNameForPtBrTts Valdeir → grafia TTS", () => {
+  assertEquals(spokenNameForPtBrTts("Valdeir"), "Val-dêir");
+  assertEquals(spokenNameForPtBrTts("VALDEIR"), "Val-dêir");
+  assertEquals(spokenNameForPtBrTts("Maria"), "Maria");
+});
+
+Deno.test("buildOlaTudoBemTtsText Valdeir usa grafia falada", () => {
+  assertEquals(buildOlaTudoBemTtsText("Valdeir"), "Olá, Val-dêir! Tudo bem?");
+});
 
 Deno.test("buildOlaGreetTtsText = Olá+nome+tudo bem (igual ligação)", () => {
   assertEquals(buildOlaGreetTtsText("Fernandinho"), "Olá, Fernandinho! Tudo bem?");

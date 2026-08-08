@@ -298,8 +298,8 @@ export default function PosVendaSendFailuresDialog({
       .from("customer_auto_message_log")
       .update({
         status: "failed",
-        message_preview: (row.message_preview || "").replace(/dismissed_by_consultant/g, "") ||
-          "[pending_retry_after_phone_fix]",
+        // Sem [img:ok] — número mudou; precisa imagem+áudio no JID novo.
+        message_preview: "[pending_retry_after_phone_fix]",
         remote_jid: `${canonical}@s.whatsapp.net`,
       })
       .eq("id", row.log_id);

@@ -189,7 +189,7 @@ async function processCustomer(
   // Checar se já enviou para este estágio (idempotência)
   const { data: existingLog } = await supabase
     .from("customer_auto_message_log")
-    .select("id, status, created_at, message_preview")
+    .select("id, status, created_at, message_preview, remote_jid")
     .eq("customer_id", customer.id)
     .eq("stage_key", stageKey)
     .maybeSingle();
@@ -232,6 +232,27 @@ async function processCustomer(
     // já ter chegado — nunca reenviar imagem nesses casos.
     if (isStaleClaim || st === "claimed_retry" || retriablePartial) {
       skipImageOnRetry = true;
+    }
+    // Número corrigido depois do envio (ex.: Valdeir 99709→99623): pacote
+    // completo no número novo — a imagem do log antigo foi pro JID errado.
+    const logPhoneBase = phoneBaseFromRemote((existingLog as any).remote_jid);
+    const currentPhoneBase = cleanWaDigits(
+      String((customer as any).whatsapp_chat_id || customer.phone_whatsapp || ""),
+    );
+    if (
+      logPhoneBase &&
+      currentPhoneBase &&
+      logPhoneBase !== currentPhoneBase &&
+      !isSyncCollisionPhone(customer.phone_whatsapp)
+    ) {
+      skipImageOnRetry = false;
+      console.log(JSON.stringify({
+        event: "pos_venda_full_resend_phone_changed",
+        customer_id: customer.id,
+        stage_key: stageKey,
+        from: logPhoneBase,
+        to: currentPhoneBase,
+      }));
     }
     if (retriablePartial) {
       if (st === "claimed_retry") {

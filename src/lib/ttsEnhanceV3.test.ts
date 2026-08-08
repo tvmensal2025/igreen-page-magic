@@ -65,8 +65,19 @@ describe("formatNameGreetForTts", () => {
   it("Olá, Nome. → Olá, Nome! (contínuo — reticências soavam como corte)", () => {
     expect(formatNameGreetForTts("Olá, João.")).toBe("Olá, João!");
   });
+
+  it("Valdeir usa grafia falada no cumprimento", () => {
+    expect(formatNameGreetForTts("Olá, Valdeir.")).toBe("Olá, Val-dêir!");
+  });
 });
 
+describe("buildOlaTudoBemTtsText", () => {
+  it("Valdeir → Olá, Val-dêir! Tudo bem?", async () => {
+    const { buildOlaTudoBemTtsText, spokenNameForPtBrTts } = await import("./ttsEnhanceV3");
+    expect(spokenNameForPtBrTts("Valdeir")).toBe("Val-dêir");
+    expect(buildOlaTudoBemTtsText("Valdeir")).toBe("Olá, Val-dêir! Tudo bem?");
+  });
+});
 describe("prepareTtsSegment", () => {
   it("v2 com namePause ainda formata cumprimento", () => {
     expect(prepareTtsSegment("Olá, Ana.", MODEL_V2, { namePause: true })).toBe("Olá, Ana!");

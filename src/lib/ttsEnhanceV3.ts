@@ -157,7 +157,9 @@ export function formatNameGreetForTts(text: string): string {
   const m = t.match(/^(olá|então|oi)\s*[,.]?\s*(.+)$/i);
   if (m) {
     const lead = /^olá$/i.test(m[1]) ? "Olá" : /^oi$/i.test(m[1]) ? "Oi" : "Então";
-    const nome = m[2].replace(/^[,.\s]+/u, "").replace(/[.!?…,]+$/u, "").trim();
+    const nome = spokenNameForPtBrTts(
+      m[2].replace(/^[,.\s]+/u, "").replace(/[.!?…,]+$/u, "").trim(),
+    );
     if (nome) return `${lead}, ${nome}!`;
   }
   // Frase completa com nome (ex.: “Nome, não tem segredo.”) — mantém a frase, fecha com !.
@@ -166,11 +168,29 @@ export function formatNameGreetForTts(text: string): string {
 }
 
 /**
+ * Grafia falada p/ ElevenLabs PT-BR — espelho de
+ * supabase/functions/_shared/tts-ptbr-anchor.ts.
+ */
+const PTBR_TTS_NAME_SPOKEN: Record<string, string> = {
+  valdeir: "Val-dêir",
+};
+
+export function spokenNameForPtBrTts(display: string): string {
+  const raw = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
+  if (!raw) return "";
+  const key = raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
+  return PTBR_TTS_NAME_SPOKEN[key] || raw;
+}
+
+/**
  * Cumprimento profissional — Estúdio / WhatsApp A2 / ligação PSTN (mesma frase).
  * “Olá, Maria! Tudo bem?”
  */
 export function buildOlaTudoBemTtsText(display: string): string {
-  const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
+  const nome = spokenNameForPtBrTts(display);
   if (!nome) return "";
   return `Olá, ${nome}! Tudo bem?`;
 }

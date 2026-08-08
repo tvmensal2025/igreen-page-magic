@@ -31,6 +31,32 @@ function normalizeSpaces(text: string): string {
   return (text || "").replace(/\s+/g, " ").trim();
 }
 
+function nameKeyForTts(display: string): string {
+  return normalizeSpaces(display)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[.!?…,]+$/u, "")
+    .trim();
+}
+
+/**
+ * Grafia falada p/ ElevenLabs PT-BR — só quando a escrita normal sai torta.
+ * Slot/cache continua pelo nome normalizado (ex.: valdeir); só o texto TTS muda.
+ * Feedback 2026-08-08: "Valdeir" saía ilegível no intro pós-venda.
+ */
+const PTBR_TTS_NAME_SPOKEN: Record<string, string> = {
+  // Val-dê-ir (ê fecha o /e/; hífen evita "Valdier"/espanhol)
+  valdeir: "Val-dêir",
+};
+
+/** Nome como a Sofia deve falar (display humano → grafia TTS). */
+export function spokenNameForPtBrTts(display: string): string {
+  const raw = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
+  if (!raw) return "";
+  return PTBR_TTS_NAME_SPOKEN[nameKeyForTts(raw)] || raw;
+}
+
 /**
  * “Olá, Maria.” → “Olá, Maria!” — chamada CONTÍNUA (vírgula, não reticências).
  * As reticências ("Olá... Maria!") geravam pausa longa no eleven_v3 e o
@@ -42,7 +68,9 @@ export function formatNameGreetForTts(text: string): string {
   const m = t.match(/^(olá|então|oi)\s*[,.]?\s*(.+)$/i);
   if (m) {
     const lead = /^olá$/i.test(m[1]) ? "Olá" : /^oi$/i.test(m[1]) ? "Oi" : "Então";
-    const nome = m[2].replace(/^[,.\s]+/u, "").replace(/[.!?…,]+$/u, "").trim();
+    const nome = spokenNameForPtBrTts(
+      m[2].replace(/^[,.\s]+/u, "").replace(/[.!?…,]+$/u, "").trim(),
+    );
     if (nome) return `${lead}, ${nome}!`;
   }
   t = t.replace(/[.!?…]+$/u, "").trim();
@@ -54,7 +82,7 @@ export function formatNameGreetForTts(text: string): string {
  * “Olá, Maria! Tudo bem?”
  */
 export function buildOlaTudoBemTtsText(display: string): string {
-  const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
+  const nome = spokenNameForPtBrTts(display);
   if (!nome) return "";
   return `Olá, ${nome}! Tudo bem?`;
 }
@@ -71,20 +99,20 @@ export function buildOlaGreetTtsText(display: string): string {
  * Texto enviado ao ElevenLabs: só o nome; PT-BR via previous_text/next_text no v2.
  */
 export function buildNameOnlyTtsText(display: string): string {
-  const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
+  const nome = spokenNameForPtBrTts(display);
   return nome ? `${nome},` : "";
 }
 
 /** Passo 3 — “Nome, não tem segredo.” (frase + nome; sem nome → string vazia). */
 export function buildNomeNaoTemSegredoTtsText(display: string): string {
-  const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
+  const nome = spokenNameForPtBrTts(display);
   if (!nome) return "";
   return formatNameGreetForTts(`${nome}, não tem segredo.`);
 }
 
 /** Passo 4a — “Então, Nome.” (sem nome → string vazia). */
 export function buildEntaoNomeTtsText(display: string): string {
-  const nome = normalizeSpaces(display).replace(/[.!?…,]+$/u, "").trim();
+  const nome = spokenNameForPtBrTts(display);
   if (!nome) return "";
   return formatNameGreetForTts(`Então, ${nome}.`);
 }
