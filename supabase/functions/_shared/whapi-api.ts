@@ -517,11 +517,11 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     // JSON Base64 com mime real (MP3 → audio/mpeg; webm → audio/webm)
     // MP3 longo (pós-venda ~1–2MB): messages/voice (PTT) falha mais —
     // tenta messages/audio primeiro quando o arquivo é grande.
+    let preferAudioEndpoint = false;
     if (isMp3Family) {
-      await downloadMediaBytes();
+      const dl = await downloadMediaBytes();
+      preferAudioEndpoint = !!dl && dl.bytes.byteLength > 900_000;
     }
-    const preferAudioEndpoint = isMp3Family && !!cachedDownload &&
-      cachedDownload.bytes.byteLength > 900_000;
     if (preferAudioEndpoint) {
       if (await sendJsonBase64("messages/audio", "audio/mpeg", "json_base64_mp3_audio_first")) {
         console.log(`✅ [whapi:sendMedia] ok via json_base64_mp3_audio_first (messages/audio, large)`);
