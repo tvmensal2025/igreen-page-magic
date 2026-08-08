@@ -82,6 +82,25 @@ function matchTranslation(message: string, code?: string): string | null {
   }
 
   if (
+    c === "23514" ||
+    /check constraint|check_violation|consultant phone required|whatsapp with ddd/i.test(msg)
+  ) {
+    if (/phone/i.test(msg)) {
+      return "Informe um WhatsApp válido com DDD para criar a conta.";
+    }
+    if (/name|license/i.test(msg)) {
+      return "Informe nome completo para criar a conta.";
+    }
+  }
+
+  if (/consultant phone required|whatsapp with ddd/i.test(msg)) {
+    return "Informe um WhatsApp válido com DDD para criar a conta.";
+  }
+  if (/consultant name required|consultant license required/i.test(msg)) {
+    return "Informe nome completo para criar a conta.";
+  }
+
+  if (
     c === "42501" ||
     /row-level security|permission denied|not authorized|forbidden/i.test(lower)
   ) {

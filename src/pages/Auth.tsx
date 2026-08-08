@@ -10,7 +10,7 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import BrandLogo from "@/components/common/BrandLogo";
 import { hardReset } from "@/lib/hardReset";
 import { sendPasswordResetEmail } from "@/lib/passwordReset";
-import { isAlreadyExistsError, toUserFacingError } from "@/lib/userFacingError";
+import { toUserFacingError } from "@/lib/userFacingError";
 
 
 function slugify(s: string) {
@@ -58,6 +58,9 @@ const Auth = () => {
   const [resettingApp, setResettingApp] = useState(false);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const recoveryRef = useRef(false);
+  // Evita navegar p/ /admin no meio do signUp — senão o useAdminAuth cria
+  // stub sem telefone e o insert daqui falha com duplicate (toast vermelho falso).
+  const signupInProgressRef = useRef(false);
   const navigate = useNavigate();
   const location = useLocation();
   const { toast } = useToast();
@@ -103,7 +106,7 @@ const Auth = () => {
         setRecoveryMode(true);
         return;
       }
-      if (session && !recoveryRef.current) {
+      if (session && !recoveryRef.current && !signupInProgressRef.current) {
         checkAdminAndNavigate(session.user.id);
       }
     });
@@ -128,7 +131,7 @@ const Auth = () => {
         setRecoveryMode(true);
         return;
       }
-      if (session) {
+      if (session && !signupInProgressRef.current) {
         checkAdminAndNavigate(session.user.id);
       }
     });
@@ -203,62 +206,77 @@ const Auth = () => {
         if (error) throw error;
         toast({ title: "Login realizado com sucesso!" });
       } else {
-        if (!name.trim()) throw new Error("Informe seu nome completo.");
+        if (!name.trim() || name.trim().split(/\s+/).length < 2) {
+          throw new Error("Informe seu nome completo (nome e sobrenome).");
+        }
         if (!phone.trim()) throw new Error("Informe seu WhatsApp.");
 
-        await withAuthTimeout(supabase.auth.signOut(), "A preparação do cadastro demorou demais. Tente novamente.");
-        const { data: signUpData, error } = await withAuthTimeout(
-          supabase.auth.signUp({
-            email,
-            password,
-            options: { emailRedirectTo: window.location.origin },
-          }),
-          "O cadastro demorou demais. Tente novamente."
-        );
-        if (error) throw error;
+        const phoneClean = phone.replace(/\D/g, "");
+        // BR: 10–11 (DDD+número) ou 12–13 com 55.
+        if (phoneClean.length < 10 || phoneClean.length > 13) {
+          throw new Error("WhatsApp inválido. Use DDD + número (ex.: 11999999999).");
+        }
+        const fullName = name.trim();
 
-        const userId = signUpData.user?.id;
-        if (userId) {
-          // Gera license única a partir do nome + sufixo curto do id
-          const baseSlug = slugify(name) || "consultor";
-          const license = `${baseSlug}-${userId.slice(0, 6)}`;
-          const phoneClean = phone.replace(/\D/g, "");
+        signupInProgressRef.current = true;
+        try {
+          await withAuthTimeout(supabase.auth.signOut(), "A preparação do cadastro demorou demais. Tente novamente.");
+          const { data: signUpData, error } = await withAuthTimeout(
+            supabase.auth.signUp({
+              email,
+              password,
+              options: {
+                emailRedirectTo: window.location.origin,
+                data: { full_name: fullName, phone: phoneClean },
+              },
+            }),
+            "O cadastro demorou demais. Tente novamente."
+          );
+          if (error) throw error;
 
-          const { error: insErr } = await supabase.from("consultants").insert({
-            id: userId,
-            name: name.trim(),
-            license,
-            phone: phoneClean,
-            cadastro_url: license,
-            igreen_id: igreenId.trim() || null,
-            approved: false,
-          } as any);
+          const userId = signUpData.user?.id;
+          if (userId) {
+            // Gera license única a partir do nome + sufixo curto do id
+            const baseSlug = slugify(fullName) || "consultor";
+            const license = `${baseSlug}-${userId.slice(0, 6)}`;
+            const payload = {
+              id: userId,
+              name: fullName,
+              license,
+              phone: phoneClean,
+              cadastro_url: license,
+              igreen_id: igreenId.trim() || null,
+              approved: false,
+            };
 
-          if (insErr) {
-            console.error("[auth] falha ao criar consultor:", insErr);
-            if (isAlreadyExistsError(insErr)) {
+            // Upsert atômico: se outra aba/corrida criou stub, completa com
+            // nome+telefone reais. Nunca deixa consultor “nascer” sem WhatsApp.
+            const { error: upsertErr } = await supabase
+              .from("consultants")
+              .upsert(payload as any, { onConflict: "id" });
+
+            if (upsertErr) {
+              console.error("[auth] falha ao criar consultor:", upsertErr);
               toast({
-                title: "Esta conta já existe",
-                description: "Faça login com este e-mail. Se não lembrar a senha, use Esqueci minha senha.",
+                title: "Não foi possível concluir o cadastro",
+                description: toUserFacingError(upsertErr),
+                variant: "destructive",
               });
             } else {
               toast({
-                title: "Não foi possível concluir o cadastro",
-                description: toUserFacingError(insErr),
-                variant: "destructive",
+                title: "Cadastro realizado!",
+                description: "Conta criada. Aguarde a aprovação do Super Admin para acessar o painel.",
               });
+              checkAdminAndNavigate(userId);
             }
           } else {
             toast({
-              title: "Cadastro realizado!",
-              description: "Conta criada. Aguarde a aprovação do Super Admin para acessar o painel.",
+              title: "Cadastro enviado!",
+              description: "Verifique seu email para confirmar e depois complete seu cadastro.",
             });
           }
-        } else {
-          toast({
-            title: "Cadastro enviado!",
-            description: "Verifique seu email para confirmar e depois complete seu cadastro.",
-          });
+        } finally {
+          signupInProgressRef.current = false;
         }
       }
     } catch (error: unknown) {

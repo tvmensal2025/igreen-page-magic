@@ -23,14 +23,27 @@ const DEFAULT_CONSULTANT_FORM = {
 
 export type ConsultantForm = typeof DEFAULT_CONSULTANT_FORM;
 
-function buildPendingConsultantDefaults(uid: string, email?: string | null) {
-  const rawBase = (email?.split("@")[0] || `consultor-${uid.slice(0, 8)}`)
+/** Só Auth cria a linha de consultor. Aqui só lemos / completamos se metadata tiver WhatsApp. */
+function buildPendingConsultantDefaults(
+  uid: string,
+  email?: string | null,
+  meta?: { full_name?: string; phone?: string } | null,
+) {
+  const phoneClean = String(meta?.phone || "").replace(/\D/g, "");
+  if (phoneClean.length < 10) return null;
+  const rawName = (meta?.full_name || email?.split("@")[0] || `consultor-${uid.slice(0, 8)}`).trim();
+  const rawBase = rawName
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
   const slugBase = rawBase.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 18) || `consultor-${uid.slice(0, 6)}`;
+  const license = `${slugBase}-${uid.slice(0, 4)}`;
   return {
-    id: uid, name: email?.split("@")[0] || "Novo consultor",
-    license: `${slugBase}-${uid.slice(0, 4)}`, phone: "", cadastro_url: "", approved: false,
+    id: uid,
+    name: rawName || "Novo consultor",
+    license,
+    phone: phoneClean,
+    cadastro_url: license,
+    approved: false,
   } satisfies Database["public"]["Tables"]["consultants"]["Insert"];
 }
 
@@ -100,7 +113,28 @@ export function useAdminAuth() {
       if (data) { applyConsultantData(data); return; }
       const { data: userData, error: userError } = await supabase.auth.getUser();
       if (isStale()) return; if (userError) throw userError;
-      const pendingConsultant = buildPendingConsultantDefaults(uid, userData.user?.email);
+      const meta = (userData.user?.user_metadata || {}) as { full_name?: string; phone?: string };
+      const pendingConsultant = buildPendingConsultantDefaults(uid, userData.user?.email, meta);
+      // Sem WhatsApp no metadata = Auth ainda não gravou. NÃO cria stub vazio.
+      // Poll curto: o insert do /auth pode estar a milissegundos de concluir.
+      if (!pendingConsultant) {
+        for (let i = 0; i < 8; i++) {
+          await new Promise((r) => setTimeout(r, 250));
+          if (isStale()) return;
+          const { data: again } = await supabase
+            .from("consultants")
+            .select("id, igreen_id, approved, name, display_name, license, phone, notification_phone, cadastro_url, licenciada_cadastro_url, club_cadastro_url, facebook_pixel_id, google_analytics_id, igreen_portal_email, assistant_name, gender, portal_kind, photo_url")
+            .eq("id", uid)
+            .maybeSingle();
+          if (again) {
+            applyConsultantData(again);
+            return;
+          }
+        }
+        console.warn("[useAdminAuth] consultant row still missing after wait — not creating stub");
+        resetConsultantState();
+        return;
+      }
       const { data: createdData, error: createError } = await supabase.from("consultants").upsert(pendingConsultant, { onConflict: "id" }).select("id, igreen_id, approved, name, display_name, license, phone, notification_phone, cadastro_url, licenciada_cadastro_url, club_cadastro_url, facebook_pixel_id, google_analytics_id, igreen_portal_email, assistant_name, gender, portal_kind, photo_url").single();
       if (isStale()) return; if (createError) throw createError;
       applyConsultantData(createdData);

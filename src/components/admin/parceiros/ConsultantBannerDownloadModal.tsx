@@ -386,19 +386,25 @@ export function ConsultantBannerDownloadModal({
     }
   };
 
+  // Paridade com PartnerQrCode: mesmos helpers de rodapé (sem "FALE COMIGO"
+  // inventado — telefone vazio = faixa sem WhatsApp, igual ao parceiro).
   const footerLeft = flyerFooterLeft(
     consultantName || "CONSULTOR IGREEN",
     igreenId,
   );
-  const footerRight = flyerFooterRight(
-    formatFlyerPhoneDisplay(consultantPhone) || "FALE COMIGO",
-  );
+  const phoneDisplay = formatFlyerPhoneDisplay(consultantPhone);
+  const footerRight = phoneDisplay ? flyerFooterRight(phoneDisplay) : "";
 
+  /**
+   * Export 1:1 com o banner de parceiro (mesma resolução nativa do template,
+   * mesma arte, mesmas % de QR/rodapé, mesmo drawFlyerFooter padrão).
+   * Antes usava canvas * 2 + fonte Montserrat 900 — saía “torto” / diferente.
+   */
   const renderToCanvas = async (): Promise<HTMLCanvasElement | null> => {
     const svgEl = qrSvgWrapperRef.current?.querySelector("svg");
     if (!svgEl) return null;
-    const CW = template.canvasW * 2;
-    const CH = template.canvasH * 2;
+    const CW = template.canvasW;
+    const CH = template.canvasH;
     const canvas = document.createElement("canvas");
     canvas.width = CW;
     canvas.height = CH;
@@ -438,10 +444,6 @@ export function ConsultantBannerDownloadModal({
       footerHPercent: template.footerH,
       footerLeft,
       footerRight,
-      bgColor: "#0d3b1f",
-      textColor: "#ffd700",
-      fontFamily: 'Montserrat, "Arial Black", sans-serif',
-      fontWeight: "900",
     });
     return canvas;
   };
