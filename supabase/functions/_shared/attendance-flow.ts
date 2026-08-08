@@ -53,7 +53,7 @@ export interface SendWelcomeResult {
   code?: string;
   detail?: string;
   protocol?: string;
-  channel?: "evolution" | "whapi";
+  channel?: ResolvedChannel["kind"];
   instance?: string;
 }
 

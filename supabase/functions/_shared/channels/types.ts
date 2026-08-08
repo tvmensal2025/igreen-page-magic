@@ -12,7 +12,10 @@
 // Toda função do adapter retorna `Result` ou nunca lança. Adapter é a
 // borda externa — protege o core de erros de rede e formatos de payload.
 
-export type ChannelKind = "whapi" | "evolution";
+// "wame" é o canal piloto (api-wa.me), paralelo ao Whapi — ver
+// `_shared/channels/wame.ts`. Adicionar aqui não muda nenhum caminho
+// existente: só quem resolve `origin_channel = "wame"` chega no adapter.
+export type ChannelKind = "whapi" | "evolution" | "wame";
 
 export interface ChannelCapabilities {
   channel: ChannelKind;

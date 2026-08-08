@@ -17,6 +17,17 @@ export interface ChannelEnv {
   whapiToken: string;
   /** Consultor dono do Whapi (settings.superadmin_consultant_id). */
   superadminConsultantId?: string | null;
+  /** WAME (canal piloto paralelo) — ex.: `https://us.api-wa.me`. */
+  wameServer?: string | undefined;
+  /** WAME API key. Sem server+key o canal simplesmente não resolve. */
+  wameApiKey?: string | undefined;
+}
+
+/** Instâncias do piloto WAME sempre usam este prefixo em `whatsapp_instances`. */
+export const WAME_INSTANCE_PREFIX = "wame";
+
+export function isWameInstanceName(name: string | null | undefined): boolean {
+  return !!name && String(name).startsWith(WAME_INSTANCE_PREFIX);
 }
 
 /**
@@ -72,7 +83,7 @@ export async function isWhapiAllowedForConsultantDb(
 
 
 export interface ResolvedChannel {
-  kind: "evolution" | "whapi";
+  kind: "evolution" | "whapi" | "wame";
   instanceName: string;
   adapter: ChannelAdapter;
 }
@@ -102,6 +113,12 @@ export async function resolveConsultantOutboundChannel(
       instanceName: null,
       kind: null,
     };
+  }
+
+  // 0) Hint explícito do piloto WAME vence tudo. Precisa vir antes do ramo
+  // superadmin: o piloto roda no mesmo consultor e senão cairia no Whapi.
+  if (isWameInstanceName(hintInstanceName)) {
+    return resolveWameChannel(env, hintInstanceName);
   }
 
   const superId = env.superadminConsultantId ?? null;
@@ -242,10 +259,38 @@ export interface UnavailableChannel {
   reason: ChannelUnavailableReason;
   detail: string;
   instanceName: string | null;
-  kind: "evolution" | "whapi" | null;
+  kind: "evolution" | "whapi" | "wame" | null;
 }
 
 const HEALTHY_STATUSES = new Set(["connected", "online", "open"]);
+
+/**
+ * Canal WAME (piloto). Fail-closed: sem `wameServer`/`wameApiKey` devolve
+ * `unavailable` — nunca cai para Whapi/Evolution, senão o lead do piloto
+ * responderia por outro número.
+ */
+function resolveWameChannel(
+  env: ChannelEnv,
+  instanceName: string | null | undefined,
+): ResolvedChannel | UnavailableChannel {
+  const server = String(env.wameServer || "").trim();
+  const apiKey = String(env.wameApiKey || "").trim();
+  const name = instanceName || "wame-piloto";
+  if (!server || !apiKey) {
+    return {
+      unavailable: true,
+      reason: "missing_credentials",
+      detail: "WAME_SERVER/WAME_API_KEY ausentes — canal piloto não configurado",
+      instanceName: name,
+      kind: "wame",
+    };
+  }
+  const adapter = getAdapter({
+    kind: "wame",
+    input: { server, apiKey, instanceName: name },
+  });
+  return { kind: "wame", instanceName: name, adapter };
+}
 
 /**
  * Resolve o canal de saída para um cliente, respeitando origin_channel +
@@ -263,8 +308,15 @@ export async function resolveChannelForCustomer(
     .eq("id", customerId)
     .maybeSingle();
 
-  let kind = (c?.origin_channel as "evolution" | "whapi" | null) || null;
+  let kind = (c?.origin_channel as "evolution" | "whapi" | "wame" | null) || null;
   const instanceName = (c?.origin_instance_name as string | null) || null;
+
+  // WAME (piloto) é resolvido ANTES de qualquer normalização whapi/evolution:
+  // sem isso, `origin_channel="wame"` cairia no ramo Whapi lá embaixo e o lead
+  // do piloto responderia pelo chip do superadmin.
+  if (kind === "wame" || isWameInstanceName(instanceName)) {
+    return resolveWameChannel(env, instanceName);
+  }
 
   // Corrige origem invertida (bug: channel=evolution + instance=whapi-* → 404 Evolution).
   if (instanceName?.startsWith("whapi")) kind = "whapi";
@@ -389,6 +441,11 @@ export async function resolveChannelForCustomerWithFailover(
 
   const originKind = (c?.origin_channel as string | null) || null;
 
+  // Lead do piloto WAME é fail-closed: se o WAME não resolveu, o envio fica
+  // pendente. Cair para Whapi/Evolution trocaria o número na cara do lead —
+  // exatamente o vazamento de identidade que o failover tenta evitar.
+  if (originKind === "wame") return primary;
+
   // Failover → Evolution saudável do **mesmo** consultor
   if (originKind !== "evolution" && env.evolutionUrl && env.evolutionKey) {
     const { data: inst } = await supabase
@@ -457,10 +514,27 @@ export async function resolveChannelForCustomerWithFailover(
   return primary;
 }
 
-async function guardOk(supabase: any, instanceName: string, label: string): Promise<boolean> {
-  const quota = await checkSendQuota(supabase, instanceName);
+/**
+ * Razões que só significam "esse chip ainda não tem linha em
+ * `whatsapp_instances`". Vale SÓ para o WAME (piloto): Whapi e Evolution
+ * mantêm exatamente o bloqueio de hoje. Assim que `wame-piloto` for
+ * cadastrado, `check_send_quota` responde e o anti-ban real volta a valer.
+ */
+const QUOTA_SOFT_REASONS = new Set(["instance_not_found", "empty_response", "rpc_error"]);
+
+async function guardOk(
+  supabase: any,
+  channel: ResolvedChannel,
+  label: string,
+): Promise<boolean> {
+  const quota = await checkSendQuota(supabase, channel.instanceName);
   if (!quota.allowed) {
-    console.warn(`🚫 [channel-sender:${label}] bloqueado ${instanceName} reason=${quota.reason}`);
+    if (channel.kind === "wame" && QUOTA_SOFT_REASONS.has(String(quota.reason || ""))) {
+      return true;
+    }
+    console.warn(
+      `🚫 [channel-sender:${label}] bloqueado ${channel.instanceName} reason=${quota.reason}`,
+    );
     return false;
   }
   return true;
@@ -494,7 +568,7 @@ async function sendText(
   sendCtx: SendContext,
   opts?: { skipQuota?: boolean; skipRegister?: boolean },
 ): Promise<boolean> {
-  if (!opts?.skipQuota && !(await guardOk(supabase, channel.instanceName, "text"))) return false;
+  if (!opts?.skipQuota && !(await guardOk(supabase, channel, "text"))) return false;
   try {
     const r = await channel.adapter.sendText(jid, text, { ...sendCtx, supabase });
     if (!r.ok) {
@@ -519,7 +593,7 @@ async function sendMedia(
   sendCtx: SendContext,
   opts?: { skipQuota?: boolean; skipRegister?: boolean },
 ): Promise<boolean> {
-  if (!opts?.skipQuota && !(await guardOk(supabase, channel.instanceName, kind))) return false;
+  if (!opts?.skipQuota && !(await guardOk(supabase, channel, kind))) return false;
   const media =
     kind === "document"
       ? { kind, url, filename: "arquivo", caption }
@@ -546,7 +620,7 @@ async function sendAudio(
   sendCtx: SendContext,
   opts?: { skipQuota?: boolean; skipRegister?: boolean },
 ): Promise<boolean> {
-  if (!opts?.skipQuota && !(await guardOk(supabase, channel.instanceName, "audio"))) return false;
+  if (!opts?.skipQuota && !(await guardOk(supabase, channel, "audio"))) return false;
   try {
     const r = await channel.adapter.sendMedia(
       jid,
@@ -695,7 +769,7 @@ async function sendSingleMessage(
 
   // Pacote pós-venda canônico: imagem + áudio (1 envio lógico).
   // Texto NÃO vai no Zap — o roteiro com {{nome}}/{{saudacao}} vira áudio ElevenLabs.
-  if (!(await guardOk(supabase, channel.instanceName, "stage_pack"))) {
+  if (!(await guardOk(supabase, channel, "stage_pack"))) {
     return result;
   }
   const pack = { skipQuota: true, skipRegister: true } as const;

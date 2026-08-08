@@ -75,7 +75,8 @@ jobs:
       - name: Typecheck webhooks
         run: |
           deno check supabase/functions/evolution-webhook/index.ts \
-                     supabase/functions/whapi-webhook/index.ts
+                     supabase/functions/whapi-webhook/index.ts \
+                     supabase/functions/wame-webhook/index.ts
       - name: Typecheck Meta Ads hardening surface
         run: |
           deno check \
@@ -161,7 +162,8 @@ jobs:
             supabase/functions/_shared/ping-pong-brake_test.ts \
             supabase/functions/_shared/outreach-caps_test.ts \
             supabase/functions/_shared/cadence-ack-policy_test.ts \
-            supabase/functions/_shared/cadence-inbound-router_test.ts
+            supabase/functions/_shared/cadence-inbound-router_test.ts \
+            supabase/functions/_shared/channel-sender-wame_test.ts
 
   engine-purity-check:
     name: Engine purity lint (v3-runner.ts)

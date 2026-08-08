@@ -81,12 +81,19 @@ export async function registerSend(supabase: any, instance: string): Promise<voi
   }
 }
 
-/** Razões soft do check_send_quota quando o canal é Whapi (sem linha em whatsapp_instances). */
+/** Razões soft do check_send_quota quando o canal não tem linha em `whatsapp_instances`. */
 const WHAPI_QUOTA_SOFT_BYPASS = new Set([
   "instance_not_found",
   "empty_response",
   "rpc_error",
 ]);
+
+/**
+ * Canais cujo chip vive fora de `whatsapp_instances`. Quando a linha existir
+ * (ex.: cadastrar `wame-piloto`), `check_send_quota` volta a responder e o
+ * anti-ban real passa a valer sozinho — o bypass só cobre a ausência.
+ */
+const QUOTA_SOFT_BYPASS_CHANNELS = new Set(["whapi", "wame"]);
 
 const DEFAULT_QUOTA_WAIT_MS = 25_000;
 
@@ -141,7 +148,10 @@ export async function awaitOutboundSendQuota(
   let quota = await checkSendQuota(supabase, instance);
   if (quota.allowed) return { allowed: true, waitedMs: 0 };
 
-  if (kind === "whapi" && WHAPI_QUOTA_SOFT_BYPASS.has(String(quota.reason || ""))) {
+  if (
+    QUOTA_SOFT_BYPASS_CHANNELS.has(kind) &&
+    WHAPI_QUOTA_SOFT_BYPASS.has(String(quota.reason || ""))
+  ) {
     return { allowed: true, waitedMs: 0 };
   }
 

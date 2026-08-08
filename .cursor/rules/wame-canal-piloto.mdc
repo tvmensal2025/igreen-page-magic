@@ -1,0 +1,70 @@
+---
+description: WAME (api-wa.me) é canal piloto paralelo — não mistura com Whapi
+alwaysApply: true
+---
+
+# WAME — canal piloto paralelo (não toca no Whapi)
+
+Whapi continua o canal **primário** de produção (`#whatsapp-whapi-primario`).
+WAME (api-wa.me) é um **terceiro canal**, em piloto, num número novo.
+
+## Fase atual: observação (só recebe)
+
+`wame-webhook` grava lead + `conversations` e **para**. Não chama bot-flow,
+Cérebro nem cadência. Lead nasce com `bot_paused = true` +
+`bot_paused_reason = 'wame_pilot'` + `bot_paused_until = 2099-01-01` —
+sem a pausa a cadência A/B/C adotaria o lead; sem o `until` longe a
+cadência liberaria a pausa comum após ~48h.
+
+## Identidade do canal (regra dura)
+
+- `customers.origin_channel = 'wame'` + `origin_instance_name` com prefixo **`wame`**.
+- Lead WAME é **fail-closed**: se o canal não resolve, o envio fica pendente.
+ **Nunca** cai para Whapi/Evolution — trocaria o número na cara do lead.
+ Ver `resolveChannelForCustomerWithFailover` (early return em `origin_channel === "wame"`).
+- `resolveChannelForCustomer` resolve WAME **antes** da normalização whapi/evolution.
+ Sem isso o lead do piloto sairia pelo chip do superadmin.
+- Lead que já tem origem Whapi/Evolution **não** é adotado pelo WAME.
+
+## Contrato da API
+
+- Base: `{wame_server}/{wame_api_key}` — a key vai no **path**, não em header.
+- Envio: `POST {base}/message/{text|image|audio|video|document|button_reply|presence}`.
+- Webhook: configurar `webhookFormat: "meta"` (envelope `entry[].changes[].value.messages[]`).
+- Botões: `{ type: "quick_reply", id, text }` — máx **3**, título **25 chars**
+ (limite do WhatsApp; acima disso a mensagem inteira é rejeitada).
+- Id de botão volta com prefixo `ButtonsV3:` / `ListV3:` — o parse **strippa**,
+ igual `parseWhapiMessage`. Sem o strip o funil não reconhece o id.
+
+## `from_me` — não é takeover
+
+O envelope Meta da WAME não traz `source`, então não dá para separar eco da
+API de digitação humana no celular (o Whapi separa). Todo `from_me` é
+**ignorado**; takeover se faz pelo CRM. Tratar como takeover pausaria o bot
+sozinho a cada mensagem enviada.
+
+## Configuração (settings)
+
+`wame_server` · `wame_api_key` · `wame_instance_name` (default `wame-piloto`) ·
+`wame_pilot_consultant_id` (default = superadmin) · env `WAME_WEBHOOK_SECRET`.
+Sem server+key o canal devolve `unavailable` e **nada** muda no fluxo atual.
+
+## Anti-ban
+
+Enquanto não houver linha `wame-piloto` em `whatsapp_instances`, a quota
+responde `instance_not_found` e o WAME usa bypass suave (só ele — Whapi e
+Evolution mantêm o bloqueio de hoje). **Cadastrar a instância** ativa o
+anti-ban real; num chip novo isso é desejável.
+
+## NÃO FAÇA
+
+- Não religar failover cruzado para lead WAME.
+- Não ligar bot/cadência no WAME sem pedido explícito (tirar `bot_paused`).
+- Não usar `origin_instance_name` sem o prefixo `wame`.
+- Não mexer no caminho Whapi para "aproveitar" código do piloto.
+
+## Arquivos
+
+`_shared/wame-api.ts` · `_shared/channels/wame.ts` · `wame-webhook/index.ts` ·
+ramos WAME em `_shared/channel-sender.ts` · `_shared/attendance-channel-env.ts`.
+Testes: `_shared/channels/wame_test.ts` · `_shared/channel-sender-wame_test.ts`.

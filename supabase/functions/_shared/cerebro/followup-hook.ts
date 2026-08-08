@@ -43,8 +43,12 @@ import type { ChannelCapabilities, ResultadoCerebro } from "./tipos.ts";
 // deno-lint-ignore no-explicit-any
 type AnySupabase = any;
 
-/** Canal de origem do follow-up (parametriza só as capacidades do motor). */
-export type CanalFollowup = "evolution" | "whapi";
+/**
+ * Canal de origem do follow-up (parametriza só as capacidades do motor).
+ * Inclui o piloto `wame` porque os crons repassam `ResolvedChannel.kind`
+ * direto; o valor só alimenta `capabilitiesPadrao`.
+ */
+export type CanalFollowup = "evolution" | "whapi" | "wame";
 
 /** Para onde o nudge deve ir neste turno de follow-up. */
 export type DestinoFollowup = "cerebro" | "vendedora";

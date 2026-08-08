@@ -1,5 +1,7 @@
-// Carrega credenciais de canal (Whapi + Evolution) a partir de settings + env.
+// Carrega credenciais de canal (Whapi + Evolution + WAME) a partir de settings + env.
 // Super admin usa settings.whapi_token; consultores usam Evolution do ambiente.
+// WAME é o canal piloto paralelo: sem `wame_server` + `wame_api_key` em
+// settings, ele simplesmente não resolve e nada muda no caminho atual.
 
 import type { ChannelEnv } from "./channel-sender.ts";
 
@@ -12,7 +14,13 @@ export async function loadChannelEnv(supabase: SB): Promise<ChannelEnv & {
   const { data: rows } = await supabase
     .from("settings")
     .select("key, value")
-    .in("key", ["whapi_token", "whapi_api_url", "superadmin_consultant_id"]);
+    .in("key", [
+      "whapi_token",
+      "whapi_api_url",
+      "superadmin_consultant_id",
+      "wame_server",
+      "wame_api_key",
+    ]);
 
   const settings: Record<string, string> = {};
   for (const r of (rows as Array<{ key: string; value: unknown }> | null) || []) {
@@ -25,6 +33,8 @@ export async function loadChannelEnv(supabase: SB): Promise<ChannelEnv & {
     evolutionKey: Deno.env.get("EVOLUTION_API_KEY"),
     whapiToken: settings.whapi_token || Deno.env.get("WHAPI_TOKEN") || "",
     superadminConsultantId: settings.superadmin_consultant_id || null,
+    wameServer: settings.wame_server || Deno.env.get("WAME_SERVER") || "",
+    wameApiKey: settings.wame_api_key || Deno.env.get("WAME_API_KEY") || "",
   };
 }
 

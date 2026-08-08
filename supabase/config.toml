@@ -6,6 +6,11 @@ verify_jwt = false
 [functions.whapi-webhook]
 verify_jwt = false
 
+# Canal piloto WAME (api-wa.me) — provedor externo não manda JWT do Supabase.
+# Origem validada por WAME_WEBHOOK_SECRET (ver _shared/webhook-auth.ts).
+[functions.wame-webhook]
+verify_jwt = false
+
 [functions.facebook-repair-ctwa-welcome]
 verify_jwt = false
 
