@@ -1634,10 +1634,10 @@ Vou transferir você para um atendente da equipe de {{consultor}}. Em instantes 
     group: "A",
     channel: "whatsapp_text",
     title: "Lembrete · Retomada no WhatsApp",
-    timing: "Após ~2h de silêncio em GREETED / Ativo · A_NUDGE",
+    timing: "Após ~6 dias de silêncio em GREETED / Ativo · A_NUDGE",
     canGenerateAudio: false,
     notes:
-      "Texto que o motor envia na fatia Retomada. Salva em cadence_stage_config (A_NUDGE). Não cria passo no construtor.",
+      "Texto que o motor envia na fatia Retomada após ~6 dias de silêncio. Salva em cadence_stage_config (A_NUDGE). Não cria passo no construtor.",
     // Artigo o/a via {{o_a_consultor}} (Dados → gender). Nome/IA vêm do consultor do lead.
     body: `*Oi, {{nome}}*! Aqui é {{o_a_consultor}} *{{consultor}}* da *iGreen* ⚡
 

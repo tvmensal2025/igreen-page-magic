@@ -10,7 +10,7 @@ import { nextBusinessSlot, isBusinessHour } from "./business-window.ts";
 
 export type Stage =
   | "NEW" | "GREETED" | "AI_QUALIFYING"
-  /** Grupo A — silêncio antes do B: retomada → SMS → call → fecha A → COLD_1 */
+  /** Grupo A — silêncio antes do B: ~6d → retomada → SMS → call → fecha A → COLD_1 */
   | "A_NUDGE" | "A_SMS" | "A_CALL" | "A_CALL_RETRY"
   | "COLD_1" | "COLD_2" | "CALL_1" | "SMS_1"
   | "COLD_3" | "CALL_2" | "SMS_2" | "SMS_TEMA_2" | "SMS_TEMA_7"
@@ -41,7 +41,7 @@ export type StageDef = {
  * Ao avançar A→B, next_action_at = now + B.delayHours.
  *
  * Grupo A — silêncio no chat quente (pizza):
- *   aguardando → retomada WA → SMS → ligação → fecha A → Grupo B (COLD_1).
+ *   aguardando ~6 dias → retomada WA → SMS → ligação → fecha A → Grupo B (COLD_1).
  *
  * Grupo C — cada marco longo:
  *   WA (análise) → SMS (~2h se silêncio) → ligação (~4h se silêncio) → próximo marco.
@@ -52,7 +52,8 @@ export const STAGE_MAP: Record<Stage, StageDef | null> = {
   GREETED:       { channel: "system",    delayHours: 2,   next: "A_NUDGE",          requiresBusinessHours: false },
   AI_QUALIFYING: { channel: "system",    delayHours: 2,   next: "A_NUDGE",          requiresBusinessHours: false },
 
-  A_NUDGE:       { channel: "whatsapp",  delayHours: 0,   next: "A_SMS",            requiresBusinessHours: true,  skipIfEngaged: true },
+  // 144h = 6 dias de silêncio antes da 1ª cutucada (A_NUDGE); escada SMS/call inalterada.
+  A_NUDGE:       { channel: "whatsapp",  delayHours: 144, next: "A_SMS",            requiresBusinessHours: true,  skipIfEngaged: true },
   A_SMS:         { channel: "sms",       delayHours: 2,   next: "A_CALL",           requiresBusinessHours: true,  skipIfEngaged: true },
   A_CALL:        { channel: "voice",     delayHours: 2,   next: "A_CALL_RETRY",     requiresBusinessHours: true,  skipIfEngaged: true },
   A_CALL_RETRY:  { channel: "voice",     delayHours: 0.5, next: "COLD_1",           requiresBusinessHours: true,  skipIfEngaged: true },
