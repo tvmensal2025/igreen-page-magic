@@ -1,0 +1,75 @@
+/* Auth — animações leves (CSS only). Sem canvas / particles. */
+
+@keyframes auth-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-12px);
+  }
+}
+
+@keyframes auth-shine {
+  0% {
+    background-position: 0% 50%;
+  }
+  100% {
+    background-position: 200% 50%;
+  }
+}
+
+.auth-float {
+  animation: auth-float 6s ease-in-out infinite;
+}
+
+.auth-float-delay {
+  animation: auth-float 6s ease-in-out 1.5s infinite;
+}
+
+.auth-shine-border {
+  position: relative;
+  isolation: isolate;
+}
+
+.auth-shine-border::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(
+    110deg,
+    transparent 20%,
+    hsl(var(--primary) / 0.55) 40%,
+    hsl(152 100% 70% / 0.7) 50%,
+    hsl(var(--primary) / 0.55) 60%,
+    transparent 80%
+  );
+  background-size: 200% 100%;
+  animation: auth-shine 4.5s linear infinite;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  mask:
+    linear-gradient(#fff 0 0) content-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+  z-index: 0;
+  opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .auth-float,
+  .auth-float-delay,
+  .auth-shine-border::before {
+    animation: none !important;
+  }
+
+  .auth-shine-border::before {
+    opacity: 0.35;
+    background-position: 50% 50%;
+  }
+}

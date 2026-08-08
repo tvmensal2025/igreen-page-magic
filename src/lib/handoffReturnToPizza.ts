@@ -23,10 +23,31 @@ import { onlyDigits } from "@/lib/phone";
 import { resolveLeadPanelDisplayName } from "@/lib/customerDisplayName";
 
 const CUSTOMER_HANDOFF_SELECT =
-  "id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, assigned_human_id, name_source, last_inbound_media_url, last_inbound_media_kind, do_not_contact, customer_origin, status, is_converted, pos_venda_stage, andamento_igreen, pos_venda_recadastro_at";
+  "id, consultant_id, name, phone_whatsapp, conversation_step, bot_paused, bot_paused_reason, assigned_human_id, name_source, last_inbound_media_url, last_inbound_media_kind, do_not_contact, customer_origin, status, is_converted, pos_venda_stage, andamento_igreen, pos_venda_recadastro_at";
 
 export const HANDOFF_PAUSE_REASON = "handoff_humano";
 export const HANDOFF_RECHECK_HOURS = 48;
+
+/** Entrada do lead no grupo A/B/C ao sair do handoff (consultor escolhe). */
+export type CadenceAbcGroup = "A" | "B" | "C";
+
+export const HANDOFF_GROUP_ENTRY_STAGE: Record<CadenceAbcGroup, string> = {
+  /** Retoma conversa / leads novos. */
+  A: "A_NUDGE",
+  /** Onda de reengajamento (quem esfriou). */
+  B: "COLD_1",
+  /** Recall longo — “não quer agora, tenta depois”. */
+  C: "RECALL_60D",
+};
+
+export const HANDOFF_GROUP_OPTION: Record<
+  CadenceAbcGroup,
+  { title: string; hint: string }
+> = {
+  A: { title: "Grupo A", hint: "Leads novos — retoma a conversa" },
+  B: { title: "Grupo B", hint: "Quem esfriou — reengaja em dias" },
+  C: { title: "Grupo C", hint: "Quem sumiu — tenta de novo mais tarde" },
+};
 
 export function handoffRecheckAtIso(from: Date = new Date()): string {
   return new Date(from.getTime() + HANDOFF_RECHECK_HOURS * 3_600_000).toISOString();
@@ -459,7 +480,8 @@ export type ReturnHandoffResult = {
 /**
  * Volta ao acompanhamento: limpa pausa humana, despausa bot, resolve alertas.
  *
- * - Lead: reativa cadência A/B/C (`next_action_at`).
+ * - Lead: reativa cadência A/B/C (`next_action_at`). Com `targetGroup`,
+ *   move o lead para a entrada daquele grupo (A=novos, B=esfriou, C=sumiu).
  * - Cliente (carteira / convertido): só libera o handoff — pós-venda
  *   (aprovado / 30 / 60…) segue; NÃO entra em leads novos.
  */
@@ -467,9 +489,15 @@ export async function returnHandoffToPizza(opts: {
   customerId: string;
   cadenceId?: string | null;
   resolvedBy: string;
+  /** Se informado, coloca o lead no início daquele grupo A/B/C. */
+  targetGroup?: CadenceAbcGroup | null;
 }): Promise<ReturnHandoffResult> {
-  const { customerId, resolvedBy } = opts;
+  const { customerId, resolvedBy, targetGroup } = opts;
   const now = new Date().toISOString();
+  const entryStage =
+    targetGroup && HANDOFF_GROUP_ENTRY_STAGE[targetGroup]
+      ? HANDOFF_GROUP_ENTRY_STAGE[targetGroup]
+      : null;
 
   const { data: cust } = await supabase
     .from("customers")
@@ -487,6 +515,15 @@ export async function returnHandoffToPizza(opts: {
       .select("id")
       .eq("customer_id", customerId)
       .eq("paused_reason", HANDOFF_PAUSE_REASON)
+      .maybeSingle();
+    cadenceId = data?.id ?? null;
+  }
+
+  if (!cadenceId) {
+    const { data } = await supabase
+      .from("lead_cadence_state")
+      .select("id")
+      .eq("customer_id", customerId)
       .maybeSingle();
     cadenceId = data?.id ?? null;
   }
@@ -513,27 +550,41 @@ export async function returnHandoffToPizza(opts: {
         .eq("customer_id", customerId)
         .eq("paused_reason", HANDOFF_PAUSE_REASON);
     }
-  } else if (cadenceId) {
-    const { error: cadErr } = await supabase
-      .from("lead_cadence_state")
-      .update({
-        paused_reason: null,
-        paused_until: null,
-        next_action_at: now,
-      })
-      .eq("id", cadenceId);
-    if (cadErr) return { ok: false, error: cadErr.message };
   } else {
-    const { error: cadErr } = await supabase
-      .from("lead_cadence_state")
-      .update({
+    const leadPatch: Record<string, unknown> = {
+      paused_reason: null,
+      paused_until: null,
+      next_action_at: now,
+    };
+    if (entryStage) {
+      leadPatch.stage = entryStage;
+      leadPatch.won_at = null;
+      leadPatch.stage_entered_at = now;
+    }
+
+    if (cadenceId) {
+      const { error: cadErr } = await supabase
+        .from("lead_cadence_state")
+        .update(leadPatch as never)
+        .eq("id", cadenceId);
+      if (cadErr) return { ok: false, error: cadErr.message };
+    } else {
+      const consultantId = (cust as CustomerRow | undefined)?.consultant_id;
+      if (!consultantId) {
+        return { ok: false, error: "Lead sem consultor — não deu para colocar no ciclo." };
+      }
+      const { error: insErr } = await supabase.from("lead_cadence_state").insert({
+        customer_id: customerId,
+        consultant_id: consultantId,
+        stage: entryStage || "A_NUDGE",
+        stage_entered_at: now,
         paused_reason: null,
         paused_until: null,
         next_action_at: now,
-      })
-      .eq("customer_id", customerId)
-      .eq("paused_reason", HANDOFF_PAUSE_REASON);
-    if (cadErr) return { ok: false, error: cadErr.message };
+        won_at: null,
+      } as never);
+      if (insErr) return { ok: false, error: insErr.message };
+    }
   }
 
   const { error: custErr } = await supabase
@@ -564,6 +615,7 @@ export async function returnHandoffToPizza(opts: {
 export async function returnHandoffsToPizza(opts: {
   items: Array<{ customerId: string; cadenceId?: string | null }>;
   resolvedBy: string;
+  targetGroup?: CadenceAbcGroup | null;
 }): Promise<{ ok: number; failed: number; lastError?: string }> {
   let ok = 0;
   let failed = 0;
@@ -573,6 +625,7 @@ export async function returnHandoffsToPizza(opts: {
       customerId: item.customerId,
       cadenceId: item.cadenceId,
       resolvedBy: opts.resolvedBy,
+      targetGroup: opts.targetGroup,
     });
     if (r.ok) ok++;
     else {

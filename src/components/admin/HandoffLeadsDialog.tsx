@@ -7,7 +7,7 @@ import {
   Loader2,
   MessageCircle,
   RefreshCw,
-  RotateCcw,
+  ChevronDown,
   Ban,
   UserMinus,
 } from "lucide-react";
@@ -22,6 +22,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Table,
   TableBody,
@@ -38,6 +46,8 @@ import {
   forgetHandoffLeads,
   loadHandoffLeads,
   returnHandoffsToPizza,
+  HANDOFF_GROUP_OPTION,
+  type CadenceAbcGroup,
   type HandoffLead,
 } from "@/lib/handoffReturnToPizza";
 import { HandoffLeadPreviewDialog } from "@/components/admin/HandoffLeadPreviewDialog";
@@ -113,7 +123,7 @@ export function HandoffLeadsDialog({
     });
   };
 
-  async function returnSelected(ids: string[]) {
+  async function returnSelected(ids: string[], targetGroup: CadenceAbcGroup) {
     if (!ids.length) return;
     const { data: auth } = await supabase.auth.getUser();
     const resolvedBy = auth.user?.id || consultantId;
@@ -123,17 +133,18 @@ export function HandoffLeadsDialog({
       .map((id) => byId.get(id))
       .filter(Boolean)
       .map((r) => ({ customerId: r!.customerId, cadenceId: r!.cadenceId }));
-    const result = await returnHandoffsToPizza({ items, resolvedBy });
+    const result = await returnHandoffsToPizza({ items, resolvedBy, targetGroup });
     setBusy(false);
+    const groupLabel = HANDOFF_GROUP_OPTION[targetGroup].title;
     if (result.failed && !result.ok) {
-      toast.error(result.lastError || "Falha ao devolver ao acompanhamento");
+      toast.error(result.lastError || "Falha ao colocar no ciclo");
       return;
     }
     if (result.failed) {
-      toast.warning(`${result.ok} devolvido(s); ${result.failed} falhou(aram)`);
+      toast.warning(`${result.ok} no ${groupLabel}; ${result.failed} falhou(aram)`);
     } else {
       toast.success(
-        `${result.ok} contato(s) voltaram ao acompanhamento — cliente segue pós-venda; lead retoma o ciclo`,
+        `${result.ok} contato(s) no ${groupLabel} — ${HANDOFF_GROUP_OPTION[targetGroup].hint}`,
       );
     }
     await reload();
@@ -220,6 +231,52 @@ export function HandoffLeadsDialog({
 
   const selectedIds = Array.from(selected);
 
+  function CycleGroupMenu({
+    ids,
+    compact,
+    label = "Colocar no ciclo",
+  }: {
+    ids: string[];
+    compact?: boolean;
+    label?: string;
+  }) {
+    return (
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            size="sm"
+            className={cn("h-8 text-xs", compact && "col-span-2 justify-center w-full")}
+            disabled={busy || ids.length === 0}
+            title="Escolha o grupo A, B ou C para este lead"
+          >
+            {label}
+            <ChevronDown className="h-3.5 w-3.5 ml-1.5 shrink-0 opacity-80" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-64">
+          <DropdownMenuLabel className="text-xs font-normal text-muted-foreground">
+            Onde o lead volta a ser acompanhado
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator />
+          {(["A", "B", "C"] as CadenceAbcGroup[]).map((g) => (
+            <DropdownMenuItem
+              key={g}
+              className="flex flex-col items-start gap-0.5 py-2 cursor-pointer"
+              disabled={busy}
+              onClick={() => void returnSelected(ids, g)}
+            >
+              <span className="font-semibold text-sm">{HANDOFF_GROUP_OPTION[g].title}</span>
+              <span className="text-[11px] text-muted-foreground leading-snug">
+                {HANDOFF_GROUP_OPTION[g].hint}
+              </span>
+            </DropdownMenuItem>
+          ))}
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  }
+
   function renderLeadActions(row: HandoffLead, compact?: boolean) {
     return (
       <div
@@ -228,21 +285,7 @@ export function HandoffLeadsDialog({
           compact ? "grid grid-cols-2 w-full" : "flex justify-end flex-wrap",
         )}
       >
-        <Button
-          type="button"
-          size="sm"
-          className={cn("h-8 text-xs", compact && "col-span-2 justify-center")}
-          disabled={busy}
-          onClick={() => void returnSelected([row.cadenceId])}
-          title={
-            row.isCliente
-              ? "Libera o handoff — pós-venda (aprovado/30/60) continua"
-              : "Devolve o lead ao acompanhamento automático"
-          }
-        >
-          <RotateCcw className="h-3.5 w-3.5 mr-1.5 shrink-0" />
-          {compact ? "Voltar ao ciclo" : "Voltar ao acompanhamento"}
-        </Button>
+        <CycleGroupMenu ids={[row.cadenceId]} compact={compact} />
         {onOpenChat && (
           <Button
             type="button"
@@ -306,7 +349,7 @@ export function HandoffLeadsDialog({
               <span className="leading-snug">Atendimentos pausados</span>
             </DialogTitle>
             <DialogDescription className="text-left text-xs sm:text-sm leading-relaxed">
-              Leads em que a IA pausou. <strong>Voltar</strong> = devolve ao ciclo (48h de validade no handoff) ·{" "}
+              Leads em que a IA pausou. <strong>Colocar no ciclo</strong> = você escolhe o grupo A, B ou C ·{" "}
               <strong>Esquecer</strong> = já cliente / fora do ciclo (Zap manual ok) ·{" "}
               <strong>Bloquear</strong> = nunca mais mensagem automática (sai da lista).
               Clientes da carteira e bloqueados não aparecem aqui.
@@ -558,19 +601,14 @@ export function HandoffLeadsDialog({
                 )}
                 Esquecer
               </Button>
-              <Button
-                type="button"
-                className="w-full sm:w-auto"
-                disabled={busy || selectedIds.length === 0}
-                onClick={() => void returnSelected(selectedIds)}
-              >
-                {busy ? (
-                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                ) : (
-                  <RotateCcw className="h-4 w-4 mr-1" />
-                )}
-                Voltar ao acompanhamento
-              </Button>
+              <CycleGroupMenu
+                ids={selectedIds}
+                label={
+                  selectedIds.length
+                    ? `Colocar ${selectedIds.length} no ciclo`
+                    : "Colocar no ciclo"
+                }
+              />
             </div>
           </DialogFooter>
         </DialogContent>
@@ -640,7 +678,7 @@ export function HandoffLeadsBanner({
             {count} atendimento(s) pausado(s) — escolha o que fazer
           </span>
           <span className="block text-[11px] text-sky-900/80 dark:text-sky-100/80">
-            Só leads. <strong>Voltar</strong>, <strong>Esquecer</strong> (já cliente) ou{" "}
+            Só leads. <strong>Colocar no ciclo</strong> (A/B/C), <strong>Esquecer</strong> (já cliente) ou{" "}
             <strong>Bloquear</strong> (sem automação; sai da lista).
           </span>
         </div>
