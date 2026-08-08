@@ -348,7 +348,7 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     const downloadMediaBytes = async (): Promise<{ bytes: Uint8Array; mime: string } | null> => {
       if (cachedDownload) return cachedDownload;
       try {
-        const mediaRes = await fetchWithTimeout(mediaUrl, { method: "GET", timeout: 30_000 });
+        const mediaRes = await fetchWithTimeout(mediaUrl, { method: "GET", timeout: isAudio ? 90_000 : 30_000 });
         if (!mediaRes.ok) {
           console.warn(`⚠️ [whapi:sendMedia] download da mídia falhou (${mediaRes.status})`);
           return null;
@@ -515,6 +515,23 @@ export function createWhapiSender(apiToken: string, baseUrl = "https://gate.whap
     }
 
     // JSON Base64 com mime real (MP3 → audio/mpeg; webm → audio/webm)
+    // MP3 longo (pós-venda ~1–2MB): messages/voice (PTT) falha mais —
+    // tenta messages/audio primeiro quando o arquivo é grande.
+    if (isMp3Family) {
+      await downloadMediaBytes();
+    }
+    const preferAudioEndpoint = isMp3Family && !!cachedDownload &&
+      cachedDownload.bytes.byteLength > 900_000;
+    if (preferAudioEndpoint) {
+      if (await sendJsonBase64("messages/audio", "audio/mpeg", "json_base64_mp3_audio_first")) {
+        console.log(`✅ [whapi:sendMedia] ok via json_base64_mp3_audio_first (messages/audio, large)`);
+        return true;
+      }
+      if (await sendMultipart("messages/audio")) {
+        console.log(`✅ [whapi:sendMedia] ok via multipart messages/audio (large first)`);
+        return true;
+      }
+    }
     if (await sendJsonBase64(endpoint, contentType, "json_base64_real")) {
       console.log(`✅ [whapi:sendMedia] ok via json_base64_real (${mediatype} ${endpoint} ${contentType})`);
       return true;

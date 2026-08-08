@@ -63,12 +63,15 @@ function stageLabel(stageKey: string): string {
 function failureReason(status: string, preview: string | null, phone: string): string {
   if (isPlaceholderPhone(phone) || /sem_celular/i.test(phone)) return "Sem celular válido";
   if (/_\d+$/.test(phone) && phone.includes("_")) return "Telefone com sufixo inválido";
-  if (status.startsWith("partial:audio")) return "Imagem ok, áudio falhou";
+  const errTag = /\[audio_err:([^\]]+)\]/i.exec(preview || "");
+  if (status.startsWith("partial:audio")) {
+    return errTag ? `Imagem ok, áudio falhou (${errTag[1]})` : "Imagem ok, áudio falhou";
+  }
   if (status.startsWith("partial:")) return "Envio parcial";
   if (status.startsWith("no_channel:")) return `Canal indisponível (${status.replace("no_channel:", "")})`;
   if (status === "no_content") return "Sem conteúdo configurado";
   if (status === "claimed_retry") return "Retry interrompido";
-  if (/audio:fail/i.test(preview || "")) return "Falha no áudio";
+  if (/audio:fail/i.test(preview || "")) return errTag ? `Falha no áudio (${errTag[1]})` : "Falha no áudio";
   if (/img:fail/i.test(preview || "")) return "Falha na imagem";
   return "Falha no envio";
 }

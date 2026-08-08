@@ -19,6 +19,16 @@ Deno.test("saudacaoMuitoByHourBRT: dia / tarde / noite", () => {
   assertEquals(saudacaoMuitoByHourBRT(atBrtHour(18)), "Muito boa noite");
 });
 
+Deno.test("hourBRT: NaN não vira noite (fallback UTC-3)", async () => {
+  const { hourBRT } = await import("./quiet-hours.ts");
+  // 15:00 UTC → 12:00 BRT
+  const noonish = new Date(Date.UTC(2026, 6, 23, 15, 0, 0));
+  const h = hourBRT(noonish);
+  assertEquals(h >= 0 && h <= 23, true);
+  // Garantia: comparação NaN nunca deve cair em "noite" via saudacao
+  assertEquals(Number.isNaN(h), false);
+});
+
 Deno.test("applyOutboundTemplateVars: Olá + nome + Tudo bem + saudacao", () => {
   const raw = "Olá, {{nome}} Tudo bem?\n\n{{saudacao}}\n\nSeu cadastro foi aprovado.";
   const out = applyOutboundTemplateVars(raw, {

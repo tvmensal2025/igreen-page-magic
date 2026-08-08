@@ -573,14 +573,24 @@ async function sendAudioWithRetry(
   sendCtx: SendContext,
   opts?: { skipQuota?: boolean; skipRegister?: boolean },
 ): Promise<boolean> {
-  const ok = await sendAudio(supabase, channel, jid, url, sendCtx, opts);
-  if (ok) return true;
-  // 1 retry leve (Whapi e Evolution) — áudio .ogg falha intermitente.
-  await new Promise((r) => setTimeout(r, 1500));
-  return await sendAudio(supabase, channel, jid, url, sendCtx, {
-    ...opts,
-    skipQuota: true, // já passou na 1ª tentativa / pacote
-  });
+  // Pós-venda = MP3 longo (~1–2MB). Whapi falha intermitente; 3 tentativas
+  // com backoff evitam "imagem ok, áudio falhou" permanente.
+  const attempts = 3;
+  for (let i = 0; i < attempts; i++) {
+    const ok = await sendAudio(supabase, channel, jid, url, sendCtx, {
+      ...opts,
+      skipQuota: i > 0 ? true : opts?.skipQuota,
+    });
+    if (ok) return true;
+    if (i < attempts - 1) {
+      const waitMs = 1500 * (i + 1);
+      console.warn(
+        `[${channel.kind}] sendAudio retry ${i + 1}/${attempts - 1} em ${waitMs}ms`,
+      );
+      await new Promise((r) => setTimeout(r, waitMs));
+    }
+  }
+  return false;
 }
 
 
@@ -705,6 +715,7 @@ async function sendSingleMessage(
   }
 
   let audioUrl = msg.media_url;
+  let audioBuildError: string | null = null;
   // Precedência: prepared > stitch (intro+saudação+corpo fixo) > TTS legado
   // (só se NÃO for pacote pós-venda) > media_url estático.
   if (msgType === "audio" && packOpts?.preparedAudioUrl) {
@@ -721,6 +732,7 @@ async function sendSingleMessage(
     if (stitched.ok && stitched.url) {
       audioUrl = stitched.url;
     } else {
+      audioBuildError = stitched.error || "stitch_failed";
       console.warn(
         "[channel-sender] PV stitch falhou — sem fallback de roteiro inteiro",
         stitched.error,
@@ -766,10 +778,43 @@ async function sendSingleMessage(
     result.audio_ok = await sendAudioWithRetry(
       supabase, channel, jid, audioUrl, audioCtx, pack,
     );
+    // Prepared pode estar ok no banco mas Whapi falhar no download/upload —
+    // tenta stitch fresco uma vez (bucket atual).
+    if (
+      !result.audio_ok &&
+      packOpts?.preparedAudioUrl &&
+      audioUrl === packOpts.preparedAudioUrl &&
+      packOpts?.posVendaStitch?.rawTemplate
+    ) {
+      const st = packOpts.posVendaStitch;
+      console.warn("[channel-sender] áudio prepared falhou no envio — tentando stitch fresco");
+      const stitched = await renderPosVendaStitchedAudio(supabase, {
+        consultantId: sendCtx.consultantId,
+        customerName: st.customerName ?? customerName,
+        nameSource: st.nameSource ?? nameSource,
+        stage: st.stage,
+        rawTemplate: st.rawTemplate,
+      });
+      if (stitched.ok && stitched.url && stitched.url !== audioUrl) {
+        result.audio_ok = await sendAudioWithRetry(
+          supabase, channel, jid, stitched.url, {
+            ...audioCtx,
+            idempotencyKey: `${audioCtx.idempotencyKey}:stitch`,
+          }, pack,
+        );
+        if (result.audio_ok) audioUrl = stitched.url;
+        else audioBuildError = audioBuildError || "send_prepared_and_stitch_failed";
+      } else if (!stitched.ok) {
+        audioBuildError = stitched.error || "stitch_after_prepared_failed";
+      }
+    } else if (!result.audio_ok) {
+      audioBuildError = audioBuildError || "send_audio_failed";
+    }
     if (result.audio_ok) anyOk = true;
     // Sem texto no Zap — pacote = imagem + áudio.
   } else if (msgType === "audio" && !audioUrl) {
     result.audio_ok = false;
+    audioBuildError = audioBuildError || "audio_url_missing";
   } else if (msgType === "image" && msg.media_url) {
     const imgCtx = { ...sendCtx, idempotencyKey: `${sendCtx.idempotencyKey || "pack"}:img_main` };
     result.image_ok = await sendMedia(
@@ -800,7 +845,10 @@ async function sendSingleMessage(
 
   if (anyOk) await registerSend(supabase, channel.instanceName);
 
-  result.preview = messageText || "[mídia]";
+  const basePreview = messageText || "[mídia]";
+  result.preview = audioBuildError && result.audio_ok === false
+    ? `${basePreview} [audio_err:${audioBuildError}]`.slice(0, 500)
+    : basePreview;
   return result;
 }
 

@@ -76,6 +76,16 @@ Sync/bucket recalcula estágio; se palpite aprovado/reprovado sem validação �
   2. **Editar número** → canonical BR em `phone_whatsapp` + `whatsapp_chat_id` (libera duplicata se preciso) + retry via `pos-venda-auto-progress` (fallback: próxima rodada do cron)
   3. **Excluir do pós-venda** → `pos_venda_invalid=true` + `pos_venda_manual=false` + log `dismissed` (**não** hard-delete da carteira)
 
+### Retry de áudio (`partial:audio*`) — 2026-08-08
+- Sintoma UI: **Imagem ok, áudio falhou** (`partial:audio_missing` + `[img:ok|audio:fail]`).
+- Causa típica: Whapi falhou no MP3 longo (~1–2MB) depois da imagem; o claim ficava preso e o BATCH priorizava novos envios.
+- Correções no motor:
+  1. Cron **prioriza** `partial:*` / `failed` / `no_channel:*` / `deferred:*` **antes** de aprovado/D* novos
+  2. `sendAudioWithRetry` = 3 tentativas com backoff; se prepared falhar no Zap, tenta stitch fresco
+  3. MP3 grande → Whapi tenta `messages/audio` antes de PTT `messages/voice`
+  4. `hourBRT` NaN não cai mais em “noite” (saudação/prepared errados)
+- Preview guarda `audio_err:…` para diagnóstico.
+
 ### Toggle “Validar sozinho” (`pos_venda_auto_validate`)
 - Coluna em `consultant_automation_prefs` — **default OFF**.
 - UI: switch no Kanban pós-venda + no popup de validação.

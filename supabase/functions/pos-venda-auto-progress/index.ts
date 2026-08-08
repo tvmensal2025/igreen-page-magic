@@ -762,8 +762,13 @@ Deno.serve(async (req) => {
         setTimeout(res, JITTER_MIN_MS + Math.random() * (JITTER_MAX_MS - JITTER_MIN_MS)),
       );
 
+    /** Já processados nesta rodada (evita double-send no loop de progressão). */
+    const doneKeys = new Set<string>();
+
     const runOne = async (c: any, target: string) => {
       if (onlyCustomerIds && !onlyCustomerIds.has(String(c.id))) return;
+      const key = `${c.id}:${STAGE_TO_KEY[target] || target}`;
+      if (doneKeys.has(key)) return;
       // Estágio já foi enviado antes → só reconcilia sem consumir cota.
       if (!canSendMore()) {
         // Ainda deixa mover o estágio no banco (não gera mensagem), mas
@@ -772,6 +777,7 @@ Deno.serve(async (req) => {
       }
       const before = sent;
       const r = await processCustomer(supabase, env, c, target, defaults);
+      doneKeys.add(key);
       if (r.moved) moved++;
       if (r.sent) {
         sent++;
@@ -782,6 +788,50 @@ Deno.serve(async (req) => {
         // não enviou (idempotência / bloqueio) — sem jitter, sem consumir cota
       }
     };
+
+    // 0) PRIORIDADE: retentar partial/failed/no_channel ANTES de novos envios.
+    //    Valdeir/Marcio ficavam dias em "Imagem ok, áudio falhou" porque o
+    //    BATCH_LIMIT era consumido por aprovado/D* novos e o áudio-only
+    //    nunca subia na fila a tempo (ou perdia a janela).
+    {
+      const { data: retryLogs } = await supabase
+        .from("customer_auto_message_log")
+        .select("customer_id, stage_key, status, created_at")
+        .like("stage_key", "pv_%")
+        .or(
+          "status.like.partial:%,status.eq.failed,status.like.no_channel:%,status.eq.claimed_retry,status.eq.no_content,status.like.deferred:%",
+        )
+        .order("created_at", { ascending: true })
+        .limit(80);
+
+      const retryIds = [...new Set((retryLogs || []).map((l: { customer_id: string }) => l.customer_id))];
+      if (retryIds.length > 0) {
+        const { data: retryCustomers } = await supabase
+          .from("customers")
+          .select("id, name, name_source, phone_whatsapp, whatsapp_chat_id, consultant_id, pos_venda_stage, pos_venda_manual, pos_venda_reason, pos_venda_invalid, status, andamento_igreen, pos_venda_approved_at")
+          .in("id", retryIds)
+          .eq("pos_venda_manual", true)
+          .eq("pos_venda_invalid", false)
+          .in("customer_origin", ["igreen_sync", "igreen_extension"]);
+
+        const byId = new Map((retryCustomers || []).map((c: { id: string }) => [c.id, c]));
+        for (const log of retryLogs || []) {
+          if (!canSendMore()) break;
+          const c = byId.get(log.customer_id);
+          if (!c) continue;
+          const bare = String(log.stage_key || "").replace(/^pv_/, "");
+          if (!STAGE_TO_KEY[bare]) continue;
+          // Só retenta o marco do log (áudio-only); não “pula” bucket.
+          console.log(JSON.stringify({
+            event: "pos_venda_priority_retry",
+            customer_id: c.id,
+            stage_key: log.stage_key,
+            prev_status: log.status,
+          }));
+          await runOne(c, bare);
+        }
+      }
+    }
 
     // Ordem fixa da rodada: 1) todos os aprovado pendentes → 2) D30 → D60 → …
     // (mais cedo primeiro), para o BATCH_LIMIT não “pular” quem ainda não

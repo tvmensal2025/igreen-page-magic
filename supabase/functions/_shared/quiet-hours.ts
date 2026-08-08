@@ -30,13 +30,19 @@ export function isOutsideSendWindowBRT(now: Date = new Date()): boolean {
 
 /** Hora 0–23 em America/Sao_Paulo. */
 export function hourBRT(now: Date = new Date()): number {
-  return Number(
+  const raw = Number(
     new Intl.DateTimeFormat("en-GB", {
       timeZone: "America/Sao_Paulo",
       hour: "2-digit",
       hour12: false,
     }).format(now),
-  ) % 24;
+  );
+  // NaN → NÃO cair em "noite" (saudacaoBucket / saudacaoMuito usam h<12 / h<18;
+  // NaN falha os dois ifs e virava noite + áudio prepared errado).
+  if (!Number.isFinite(raw)) {
+    return (now.getUTCHours() - 3 + 24) % 24;
+  }
+  return raw % 24;
 }
 
 /**
