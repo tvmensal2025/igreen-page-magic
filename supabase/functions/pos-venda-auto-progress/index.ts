@@ -666,6 +666,8 @@ async function processCustomer(
   await supabase.from("customer_auto_message_log").update({
     message_preview: previewText,
     status,
+    remote_jid: jid,
+    customer_name: customer.name,
   }).eq("id", claimId);
 
   // Só pacote completo consome cota de envio (batch/daily cap). partial/deferred
