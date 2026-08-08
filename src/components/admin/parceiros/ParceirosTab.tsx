@@ -10,6 +10,10 @@ import {
 import { BannersHub } from "./BannersHub";
 import { ManualReviewQueueCard } from "./ManualReviewQueueCard";
 import {
+  ConsultantMissingEssentialsModal,
+  missingBannerEssentials,
+} from "./ConsultantMissingEssentialsModal";
+import {
   useReferralPartners,
   type ReferralPartner,
 } from "./hooks/useReferralPartners";
@@ -27,6 +31,8 @@ interface ParceirosTabProps {
   license?: string | null;
   /** Canal principal — prioriza chip vivo (settings) quando aplicável. */
   isWhapi?: boolean;
+  /** Atualiza o form do Admin depois de salvar WhatsApp/ID no modal. */
+  onEssentialsSaved?: (next: { phone?: string; igreen_id?: string }) => void;
 }
 
 type BannerDownloadOpts = {
@@ -42,6 +48,7 @@ export function ParceirosTab({
   consultantIgreenId = "",
   license = "",
   isWhapi = false,
+  onEssentialsSaved,
 }: ParceirosTabProps) {
   const [formOpen, setFormOpen] = useState(false);
   const [editingPartner, setEditingPartner] = useState<ReferralPartner | null>(
@@ -62,11 +69,37 @@ export function ParceirosTab({
     null,
   );
   const [liveWaPhone, setLiveWaPhone] = useState(consultantPhone);
+  const [localIgreenId, setLocalIgreenId] = useState(consultantIgreenId);
+  const [essentialsOpen, setEssentialsOpen] = useState(false);
+  const [pendingBannerAfterSave, setPendingBannerAfterSave] =
+    useState<BannerDownloadOpts | null>(null);
   const { partners, create, update, remove, isLoading } = useReferralPartners();
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const [focusPartnerId, setFocusPartnerId] = useState<string | null>(null);
+
+  const effectivePhone = liveWaPhone || consultantPhone;
+  const effectiveIgreen = localIgreenId || consultantIgreenId;
+  const essentialsMissing = missingBannerEssentials({
+    phone: effectivePhone,
+    igreenId: effectiveIgreen,
+  });
+
+  useEffect(() => {
+    setLocalIgreenId(consultantIgreenId);
+  }, [consultantIgreenId]);
+
+  useEffect(() => {
+    if (consultantPhone) setLiveWaPhone(consultantPhone);
+  }, [consultantPhone]);
+
+  // Abre sozinho na aba Parceiros se ainda faltar WhatsApp ou ID.
+  useEffect(() => {
+    if (essentialsMissing.length > 0) setEssentialsOpen(true);
+    else setEssentialsOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- chave estável dos faltantes
+  }, [essentialsMissing.join("|")]);
 
   const refreshPartners = useCallback(() => {
     void queryClient.invalidateQueries({ queryKey: ["referral-partners"] });
@@ -188,10 +221,44 @@ export function ParceirosTab({
   };
 
   const openBannerDownload = (opts: BannerDownloadOpts) => {
+    if (essentialsMissing.length > 0) {
+      setPendingBannerAfterSave(opts);
+      setEssentialsOpen(true);
+      return;
+    }
     setBannerDownloadOpts(opts);
     void loadConsultantBannerData();
     setBannerOpen(true);
   };
+
+  const handleEssentialsSaved = (next: {
+    phone?: string;
+    igreen_id?: string;
+  }) => {
+    if (next.phone) setLiveWaPhone(next.phone);
+    if (next.igreen_id) setLocalIgreenId(next.igreen_id);
+    onEssentialsSaved?.(next);
+    setEssentialsOpen(false);
+    void loadConsultantBannerData();
+    if (pendingBannerAfterSave) {
+      const opts = pendingBannerAfterSave;
+      setPendingBannerAfterSave(null);
+      setBannerDownloadOpts(opts);
+      setBannerOpen(true);
+    }
+  };
+
+  const essentialsModal = (
+    <ConsultantMissingEssentialsModal
+      open={essentialsOpen && essentialsMissing.length > 0}
+      consultantId={consultantId}
+      missing={essentialsMissing}
+      initialPhone={effectivePhone}
+      initialIgreenId={effectiveIgreen}
+      blocking
+      onSaved={handleEssentialsSaved}
+    />
+  );
 
   if (view === "banners") {
     return (
@@ -200,8 +267,8 @@ export function ParceirosTab({
           consultantId={consultantId}
           consultantName={consultantName}
           consultantDisplayName={consultantDisplayName}
-          consultantIgreenId={consultantIgreenId}
-          consultantPhone={liveWaPhone || consultantPhone}
+          consultantIgreenId={effectiveIgreen}
+          consultantPhone={effectivePhone}
           license={license}
           defaultPhrase={bannerDefaultPhrase}
           spots={bannerSpots}
@@ -221,8 +288,8 @@ export function ParceirosTab({
           consultantId={consultantId}
           consultantName={consultantName}
           consultantDisplayName={consultantDisplayName}
-          consultantIgreenId={consultantIgreenId}
-          consultantPhone={liveWaPhone || consultantPhone}
+          consultantIgreenId={effectiveIgreen}
+          consultantPhone={effectivePhone}
           defaultPhrase={bannerDefaultPhrase}
           spots={bannerSpots}
           initialMode={bannerDownloadOpts.mode}
@@ -243,15 +310,17 @@ export function ParceirosTab({
             ""
           }
           keywords={qrPartner?.keywords ?? []}
-          consultantPhone={liveWaPhone || consultantPhone}
+          consultantPhone={effectivePhone}
           consultantName={consultantName}
-          consultantIgreenId={consultantIgreenId}
+          consultantIgreenId={effectiveIgreen}
           qrPhrase={qrPartnerCtx?.phrase ?? qrPartner?.qr_phrase}
           license={license}
           shortCode={qrPartner?.short_code}
           spotCode={qrPartnerCtx?.spotCode}
           onSaveKeyword={handleSavePartnerKeyword}
         />
+
+        {essentialsModal}
       </>
     );
   }
@@ -265,9 +334,9 @@ export function ParceirosTab({
         isLoading={isLoading}
         consultantId={consultantId}
         license={license}
-        consultantIgreenId={consultantIgreenId}
+        consultantIgreenId={effectiveIgreen}
         consultantName={consultantName}
-        consultantPhone={liveWaPhone || consultantPhone}
+        consultantPhone={effectivePhone}
         onNew={() => {
           setEditingPartner(null);
           setFormOpen(true);
@@ -278,6 +347,10 @@ export function ParceirosTab({
         onPartnersChanged={refreshPartners}
         focusPartnerId={focusPartnerId}
         onDownloadBanner={() => {
+          if (essentialsMissing.length > 0) {
+            setEssentialsOpen(true);
+            return;
+          }
           void loadConsultantBannerData();
           setView("banners");
         }}
@@ -302,15 +375,17 @@ export function ParceirosTab({
           ""
         }
         keywords={qrPartner?.keywords ?? []}
-        consultantPhone={liveWaPhone || consultantPhone}
+        consultantPhone={effectivePhone}
         consultantName={consultantName}
-        consultantIgreenId={consultantIgreenId}
+        consultantIgreenId={effectiveIgreen}
         qrPhrase={qrPartnerCtx?.phrase ?? qrPartner?.qr_phrase}
         license={license}
         shortCode={qrPartner?.short_code}
         spotCode={qrPartnerCtx?.spotCode}
         onSaveKeyword={handleSavePartnerKeyword}
       />
+
+      {essentialsModal}
     </>
   );
 }

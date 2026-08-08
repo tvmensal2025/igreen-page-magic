@@ -867,6 +867,18 @@ const AdminContent = () => {
               consultantIgreenId={form.igreen_id || ""}
               license={form.license || ""}
               isWhapi={!!isWhapi}
+              onEssentialsSaved={(next) => {
+                handleFormChange({
+                  ...(next.phone ? { phone: next.phone } : {}),
+                  ...(next.igreen_id
+                    ? {
+                        igreen_id: next.igreen_id,
+                        cadastro_url: `https://digital.igreenenergy.com.br/?id=${next.igreen_id}&sendcontract=true`,
+                        licenciada_cadastro_url: `https://expansao.igreenenergy.com.br/?id=${next.igreen_id}&checkout=true`,
+                      }
+                    : {}),
+                });
+              }}
             />
           )}
 

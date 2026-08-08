@@ -3,9 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { Sparkles, Save, AlertCircle } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Sparkles, Save, AlertCircle, Bot, MessageSquareText } from "lucide-react";
 import type { ConsultantForm } from "@/hooks/useAdminAuth";
-import { validateBrazilPhone } from "@/lib/phone";
+import { normalizeBrazilPhone, validateBrazilPhone } from "@/lib/phone";
 import { buildClubCadastroUrl } from "@/lib/clubCadastroUrl";
 
 interface OnboardingGateProps {
@@ -20,8 +21,8 @@ interface OnboardingGateProps {
 
 type FieldErrors = Partial<Record<"name" | "igreen_id" | "phone" | "notification_phone" | "assistant_name" | "gender", string>>;
 
-// Painel libera com: nome + ID iGreen + nome da IA + consultor/consultora.
-// Telefone/WhatsApp completam depois — não bloqueiam o gate nem a geração de áudios.
+// Painel libera com: nome + ID iGreen + WhatsApp + nome da IA + consultor/consultora.
+// WhatsApp é obrigatório: a IA atende nesse número e o recado do QR do banner abre nele.
 function validate(form: ConsultantForm): FieldErrors {
   const errors: FieldErrors = {};
   if (!form.name?.trim() || form.name.trim().length < 3) errors.name = "Digite seu nome completo";
@@ -32,19 +33,25 @@ function validate(form: ConsultantForm): FieldErrors {
   if (form.gender !== "consultor" && form.gender !== "consultora") {
     errors.gender = "Escolha Consultor ou Consultora";
   }
-  const phoneV = validateBrazilPhone(form.phone);
-  if (form.phone && !phoneV.valid) errors.phone = phoneV.message || "Telefone inválido";
+  const phoneDigits = String(form.phone || "").replace(/\D/g, "");
+  if (!phoneDigits || phoneDigits.length < 10) {
+    errors.phone = "Digite o WhatsApp com DDD — é o número da IA e do recado do banner";
+  } else {
+    const phoneV = validateBrazilPhone(form.phone);
+    if (!phoneV.valid) errors.phone = phoneV.message || "WhatsApp inválido";
+  }
   const notifV = validateBrazilPhone(form.notification_phone);
   if (form.notification_phone && !notifV.valid) errors.notification_phone = notifV.message || "Telefone inválido";
   return errors;
 }
 
-// Só os campos críticos bloqueiam o gate.
+// Campos críticos bloqueiam o gate (inclui WhatsApp).
 function blockingErrors(form: ConsultantForm): FieldErrors {
   const e = validate(form);
   const out: FieldErrors = {};
   if (e.name) out.name = e.name;
   if (e.igreen_id) out.igreen_id = e.igreen_id;
+  if (e.phone) out.phone = e.phone;
   if (e.assistant_name) out.assistant_name = e.assistant_name;
   if (e.gender) out.gender = e.gender;
   return out;
@@ -140,10 +147,31 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
               Bem-vindo ao iGreen!
             </h2>
             <p className="text-sm text-muted-foreground">
-              Digite seu nome, o ID iGreen, o nome da sua IA e se você é{" "}
-              <strong>consultor ou consultora</strong>. Com isso os áudios já nascem certos — telefone e WhatsApp
-              você completa depois.
+              Preencha nome, ID iGreen, WhatsApp, nome da IA e se você é{" "}
+              <strong>consultor ou consultora</strong>. Sem WhatsApp o banner não
+              abre conversa e a IA não tem número para atender.
             </p>
+          </div>
+
+          <div className="space-y-3">
+            <Alert className="border-primary/20 bg-primary/5 text-left">
+              <Bot className="h-4 w-4 text-primary" />
+              <AlertTitle className="text-sm">Para que serve a IA?</AlertTitle>
+              <AlertDescription className="text-xs leading-relaxed">
+                A IA (ex.: Yasmin, Sol) atende o lead{" "}
+                <strong>no seu WhatsApp</strong>. Ela responde dúvidas, pede a
+                conta de luz e conduz o cadastro — no mesmo número do banner.
+              </AlertDescription>
+            </Alert>
+            <Alert className="border-primary/20 bg-primary/5 text-left">
+              <MessageSquareText className="h-4 w-4 text-primary" />
+              <AlertTitle className="text-sm">O que é o recado do QR?</AlertTitle>
+              <AlertDescription className="text-xs leading-relaxed">
+                É a <strong>mensagem pronta</strong> que aparece no WhatsApp
+                quando alguém aponta a câmera no banner. Sem número cadastrado, o
+                QR não sabe para quem mandar o recado.
+              </AlertDescription>
+            </Alert>
           </div>
 
           <div className="space-y-4">
@@ -212,6 +240,30 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
             </Field>
 
             <Field
+              label="Seu WhatsApp (com DDD)"
+              error={showErr("phone")}
+              hint="Número onde a IA atende e onde o recado do QR do banner abre. Pode ser o mesmo do chip Whapi."
+            >
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground shrink-0">+55</span>
+                <Input
+                  value={String(form.phone || "").replace(/\D/g, "").replace(/^55/, "")}
+                  onBlur={() => setTouched((t) => ({ ...t, phone: true }))}
+                  onChange={(e) => {
+                    const local = e.target.value.replace(/\D/g, "").slice(0, 11);
+                    applyChange({
+                      phone: local ? normalizeBrazilPhone(local) : "",
+                    });
+                  }}
+                  placeholder="34999999999"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  className="bg-secondary border-border"
+                />
+              </div>
+            </Field>
+
+            <Field
               label="Nome da sua IA"
               error={showErr("assistant_name")}
               hint="Como a assistente se apresenta no WhatsApp. Pode ser o mesmo nome de outra conta (reaproveita áudio)."
@@ -230,14 +282,17 @@ export function OnboardingGate({ form, saving, onFormChange, onSave, children }:
 
           {!complete && (
             <p className="text-xs text-muted-foreground text-center">
-              Preencha nome, consultor/consultora, ID iGreen e o nome da IA para liberar o botão.
+              Preencha nome, consultor/consultora, ID iGreen, WhatsApp e o nome da IA para liberar.
             </p>
           )}
 
           {submitAttempted && !complete && (
             <div className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-sm text-destructive">
               <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
-              <span>Ainda faltam dados. Digite nome, escolha consultor ou consultora, ID iGreen e o nome da sua IA.</span>
+              <span>
+                Ainda faltam dados. Inclua nome, consultor ou consultora, ID iGreen,
+                WhatsApp e o nome da sua IA.
+              </span>
             </div>
           )}
 
